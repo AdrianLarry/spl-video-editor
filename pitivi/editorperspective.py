@@ -43,6 +43,7 @@ from pitivi.timeline.timeline import TimelineContainer
 from pitivi.transitions import TransitionsListWidget
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import path_from_uri
+from pitivi.utils.misc import with_build_label
 from pitivi.utils.ui import beautify_time_delta
 from pitivi.utils.ui import EDITOR_PERSPECTIVE_CSS
 from pitivi.utils.ui import info_name
@@ -1011,7 +1012,7 @@ class EditorPerspective(Perspective, Loggable):
         if project.has_unsaved_modifications():
             unsaved_mark = "*"
         title = "%s%s — %s" % (unsaved_mark, project.name, APPNAME)
-        self.headerbar.set_title(title)
+        self.headerbar.set_title(with_build_label(title))
 
 
 class PreviewAssetWindow(Gtk.Window):

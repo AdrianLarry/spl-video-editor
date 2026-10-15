@@ -30,6 +30,7 @@ from pitivi.configure import get_ui_dir
 from pitivi.dialogs.browseprojects import BrowseProjectsDialog
 from pitivi.perspective import Perspective
 from pitivi.project import Project
+from pitivi.utils.misc import with_build_label
 from pitivi.utils.ui import beautify_last_updated_timestamp
 from pitivi.utils.ui import beautify_project_path
 from pitivi.utils.ui import BinWithNaturalWidth
@@ -269,13 +270,13 @@ class GreeterPerspective(Perspective):
 
         if selection:
             self.headerbar.get_style_context().add_class("selection-mode")
-            self.headerbar.set_title(_("Click an item to select"))
+            self.headerbar.set_title(with_build_label(_("Click an item to select")))
         else:
             self.headerbar.get_style_context().remove_class("selection-mode")
             if projects:
-                self.headerbar.set_title(_("Select a Project"))
+                self.headerbar.set_title(with_build_label(_("Select a Project")))
             else:
-                self.headerbar.set_title(_("Pitivi"))
+                self.headerbar.set_title(with_build_label(_("Pitivi")))
 
     def _create_actions(self):
         group = Gio.SimpleActionGroup()

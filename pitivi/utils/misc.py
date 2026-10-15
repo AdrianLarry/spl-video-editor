@@ -58,6 +58,18 @@ def scale_pixbuf(pixbuf, width, height):
 
 
 # Work around https://bugzilla.gnome.org/show_bug.cgi?id=759249
+def with_build_label(title):
+    """Appends the label of the development build, if any, to a window title.
+
+    The label is set by the launcher of an uninstalled checkout, so it is
+    easy to tell which code is running.
+    """
+    label = os.environ.get("PITIVI_BUILD_LABEL")
+    if not label:
+        return title
+    return "%s — %s" % (title, label)
+
+
 def disconnect_all_by_func(obj, func):
     i = 0
     while True:
