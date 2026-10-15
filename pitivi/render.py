@@ -1339,6 +1339,7 @@ class RenderDialog(Loggable):
         self._pipeline.set_state(Gst.State.NULL)
         self._pipeline.set_mode(GES.PipelineFlags.RENDER)
         encodebin = self._pipeline.get_by_name("internal-encodebin")
+        self.__link_sink_to_muxer_src_pad(encodebin)
         self._gst_signal_handlers_ids[encodebin] = encodebin.connect(
             "element-added", self.__element_added_cb)
         for element in encodebin.iterate_recurse():
@@ -1346,6 +1347,24 @@ class RenderDialog(Loggable):
         self._pipeline.set_state(Gst.State.PLAYING)
         self._is_rendering = True
         self._time_started = time.time()
+
+    def __link_sink_to_muxer_src_pad(self, encodebin):
+        """Makes sure the file sink receives the output of the current muxer.
+
+        When its profile changes, the encodebin creates a new src pad for the
+        new muxer but keeps the old one, without a target, and the file sink
+        gets linked to the old one, so nothing would reach the file.
+        The old pad is left in place because the encodebin still tracks it.
+        """
+        pads = [pad for pad in encodebin.srcpads if isinstance(pad, Gst.GhostPad)]
+        stale_pads = [pad for pad in pads if not pad.get_target() and pad.is_linked()]
+        valid_pads = [pad for pad in pads if pad.get_target() and not pad.is_linked()]
+        for stale_pad, valid_pad in zip(stale_pads, valid_pads):
+            self.debug("Linking the file sink to %s instead of the stale %s",
+                       valid_pad.get_name(), stale_pad.get_name())
+            peer = stale_pad.get_peer()
+            stale_pad.unlink(peer)
+            valid_pad.link(peer)
 
     def _cancel_render(self, *unused_args):
         self.debug("Aborting render")
