@@ -90,3 +90,42 @@ class TitleOverlayTest(common.TestCase):
         self.assert_title_source_absolute_position(source, 0.5, 0.5)
         app.action_log.redo()
         self.assert_title_source_absolute_position(source, -0.24980483996877437, -0.08686210640608036)
+
+    def test_dragging_uses_the_absolute_alignment(self):
+        """Checks dragging a title positions it freely, undoably."""
+        mainloop = common.create_main_loop()
+
+        app = common.create_pitivi()
+        app.gui = None
+        app.create_main_window()
+        app.project_manager.new_blank_project()
+        mainloop.run(until_empty=True)
+
+        app.gui.editor.clipconfig._title_button.clicked()
+        mainloop.run(until_empty=True)
+        source = app.gui.editor.clipconfig.title_expander.source
+
+        def get_alignment():
+            return tuple(source.get_child_property(prop)[1].value_name
+                         for prop in ("halignment", "valignment"))
+
+        self.assertEqual(get_alignment(), ("center", "center"))
+
+        # Simulate hover and drag&drop.
+        overlay_stack = app.gui.editor.viewer.overlay_stack
+        w, h = overlay_stack.window_size
+        for event_type, x, y in ((Gdk.EventType.MOTION_NOTIFY, w / 2, h / 2),
+                                 (Gdk.EventType.BUTTON_PRESS, w / 2, h / 2),
+                                 (Gdk.EventType.MOTION_NOTIFY, 0, 0),
+                                 (Gdk.EventType.BUTTON_RELEASE, 0, 0)):
+            overlay_stack.do_event(mock.Mock(type=event_type, x=x, y=y))
+        mainloop.run(until_empty=True)
+        self.assertEqual(get_alignment(), ("absolute", "absolute"))
+
+        # The alignment is restored together with the position.
+        app.action_log.undo()
+        self.assertEqual(get_alignment(), ("center", "center"))
+        self.assert_title_source_absolute_position(source, 0.5, 0.5)
+
+        app.action_log.redo()
+        self.assertEqual(get_alignment(), ("absolute", "absolute"))

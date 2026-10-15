@@ -259,9 +259,13 @@ class EditorPerspective(Perspective, Loggable):
         collapse_button.set_tooltip_text(
             _("Hide the properties panel to make the viewer bigger"))
         collapse_button.connect("clicked", self.__collapse_properties_cb)
+        props_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        props_content.pack_start(self.clipconfig.summary, False, False, 0)
+        props_content.pack_start(self.context_tabs, True, True, 0)
+        props_content.show()
         self.props_panel = self.__create_side_panel(
             _("Properties"), "document-properties-symbolic", collapse_button,
-            self.context_tabs)
+            props_content)
         self.props_rail = self.__create_properties_rail()
 
         # Viewer, docked in the center
@@ -347,6 +351,12 @@ class EditorPerspective(Perspective, Loggable):
         effect_expander = self.clipconfig.effect_expander
         effect_expander.set_label(_("Applied effects"))
         effect_expander.set_expanded(True)
+        # The catalog below replaces the "Add Effect" popover.
+        effect_expander.add_effect_button.set_no_show_all(True)
+        effect_expander.add_effect_button.hide()
+        effect_expander.placeholder_label.set_text(
+            _("To apply an effect to the clip, drag it from the catalog below "
+              "or double-click it."))
 
         catalog_label = Gtk.Label()
         catalog_label.set_markup("<b>%s</b>" % GLib.markup_escape_text(_("Effect catalog")))

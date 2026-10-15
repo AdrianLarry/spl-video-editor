@@ -22,6 +22,8 @@ from unittest import mock
 from gi.repository import GES
 from gi.repository import Gst
 
+from pitivi.utils.misc import filename_from_uri
+from pitivi.utils.timeline import SELECT
 from tests import common
 
 
@@ -56,6 +58,39 @@ class TransformationPropertiesTest(common.TestCase):
             self.assertTrue(source.set_child_property(prop, new_val))
             spin_btn_value = spin_buttons[prop].get_value_as_int()
             self.assertEqual(new_val, spin_btn_value)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_framing(self):
+        """Checks fitting and filling the frame with the clip."""
+        clip = self.add_clips_simple(self.timeline_container.timeline, 1)[0]
+        self.timeline_container.timeline.selection.select([clip])
+        source = self.transformation_box.source
+        # A square frame, so fitting and filling the clip are different.
+        self.project.videowidth = 1000
+        self.project.videoheight = 1000
+
+        def get_position():
+            return {prop: source.get_child_property(prop)[1]
+                    for prop in ("posx", "posy", "width", "height")}
+
+        initial_position = get_position()
+        fit_button, fill_button = self.transformation_box._framing_box.get_children()
+
+        fill_button.clicked()
+        position = get_position()
+        width, height = self.project.videowidth, self.project.videoheight
+        self.assertGreaterEqual(position["width"], width)
+        self.assertGreaterEqual(position["height"], height)
+        self.assertTrue(position["width"] == width or position["height"] == height, position)
+        self.assertEqual(position["posx"], (width - position["width"]) // 2)
+        self.assertEqual(position["posy"], (height - position["height"]) // 2)
+
+        self.action_log.undo()
+        self.assertDictEqual(get_position(), initial_position)
+
+        fit_button.clicked()
+        self.assertDictEqual(get_position(), source.ui.default_position)
 
     @common.setup_timeline
     @common.setup_clipproperties
@@ -358,6 +393,25 @@ class TransformationPropertiesTest(common.TestCase):
         self.assertEqual((ret, value.value_nick), (True, "over"))
 
 
+class ClipSummaryTest(common.TestCase):
+    """Tests for the ClipSummary widget."""
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_summary_follows_selection(self):
+        """Checks the summary shows the selected clip."""
+        summary = self.clipproperties.summary
+        self.assertFalse(summary.get_visible())
+
+        clip = self.add_clips_simple(self.timeline_container.timeline, 1)[0]
+        self.timeline_container.timeline.selection.select([clip])
+        self.assertTrue(summary.get_visible())
+        self.assertEqual(summary._name_label.get_text(), filename_from_uri(clip.props.uri))
+
+        self.timeline_container.timeline.selection.set_selection([], SELECT)
+        self.assertFalse(summary.get_visible())
+
+
 class TitlePropertiesTest(common.TestCase):
     """Tests for the TitleProperties class."""
 
@@ -394,6 +448,34 @@ class TitlePropertiesTest(common.TestCase):
         self.action_log.redo()
         properties2 = self._get_title_source_child_props()
         self.assertDictEqual(properties1, properties2)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_position_grid(self):
+        """Checks placing the title with the position grid."""
+        self.project.pipeline.get_position = mock.Mock(return_value=0)
+        self.clipproperties.create_title_clip_cb(None)
+        buttons = self.clipproperties.title_expander.position_buttons
+
+        def get_alignment():
+            properties = self._get_title_source_child_props()
+            return (properties["valignment"][1].value_name,
+                    properties["halignment"][1].value_name)
+
+        def get_active_buttons():
+            return [position for position, button in buttons.items() if button.get_active()]
+
+        self.assertEqual(get_alignment(), ("center", "center"))
+        self.assertEqual(get_active_buttons(), [("center", "center")])
+
+        buttons[("top", "left")].set_active(True)
+        self.assertEqual(get_alignment(), ("top", "left"))
+        self.assertEqual(get_active_buttons(), [("top", "left")])
+
+        # Both alignments are changed by a single operation.
+        self.action_log.undo()
+        self.assertEqual(get_alignment(), ("center", "center"))
+        self.assertEqual(get_active_buttons(), [("center", "center")])
 
     @common.setup_timeline
     @common.setup_clipproperties

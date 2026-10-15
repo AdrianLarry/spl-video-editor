@@ -2663,6 +2663,70 @@ msgstr "Aplicados"
 msgid "Effect catalog"
 msgstr "Catálogo"
 
+#: pitivi/clip_properties/summary.py
+msgid "Image"
+msgstr "Imagen"
+
+#: pitivi/editorperspective.py
+msgid ""
+"To apply an effect to the clip, drag it from the catalog below or double-"
+"click it."
+msgstr ""
+"Para aplicar un efecto al clip, arrastralo desde el catálogo de abajo o "
+"hacé doble clic en él."
+
+#: pitivi/clipproperties.py
+msgid "Fit"
+msgstr "Ajustar"
+
+#: pitivi/clipproperties.py
+msgid "Show the whole image. There can be bars on the sides."
+msgstr "Muestra la imagen completa. Pueden quedar bandas a los lados."
+
+#: pitivi/clipproperties.py
+msgid "Fill"
+msgstr "Rellenar"
+
+#: pitivi/clipproperties.py
+msgid "Cover the whole frame. Part of the image can be left out."
+msgstr "Cubre todo el cuadro. Puede quedar fuera una parte de la imagen."
+
+#: pitivi/clip_properties/title.py
+msgid "Position"
+msgstr "Posición"
+
+#: pitivi/clip_properties/title.py
+msgid "Top left"
+msgstr "Arriba a la izquierda"
+
+#: pitivi/clip_properties/title.py
+msgid "Top center"
+msgstr "Arriba al centro"
+
+#: pitivi/clip_properties/title.py
+msgid "Top right"
+msgstr "Arriba a la derecha"
+
+#: pitivi/clip_properties/title.py
+msgid "Center left"
+msgstr "Centro a la izquierda"
+
+#: pitivi/clip_properties/title.py
+msgid "Center right"
+msgstr "Centro a la derecha"
+
+#: pitivi/clip_properties/title.py
+msgid "Bottom left"
+msgstr "Abajo a la izquierda"
+
+#: pitivi/clip_properties/title.py
+msgid "Bottom center"
+msgstr "Abajo al centro"
+
+#: pitivi/clip_properties/title.py
+msgid "Bottom right"
+msgstr "Abajo a la derecha"
+
 #: pitivi/render.py
 msgid "The output file could not be linked to the muxer."
 msgstr "No se pudo preparar el archivo de salida. Intentá exportar de nuevo."

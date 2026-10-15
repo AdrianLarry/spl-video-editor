@@ -38,6 +38,7 @@ from pitivi.clip_properties.alignment import AlignmentEditor
 from pitivi.clip_properties.color import ColorProperties
 from pitivi.clip_properties.compositing import CompositingProperties
 from pitivi.clip_properties.markers import ClipMarkersProperties
+from pitivi.clip_properties.summary import ClipSummary
 from pitivi.clip_properties.title import TitleProperties
 from pitivi.configure import get_pixmap_dir
 from pitivi.configure import get_ui_dir
@@ -71,8 +72,9 @@ FOREGROUND_DEFAULT_COLOR = 0xFFFFFFFF  # White
 BACKGROUND_DEFAULT_COLOR = 0x00000000  # Transparent
 OUTLINE_DEFAULT_COLOR = 0xFF000000  # Black
 DEFAULT_FONT_DESCRIPTION = "Sans 36"
-DEFAULT_VALIGNMENT = "absolute"
-DEFAULT_HALIGNMENT = "absolute"
+# Centered, so the position grid of the title properties shows it.
+DEFAULT_VALIGNMENT = "center"
+DEFAULT_HALIGNMENT = "center"
 DEFAULT_DROP_SHADOW = True
 DEFAULT_BLENDING = "over"
 
@@ -88,6 +90,8 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         app (Pitivi): The app.
         effect_expander (EffectProperties): The effects applied to the clip.
             It is packed by the caller when `show_effects` is False.
+        summary (ClipSummary): The summary of the selected clip, to be packed
+            by the caller.
     """
 
     def __init__(self, app, show_effects=True):
@@ -132,6 +136,8 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.compositing_expander = CompositingProperties(app)
         self.compositing_expander.set_vexpand(False)
         vbox.pack_start(self.compositing_expander, False, False, 0)
+
+        self.summary = ClipSummary()
 
         self.effect_expander = EffectProperties(app)
         self.effect_expander.set_vexpand(False)
@@ -230,6 +236,7 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
     def _selection_changed_cb(self, selection):
         ges_clip = selection.get_single_clip()
         self.helper_box.set_visible(not ges_clip)
+        self.summary.set_clip(ges_clip)
 
         video_source = None
         title_source = None
@@ -590,12 +597,12 @@ class EffectProperties(Gtk.Expander, Loggable):
         self.expander_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.effects_listbox = Gtk.ListBox()
 
-        placeholder_label = Gtk.Label(
+        self.placeholder_label = Gtk.Label(
             _("To apply an effect to the clip, drag it from the Effect Library "
               "or use the button below."))
-        placeholder_label.set_line_wrap(True)
-        placeholder_label.show()
-        self.effects_listbox.set_placeholder(placeholder_label)
+        self.placeholder_label.set_line_wrap(True)
+        self.placeholder_label.show()
+        self.effects_listbox.set_placeholder(self.placeholder_label)
 
         # Add effect popover button
         self.effect_popover = EffectsPopover(app)
@@ -956,7 +963,12 @@ class TransformationProperties(Gtk.Expander, Loggable):
         # Used to make sure self.__control_bindings_changed doesn't get called
         # when bindings are changed from this class
         self.__own_bindings_change = False
-        self.add(self.builder.get_object("transform_box"))
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=SPACING)
+        self._framing_box = self.__create_framing_buttons()
+        box.pack_start(self._framing_box, False, False, 0)
+        box.pack_start(self.builder.get_object("transform_box"), False, False, 0)
+        self.add(box)
 
         self._init_buttons()
         self.show_all()
@@ -966,6 +978,72 @@ class TransformationProperties(Gtk.Expander, Loggable):
             "new-project-loaded", self._new_project_loaded_cb)
         self.app.project_manager.connect_after(
             "project-closed", self.__project_closed_cb)
+
+    def __create_framing_buttons(self):
+        """Creates the buttons to fit or fill the frame with the clip."""
+        fit_button = Gtk.Button(label=_("Fit"))
+        fit_button.set_tooltip_text(
+            _("Show the whole image. There can be bars on the sides."))
+        fit_button.connect("clicked", self.__framing_button_clicked_cb, False)
+
+        fill_button = Gtk.Button(label=_("Fill"))
+        fill_button.set_tooltip_text(
+            _("Cover the whole frame. Part of the image can be left out."))
+        fill_button.connect("clicked", self.__framing_button_clicked_cb, True)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        box.get_style_context().add_class("linked")
+        box.props.halign = Gtk.Align.START
+        box.props.margin_start = SPACING
+        box.pack_start(fit_button, False, False, 0)
+        box.pack_start(fill_button, False, False, 0)
+        return box
+
+    def get_framing_position(self, fill):
+        """Returns the position for fitting or filling the frame with the clip.
+
+        Args:
+            fill (bool): Whether the clip should cover the whole frame,
+                otherwise the whole clip is shown.
+        """
+        # The default position fits the clip, keeping its aspect ratio.
+        position = dict(self.source.ui.default_position)
+        asset = self.source.get_asset()
+        stream_info = asset.get_stream_info() \
+            if isinstance(asset, GES.UriSourceAsset) else None
+        if not fill or not stream_info:
+            # Titles and color clips always cover the whole frame.
+            return position
+
+        natural_width = stream_info.get_natural_width()
+        natural_height = stream_info.get_natural_height()
+        # The default position takes into account a rotation of the clip.
+        if (position["width"] > position["height"]) != (natural_width > natural_height):
+            natural_width, natural_height = natural_height, natural_width
+
+        project_width = self._project.videowidth
+        project_height = self._project.videoheight
+        scale = max(project_width / natural_width, project_height / natural_height)
+        width = round(natural_width * scale)
+        height = round(natural_height * scale)
+        return {"posx": (project_width - width) // 2,
+                "posy": (project_height - height) // 2,
+                "width": width,
+                "height": height}
+
+    def __framing_button_clicked_cb(self, unused_button, fill):
+        position = self.get_framing_position(fill)
+        with self.app.action_log.started("Transformation framing",
+                                         finalizing_action=CommitTimelineFinalizingAction(
+                                             self._project.pipeline),
+                                         toplevel=True):
+            if self.__source_uses_keyframes():
+                self.__remove_control_bindings()
+
+            for prop, value in position.items():
+                self.source.set_child_property(prop, value)
+
+        self.__update_keyframes_ui()
 
     def _new_project_loaded_cb(self, unused_project_manager, project):
         if self._project:
@@ -1299,5 +1377,8 @@ class TransformationProperties(Gtk.Expander, Loggable):
             self.source.connect("deep-notify", self.__source_property_changed_cb)
             self.source.connect("control-binding-added", self._control_bindings_changed)
             self.source.connect("control-binding-removed", self._control_bindings_changed)
+            # Titles and color clips always cover the whole frame.
+            self._framing_box.set_visible(
+                isinstance(self.source.get_asset(), GES.UriSourceAsset))
 
         self.set_visible(bool(self.source))

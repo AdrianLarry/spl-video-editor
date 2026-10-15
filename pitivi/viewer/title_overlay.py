@@ -57,6 +57,11 @@ class TitleOverlay(Overlay):
         return numpy.array([w, h])
 
     def __set_source_position(self, position):
+        # The absolute position is used only with the absolute alignment.
+        for prop in ("halignment", "valignment"):
+            res, alignment = self._source.get_child_property(prop)
+            if res and alignment.value_name != "absolute":
+                self._source.set_child_property(prop, "absolute")
         self._source.set_child_property("x-absolute", float(position[0]))
         self._source.set_child_property("y-absolute", float(position[1]))
 

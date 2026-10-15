@@ -132,7 +132,82 @@ class TitleProperties(Gtk.Expander, Loggable):
                                ("right", _("Right"))):
             self.halignment_combo.append(value_id, text)
 
+        # The position grid replaces the alignment combos and spin buttons.
+        # They are kept hidden because they hold the state of the source.
+        for widget in (builder.get_object("label7"), self.halignment_combo.get_parent()):
+            widget.set_no_show_all(True)
+            widget.hide()
+        self._create_position_grid()
+
         self.show_all()
+
+    def _create_position_grid(self):
+        """Creates the buttons for placing the title in nine positions."""
+        names = {("top", "left"): _("Top left"),
+                 ("top", "center"): _("Top center"),
+                 ("top", "right"): _("Top right"),
+                 ("center", "left"): _("Center left"),
+                 ("center", "center"): _("Center"),
+                 ("center", "right"): _("Center right"),
+                 ("bottom", "left"): _("Bottom left"),
+                 ("bottom", "center"): _("Bottom center"),
+                 ("bottom", "right"): _("Bottom right")}
+
+        label = Gtk.Label(label=_("Position"), xalign=0)
+        grid = Gtk.Grid(row_spacing=2, column_spacing=2, halign=Gtk.Align.START)
+        self.position_buttons = {}
+        for row, valignment in enumerate(("top", "center", "bottom")):
+            for column, halignment in enumerate(("left", "center", "right")):
+                button = Gtk.ToggleButton()
+                button.set_size_request(36, 22)
+                button.set_tooltip_text(names[(valignment, halignment)])
+                button.connect("toggled", self._position_button_toggled_cb,
+                               valignment, halignment)
+                grid.attach(button, column, row, 1, 1)
+                self.position_buttons[(valignment, halignment)] = button
+
+        self.editing_box.pack_start(label, False, False, 0)
+        self.editing_box.pack_start(grid, False, False, 0)
+
+    def _update_position_buttons(self):
+        """Shows the position of the source on the position grid."""
+        current = (self.valignment_combo.get_active_id(),
+                   self.halignment_combo.get_active_id())
+        for position, button in self.position_buttons.items():
+            button.set_active(position == current)
+
+    def _position_button_toggled_cb(self, button, valignment, halignment):
+        if self._setting_ui:
+            return
+
+        if not button.get_active():
+            # The current position cannot be unset, only replaced.
+            self._setting_ui = True
+            try:
+                button.set_active(True)
+            finally:
+                self._setting_ui = False
+            return
+
+        with self.app.action_log.started("Title change position",
+                                         finalizing_action=CommitTimelineFinalizingAction(self.app.project_manager.current_project.pipeline),
+                                         toplevel=True):
+            self._setting_props = True
+            try:
+                for name, value in (("valignment", valignment), ("halignment", halignment)):
+                    res = self.source.set_child_property(name, value)
+                    assert res
+            finally:
+                self._setting_props = False
+
+        self._setting_ui = True
+        try:
+            self.valignment_combo.set_active_id(valignment)
+            self.halignment_combo.set_active_id(halignment)
+            self._update_absolute_alignment_widgets_visibility()
+            self._update_position_buttons()
+        finally:
+            self._setting_ui = False
 
     def _set_child_property(self, name, value, mergeable=False):
         with self.app.action_log.started("Title change property %s" % name,
@@ -220,6 +295,7 @@ class TitleProperties(Gtk.Expander, Loggable):
         self.halignment_combo.set_active_id(halignment.value_name)
 
         self._update_absolute_alignment_widgets_visibility()
+        self._update_position_buttons()
 
         res, font = source.get_child_property("font-desc")
         assert res
@@ -356,6 +432,7 @@ class TitleProperties(Gtk.Expander, Loggable):
             if widget.get_active_id() == value:
                 return
             widget.set_active_id(value)
+            self._update_position_buttons()
         elif pspec.name == "font-desc":
             if self.font_button.get_font_desc() == value:
                 return
