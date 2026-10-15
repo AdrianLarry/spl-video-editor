@@ -2651,6 +2651,10 @@ msgstr "Propiedades"
 msgid "Show properties"
 msgstr "Mostrar propiedades"
 
+#: pitivi/render.py
+msgid "The output file could not be linked to the muxer."
+msgstr "No se pudo preparar el archivo de salida. Intentá exportar de nuevo."
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 
