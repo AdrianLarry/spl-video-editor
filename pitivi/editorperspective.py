@@ -47,6 +47,7 @@ from pitivi.utils.misc import with_build_label
 from pitivi.utils.ui import beautify_time_delta
 from pitivi.utils.ui import EDITOR_PERSPECTIVE_CSS
 from pitivi.utils.ui import info_name
+from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import SPACING
 from pitivi.viewer.viewer import ViewerContainer
 
@@ -208,14 +209,12 @@ class EditorPerspective(Perspective, Loggable):
         # Files panel, always visible on the left
         self.main_tabs = BaseTabs(self.app, detachable=False)
         self.medialibrary = MediaLibraryWidget(self.app)
-        self.effectlist = EffectListWidget(self.app)
         self.main_tabs.append_page("Media Library",
                                    self.medialibrary, Gtk.Label(label=_("Media Library")))
-        self.main_tabs.append_page("Effect Library",
-                                   self.effectlist, Gtk.Label(label=_("Effect Library")))
+        # The panel header already says what it contains.
+        self.main_tabs.set_show_tabs(False)
         self.medialibrary.connect('play', self._media_library_play_cb)
         self.medialibrary.show()
-        self.effectlist.show()
         self.main_tabs.show()
 
         self.add_text_button = Gtk.Button.new_from_icon_name(
@@ -231,13 +230,23 @@ class EditorPerspective(Perspective, Loggable):
         self.mainhpaned.pack1(self.files_panel, resize=False, shrink=False)
 
         # Properties panel on the right, which can be collapsed
+        # The pages keep their numbers: 0 for the clip settings, 1 for the
+        # transition, which is shown only when a transition is selected,
+        # and 2 for the effects.
         self.context_tabs = BaseTabs(self.app, detachable=False)
-        self.clipconfig = ClipProperties(self.app)
+        # Created first, because the effect expander of the clip properties
+        # uses it to list the effects.
+        self.effectlist = EffectListWidget(self.app)
+        self.clipconfig = ClipProperties(self.app, show_effects=False)
         self.trans_list = TransitionsListWidget(self.app)
+        self.effects_page = self.__create_effects_page()
         self.context_tabs.append_page("Clip",
-                                      self.clipconfig, Gtk.Label(label=_("Clip")))
+                                      self.clipconfig, Gtk.Label(label=_("Settings")))
         self.context_tabs.append_page("Transition",
                                       self.trans_list, Gtk.Label(label=_("Transition")))
+        self.context_tabs.append_page("Effects",
+                                      self.effects_page, Gtk.Label(label=_("Effects")))
+        self.trans_list.hide()
         self.context_tabs.set_current_page(0)
         self.context_tabs.show()
 
@@ -332,6 +341,30 @@ class EditorPerspective(Perspective, Loggable):
         header.show_all()
         panel.show()
         return panel
+
+    def __create_effects_page(self):
+        """Creates the page with the effects of the clip and the effect catalog."""
+        effect_expander = self.clipconfig.effect_expander
+        effect_expander.set_label(_("Applied effects"))
+        effect_expander.set_expanded(True)
+
+        catalog_label = Gtk.Label()
+        catalog_label.set_markup("<b>%s</b>" % GLib.markup_escape_text(_("Effect catalog")))
+        catalog_label.set_xalign(0)
+        catalog_label.get_style_context().add_class("spl-section-title")
+        catalog_label.props.margin_start = SPACING
+        catalog_label.props.margin_top = SPACING
+        separator = Gtk.Separator()
+
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
+        page.pack_start(effect_expander, False, False, 0)
+        page.pack_start(separator, False, False, 0)
+        page.pack_start(catalog_label, False, False, 0)
+        page.pack_start(self.effectlist, True, True, 0)
+        # The visibility of the effect expander depends on the selection.
+        for widget in (separator, catalog_label, self.effectlist, page):
+            widget.show()
+        return page
 
     def __create_properties_rail(self):
         """Creates the thin bar shown instead of the collapsed properties panel."""
@@ -484,18 +517,16 @@ class EditorPerspective(Perspective, Loggable):
         Args:
             ges_clip (GES.SourceClip): The clip which has been focused.
         """
-        if isinstance(ges_clip, GES.TitleClip):
-            page = 0
-        elif isinstance(ges_clip, GES.SourceClip):
-            page = 0
-        elif isinstance(ges_clip, GES.TransitionClip):
-            page = 1
-        elif isinstance(ges_clip, GES.TestClip):
-            page = 0
+        if isinstance(ges_clip, GES.TransitionClip):
+            self.trans_list.show()
+            self.context_tabs.set_current_page(1)
+        elif isinstance(ges_clip, (GES.TitleClip, GES.SourceClip, GES.TestClip)):
+            # Stay on the effects page if it's the current one.
+            if self.context_tabs.get_current_page() == 1:
+                self.context_tabs.set_current_page(0)
+            self.trans_list.hide()
         else:
             self.warning("Unknown clip type: %s", ges_clip)
-            return
-        self.context_tabs.set_current_page(page)
 
     def focus_timeline(self):
         layers_representation = self.timeline_ui.timeline.layout

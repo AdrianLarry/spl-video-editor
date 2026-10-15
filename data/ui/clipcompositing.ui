@@ -84,8 +84,9 @@
         <property name="value-pos">left</property>
       </object>
       <packing>
-        <property name="left-attach">3</property>
-        <property name="top-attach">0</property>
+        <property name="left-attach">0</property>
+        <property name="top-attach">1</property>
+        <property name="width">2</property>
       </packing>
     </child>
     <child>
@@ -99,7 +100,7 @@
       </object>
       <packing>
         <property name="left-attach">0</property>
-        <property name="top-attach">1</property>
+        <property name="top-attach">2</property>
       </packing>
     </child>
     <child>
@@ -112,7 +113,7 @@
       </object>
       <packing>
         <property name="left-attach">1</property>
-        <property name="top-attach">1</property>
+        <property name="top-attach">2</property>
       </packing>
     </child>
     <child>
@@ -123,7 +124,7 @@
       </object>
       <packing>
         <property name="left-attach">2</property>
-        <property name="top-attach">1</property>
+        <property name="top-attach">2</property>
       </packing>
     </child>
     <child>
@@ -137,8 +138,9 @@
         <property name="draw-value">False</property>
       </object>
       <packing>
-        <property name="left-attach">3</property>
-        <property name="top-attach">1</property>
+        <property name="left-attach">0</property>
+        <property name="top-attach">3</property>
+        <property name="width">2</property>
       </packing>
     </child>
     <child>
@@ -153,8 +155,8 @@
         <signal name="clicked" handler="_reset_fade_in_clicked_cb" swapped="no"/>
       </object>
       <packing>
-        <property name="left-attach">4</property>
-        <property name="top-attach">0</property>
+        <property name="left-attach">2</property>
+        <property name="top-attach">1</property>
       </packing>
     </child>
     <child>
@@ -169,8 +171,8 @@
         <signal name="clicked" handler="_reset_fade_out_clicked_cb" swapped="no"/>
       </object>
       <packing>
-        <property name="left-attach">4</property>
-        <property name="top-attach">1</property>
+        <property name="left-attach">2</property>
+        <property name="top-attach">3</property>
       </packing>
     </child>
     <child>
@@ -182,7 +184,7 @@
       </object>
       <packing>
         <property name="left-attach">0</property>
-        <property name="top-attach">2</property>
+        <property name="top-attach">4</property>
       </packing>
     </child>
     <child>
@@ -194,7 +196,7 @@
       </object>
       <packing>
         <property name="left-attach">1</property>
-        <property name="top-attach">2</property>
+        <property name="top-attach">4</property>
         <property name="width">3</property>
       </packing>
     </child>

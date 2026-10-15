@@ -48,6 +48,27 @@ class TestEditorPerspective(common.TestCase):
             self.assertEqual(editorperspective.context_tabs.get_current_page(),
                              expected_tab)
 
+    def test_transition_tab_visibility(self):
+        """Checks the transition tab is shown only for transitions."""
+        app = common.create_pitivi_mock()
+        editorperspective = EditorPerspective(app)
+        editorperspective.setup_ui()
+        context_tabs = editorperspective.context_tabs
+        self.assertFalse(editorperspective.trans_list.get_visible())
+
+        editorperspective.switch_context_tab(GES.TransitionClip())
+        self.assertTrue(editorperspective.trans_list.get_visible())
+        self.assertEqual(context_tabs.get_current_page(), 1)
+
+        editorperspective.switch_context_tab(GES.SourceClip())
+        self.assertFalse(editorperspective.trans_list.get_visible())
+        self.assertEqual(context_tabs.get_current_page(), 0)
+
+        # Selecting another clip keeps the effects page.
+        context_tabs.set_current_page(2)
+        editorperspective.switch_context_tab(GES.TitleClip())
+        self.assertEqual(context_tabs.get_current_page(), 2)
+
     def __loading_failure(self, has_proxy):
         mainloop = common.create_main_loop()
 

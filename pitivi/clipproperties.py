@@ -86,9 +86,11 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
 
     Attributes:
         app (Pitivi): The app.
+        effect_expander (EffectProperties): The effects applied to the clip.
+            It is packed by the caller when `show_effects` is False.
     """
 
-    def __init__(self, app):
+    def __init__(self, app, show_effects=True):
         Gtk.ScrolledWindow.__init__(self)
         Loggable.__init__(self)
         self.app = app
@@ -133,7 +135,8 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
 
         self.effect_expander = EffectProperties(app)
         self.effect_expander.set_vexpand(False)
-        vbox.pack_start(self.effect_expander, False, False, 0)
+        if show_effects:
+            vbox.pack_start(self.effect_expander, False, False, 0)
 
         self.marker_expander = ClipMarkersProperties(app)
         self.marker_expander.set_vexpand(False)
