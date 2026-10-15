@@ -334,7 +334,7 @@ class TestRender(BaseTestMediaLibrary):
             self.select_render_preset(dialog, profile_name)
         self.render(dialog)
 
-    def render(self, dialog):
+    def render(self, dialog, timeout=Gst.CLOCK_TIME_NONE):
         """Renders pipeline from @dialog."""
         from pitivi.render import RenderingProgressDialog
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -345,7 +345,7 @@ class TestRender(BaseTestMediaLibrary):
                     dialog._render_button_clicked_cb(None)
 
             message = dialog._pipeline.get_bus().timed_pop_filtered(
-                Gst.CLOCK_TIME_NONE,
+                timeout,
                 Gst.MessageType.EOS | Gst.MessageType.ERROR)
             self.assertIsNotNone(message)
             Gst.debug_bin_to_dot_file_with_ts(
@@ -543,6 +543,57 @@ class TestRender(BaseTestMediaLibrary):
     def test_rendering_with_default_profile(self):
         """Tests rendering a simple timeline with the default profile."""
         self.check_simple_rendering_profile()
+
+    def test_rendering_twice(self):
+        """Tests rendering again with the same pipeline after a first render."""
+        project = self.create_simple_project()
+        dialog = self.create_rendering_dialog(project)
+        # Stop the pipeline even if a render fails, not to affect other tests.
+        self.addCleanup(dialog._pipeline.set_state, Gst.State.NULL)
+        self.render(dialog, timeout=30 * Gst.SECOND)
+        # Let the dialog handle the end of the first render, as in the app.
+        common.create_main_loop().run(until_empty=True)
+        self.assertFalse(project.pipeline.rendering())
+
+        self.render(dialog, timeout=30 * Gst.SECOND)
+
+    def test_ambiguous_encodebin_src_pads(self):
+        """Checks the file sink is not relinked if the right pad is unclear."""
+        project = self.create_simple_project()
+        dialog = self.create_rendering_dialog(project)
+
+        def create_pad(target, linked):
+            pad = mock.Mock(spec=Gst.GhostPad)
+            pad.get_target.return_value = target
+            pad.is_linked.return_value = linked
+            pad.get_name.return_value = "src"
+            return pad
+
+        stale_pad1 = create_pad(None, True)
+        stale_pad2 = create_pad(None, True)
+        muxer_pad = create_pad(mock.Mock(), False)
+        encodebin = mock.Mock(srcpads=[stale_pad1, stale_pad2, muxer_pad])
+
+        # pylint: disable=protected-access
+        self.assertFalse(dialog._RenderDialog__link_sink_to_muxer_src_pad(encodebin))
+        stale_pad1.unlink.assert_not_called()
+        stale_pad2.unlink.assert_not_called()
+        muxer_pad.link.assert_not_called()
+
+    def test_render_not_started_when_start_fails(self):
+        """Checks the render is aborted when the pipeline cannot be set up."""
+        project = self.create_simple_project()
+        dialog = self.create_rendering_dialog(project)
+
+        from pitivi.render import RenderingProgressDialog
+        with mock.patch.object(dialog, "start_action", return_value=False), \
+                mock.patch.object(dialog, "_show_render_error_dialog") as show_error_mock, \
+                mock.patch.object(RenderingProgressDialog, "__new__"):
+            dialog._render_button_clicked_cb(None)
+
+        show_error_mock.assert_called_once()
+        self.assertFalse(project.pipeline.rendering())
+        self.assertIsNone(dialog.progress)
 
     @skipUnless(*encoding_target_exists("youtube"))
     @prefer_x264enc

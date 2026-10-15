@@ -1335,11 +1335,16 @@ class RenderDialog(Loggable):
         dialog.destroy()
 
     def start_action(self):
-        """Starts the render process."""
+        """Starts the render process.
+
+        Returns:
+            bool: Whether the render process started.
+        """
         self._pipeline.set_state(Gst.State.NULL)
         self._pipeline.set_mode(GES.PipelineFlags.RENDER)
         encodebin = self._pipeline.get_by_name("internal-encodebin")
-        self.__link_sink_to_muxer_src_pad(encodebin)
+        if not self.__link_sink_to_muxer_src_pad(encodebin):
+            return False
         self._gst_signal_handlers_ids[encodebin] = encodebin.connect(
             "element-added", self.__element_added_cb)
         for element in encodebin.iterate_recurse():
@@ -1347,6 +1352,7 @@ class RenderDialog(Loggable):
         self._pipeline.set_state(Gst.State.PLAYING)
         self._is_rendering = True
         self._time_started = time.time()
+        return True
 
     def __link_sink_to_muxer_src_pad(self, encodebin):
         """Makes sure the file sink receives the output of the current muxer.
@@ -1355,16 +1361,37 @@ class RenderDialog(Loggable):
         new muxer but keeps the old one, without a target, and the file sink
         gets linked to the old one, so nothing would reach the file.
         The old pad is left in place because the encodebin still tracks it.
+
+        Returns:
+            bool: Whether the file sink is linked to the current muxer.
         """
         pads = [pad for pad in encodebin.srcpads if isinstance(pad, Gst.GhostPad)]
         stale_pads = [pad for pad in pads if not pad.get_target() and pad.is_linked()]
-        valid_pads = [pad for pad in pads if pad.get_target() and not pad.is_linked()]
-        for stale_pad, valid_pad in zip(stale_pads, valid_pads):
-            self.debug("Linking the file sink to %s instead of the stale %s",
-                       valid_pad.get_name(), stale_pad.get_name())
-            peer = stale_pad.get_peer()
-            stale_pad.unlink(peer)
-            valid_pad.link(peer)
+        if not stale_pads:
+            return True
+
+        muxer_pads = [pad for pad in pads if pad.get_target() and not pad.is_linked()]
+        if len(stale_pads) != 1 or len(muxer_pads) != 1:
+            self.error("Cannot tell which encodebin src pad to link the file sink to: %s",
+                       [(pad.get_name(), bool(pad.get_target()), pad.is_linked())
+                        for pad in pads])
+            return False
+
+        stale_pad = stale_pads[0]
+        muxer_pad = muxer_pads[0]
+        sink_pad = stale_pad.get_peer()
+        if not stale_pad.unlink(sink_pad):
+            self.error("Failed to unlink the file sink from %s", stale_pad.get_name())
+            return False
+
+        res = muxer_pad.link(sink_pad)
+        if res != Gst.PadLinkReturn.OK:
+            self.error("Failed to link %s to the file sink: %s", muxer_pad.get_name(), res)
+            return False
+
+        self.debug("Linked the file sink to %s instead of the stale %s",
+                   muxer_pad.get_name(), stale_pad.get_name())
+        return True
 
     def _cancel_render(self, *unused_args):
         self.debug("Aborting render")
@@ -1544,7 +1571,14 @@ class RenderDialog(Loggable):
         self.project.set_rendering(True)
         self._pipeline.set_render_settings(
             self.outfile, self.project.container_profile)
-        self.start_action()
+        if not self.start_action():
+            # Do not let the pipeline run with the file sink not linked.
+            self._shut_down()
+            self._destroy_progress_window()
+            self._show_render_error_dialog(
+                _("The output file could not be linked to the muxer."), None)
+            return
+
         self.progress.window.show()
         self.progress.connect("cancel", self._cancel_render)
         self.progress.connect("pause", self._pause_render)
