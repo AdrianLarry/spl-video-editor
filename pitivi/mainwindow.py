@@ -242,9 +242,7 @@ class MainWindow(Gtk.ApplicationWindow, Loggable):
         self.app.settings.mainWindowHeight = size.height
 
     def __delete_cb(self, unused_widget, unused_event):
-        self.app.settings.mainWindowHPanePosition = self.editor.secondhpaned.get_position()
-        self.app.settings.mainWindowMainHPanePosition = self.editor.mainhpaned.get_position()
-        self.app.settings.mainWindowVPanePosition = self.editor.toplevel_widget.get_position()
+        self.editor.save_layout()
 
         if not self.app.shutdown():
             return True

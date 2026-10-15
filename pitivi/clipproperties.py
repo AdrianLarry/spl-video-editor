@@ -93,7 +93,8 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         Loggable.__init__(self)
         self.app = app
 
-        self.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        # Scroll horizontally too, so the properties fit in a narrow panel.
+        self.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
 
         viewport = Gtk.Viewport()
         viewport.set_shadow_type(Gtk.ShadowType.ETCHED_IN)

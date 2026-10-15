@@ -70,6 +70,7 @@ class ViewerContainer(Gtk.Box, Loggable):
 
     Attributes:
         pipeline (SimplePipeline): The displayed pipeline.
+        undockable (bool): Whether the viewer can be detached to its own window.
     """
 
     __gtype_name__ = 'ViewerContainer'
@@ -80,10 +81,11 @@ class ViewerContainer(Gtk.Box, Loggable):
 
     INHIBIT_REASON = _("Currently playing")
 
-    def __init__(self, app):
+    def __init__(self, app, undockable=True):
         Gtk.Box.__init__(self)
         self.app = app
         self.settings = app.settings
+        self.undockable = undockable
 
         Loggable.__init__(self)
         self.log("New ViewerContainer")
@@ -99,7 +101,9 @@ class ViewerContainer(Gtk.Box, Loggable):
         self._create_ui()
         self._create_actions()
 
-        if not self.settings.viewerDocked:
+        if not self.undockable:
+            self.settings.viewerDocked = True
+        elif not self.settings.viewerDocked:
             self.undock()
 
         self.__cursor = None
@@ -361,7 +365,8 @@ class ViewerContainer(Gtk.Box, Loggable):
         self.undock_button.connect("clicked", self.undock_cb)
         self.undock_button.set_tooltip_text(
             _("Detach the viewer\nYou can re-attach it by closing the newly created window."))
-        bbox.pack_start(self.undock_button, False, False, 0)
+        if self.undockable:
+            bbox.pack_start(self.undock_button, False, False, 0)
 
         self.show_all()
 
@@ -521,6 +526,10 @@ class ViewerContainer(Gtk.Box, Loggable):
     # Public methods for controlling playback
 
     def undock(self):
+        if not self.undockable:
+            self.warning("The viewer cannot be undocked")
+            return
+
         if not self.docked:
             self.warning("The viewer is already undocked")
             return

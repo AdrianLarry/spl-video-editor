@@ -22,6 +22,7 @@ from urllib.parse import unquote
 from gi.repository import Gdk
 from gi.repository import GES
 from gi.repository import Gio
+from gi.repository import GLib
 from gi.repository import Gtk
 
 from pitivi.clipproperties import ClipProperties
@@ -45,22 +46,27 @@ from pitivi.utils.misc import path_from_uri
 from pitivi.utils.ui import beautify_time_delta
 from pitivi.utils.ui import EDITOR_PERSPECTIVE_CSS
 from pitivi.utils.ui import info_name
+from pitivi.utils.ui import SPACING
 from pitivi.viewer.viewer import ViewerContainer
 
 
 GlobalSettings.add_config_section("main-window")
-GlobalSettings.add_config_option('mainWindowHPanePosition',
+GlobalSettings.add_config_option('timelinePanelHeight',
                                  section="main-window",
-                                 key="hpane-position",
+                                 key="timeline-panel-height",
                                  type_=int)
-GlobalSettings.add_config_option('mainWindowMainHPanePosition',
+GlobalSettings.add_config_option('filesPanelWidth',
                                  section="main-window",
-                                 key="main-hpane-position",
+                                 key="files-panel-width",
                                  type_=int)
-GlobalSettings.add_config_option('mainWindowVPanePosition',
+GlobalSettings.add_config_option('propertiesPanelWidth',
                                  section="main-window",
-                                 key="vpane-position",
+                                 key="properties-panel-width",
                                  type_=int)
+GlobalSettings.add_config_option('propertiesPanelCollapsed',
+                                 section="main-window",
+                                 key="properties-panel-collapsed",
+                                 default=False)
 GlobalSettings.add_config_option('lastProjectFolder',
                                  section="main-window",
                                  key="last-folder",
@@ -173,7 +179,7 @@ class EditorPerspective(Perspective, Loggable):
 
         The rough hierarchy is:
         vpaned:
-        - mainhpaned(secondhpaned(main_tabs, context_tabs), viewer)
+        - mainhpaned(files_panel, center_box(propshpaned(viewer, props_panel), props_rail))
         - timeline_ui
 
         The full hierarchy can be admired by starting the GTK+ Inspector
@@ -185,20 +191,21 @@ class EditorPerspective(Perspective, Loggable):
 
         # Set up our main containers, in the order documented above
 
-        # Separates the tabs+viewer from the timeline
+        # Separates the panels+viewer from the timeline
         self.toplevel_widget = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
-        # Separates the tabs from the viewer
+        # Separates the files panel from the viewer and the properties
         self.mainhpaned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        # Separates the two sets of tabs
-        self.secondhpaned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        self.toplevel_widget.pack1(self.mainhpaned, resize=False, shrink=False)
-        self.mainhpaned.pack1(self.secondhpaned, resize=True, shrink=False)
+        # Separates the viewer from the properties panel
+        self.propshpaned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        for paned in (self.toplevel_widget, self.mainhpaned, self.propshpaned):
+            paned.get_style_context().add_class("spl-paned")
+        self.toplevel_widget.pack1(self.mainhpaned, resize=True, shrink=False)
         self.toplevel_widget.show()
-        self.secondhpaned.show()
         self.mainhpaned.show()
+        self.propshpaned.show()
 
-        # First set of tabs
-        self.main_tabs = BaseTabs(self.app)
+        # Files panel, always visible on the left
+        self.main_tabs = BaseTabs(self.app, detachable=False)
         self.medialibrary = MediaLibraryWidget(self.app)
         self.effectlist = EffectListWidget(self.app)
         self.main_tabs.append_page("Media Library",
@@ -208,30 +215,58 @@ class EditorPerspective(Perspective, Loggable):
         self.medialibrary.connect('play', self._media_library_play_cb)
         self.medialibrary.show()
         self.effectlist.show()
+        self.main_tabs.show()
 
-        # Second set of tabs
-        self.context_tabs = BaseTabs(self.app)
+        self.add_text_button = Gtk.Button.new_from_icon_name(
+            "insert-text-symbolic", Gtk.IconSize.SMALL_TOOLBAR)
+        self.add_text_button.set_always_show_image(True)
+        self.add_text_button.set_label(_("Add text"))
+        self.add_text_button.set_tooltip_text(
+            _("Create a title clip and edit it in Properties"))
+        self.add_text_button.set_sensitive(False)
+        self.add_text_button.connect("clicked", self.__add_text_cb)
+        self.files_panel = self.__create_side_panel(
+            _("Files"), "view-grid-symbolic", self.add_text_button, self.main_tabs)
+        self.mainhpaned.pack1(self.files_panel, resize=False, shrink=False)
+
+        # Properties panel on the right, which can be collapsed
+        self.context_tabs = BaseTabs(self.app, detachable=False)
         self.clipconfig = ClipProperties(self.app)
         self.trans_list = TransitionsListWidget(self.app)
         self.context_tabs.append_page("Clip",
                                       self.clipconfig, Gtk.Label(label=_("Clip")))
         self.context_tabs.append_page("Transition",
                                       self.trans_list, Gtk.Label(label=_("Transition")))
-        # Show by default the Title tab, as the Clip and Transition tabs
-        # are useful only when a clip or transition is selected, but
-        # the Title tab allows adding titles.
-        self.context_tabs.set_current_page(2)
-
-        self.secondhpaned.pack1(self.main_tabs, resize=False, shrink=False)
-        self.secondhpaned.pack2(self.context_tabs, resize=False, shrink=False)
-        self.main_tabs.show()
+        self.context_tabs.set_current_page(0)
         self.context_tabs.show()
 
-        # Viewer
-        self.viewer = ViewerContainer(self.app)
-        self.mainhpaned.pack2(self.viewer, resize=True, shrink=False)
+        collapse_button = Gtk.Button.new_from_icon_name(
+            "go-next-symbolic", Gtk.IconSize.SMALL_TOOLBAR)
+        collapse_button.set_always_show_image(True)
+        collapse_button.set_image_position(Gtk.PositionType.RIGHT)
+        collapse_button.set_label(_("Collapse"))
+        collapse_button.set_relief(Gtk.ReliefStyle.NONE)
+        collapse_button.set_tooltip_text(
+            _("Hide the properties panel to make the viewer bigger"))
+        collapse_button.connect("clicked", self.__collapse_properties_cb)
+        self.props_panel = self.__create_side_panel(
+            _("Properties"), "document-properties-symbolic", collapse_button,
+            self.context_tabs)
+        self.props_rail = self.__create_properties_rail()
 
-        # Now, the lower part: the timeline
+        # Viewer, docked in the center
+        self.viewer = ViewerContainer(self.app, undockable=False)
+        self.viewer.get_style_context().add_class("spl-viewer")
+        self.propshpaned.pack1(self.viewer, resize=True, shrink=False)
+        self.propshpaned.pack2(self.props_panel, resize=False, shrink=False)
+
+        center_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        center_box.pack_start(self.propshpaned, True, True, 0)
+        center_box.pack_start(self.props_rail, False, False, 0)
+        center_box.show()
+        self.mainhpaned.pack2(center_box, resize=True, shrink=False)
+
+        # Now, the lower part: the timeline, using the full width
         self.timelinepaned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
 
         self.timeline_ui = TimelineContainer(self.app, self.editor_state)
@@ -241,7 +276,7 @@ class EditorPerspective(Perspective, Loggable):
         self.timelinepaned.pack2(self.timeline_ui, resize=False, shrink=False)
         self.timelinepaned.show_all()
 
-        self.toplevel_widget.pack2(self.timelinepaned, resize=True, shrink=False)
+        self.toplevel_widget.pack2(self.timelinepaned, resize=False, shrink=False)
 
         self.intro = InteractiveIntro(self.app)
         self.headerbar.pack_end(self.intro.intro_button)
@@ -255,35 +290,192 @@ class EditorPerspective(Perspective, Loggable):
         self.menu_button.get_accessible().set_name("main menu button")
         self.toplevel_widget.get_accessible().set_name("contents")
         self.mainhpaned.get_accessible().set_name("upper half")
-        self.secondhpaned.get_accessible().set_name("tabs")
+        self.files_panel.get_accessible().set_name("files panel")
+        self.props_panel.get_accessible().set_name("properties panel")
         self.main_tabs.get_accessible().set_name("primary tabs")
         self.context_tabs.get_accessible().set_name("secondary tabs")
         self.viewer.get_accessible().set_name("viewer")
         self.timeline_ui.get_accessible().set_name("timeline area")
 
-        # Restore settings for position and visibility.
-        if self.settings.mainWindowHPanePosition is None:
-            self._set_default_positions()
-        self.secondhpaned.set_position(self.settings.mainWindowHPanePosition)
-        self.mainhpaned.set_position(self.settings.mainWindowMainHPanePosition)
-        self.toplevel_widget.set_position(self.settings.mainWindowVPanePosition)
+        # Restore the collapsed state. The sizes are applied once the window
+        # has its real size, and again whenever it changes, so that the
+        # viewer is the one which grows or shrinks.
+        self.props_panel.set_visible(not self.settings.propertiesPanelCollapsed)
+        self.props_rail.set_visible(self.settings.propertiesPanelCollapsed)
+        self.__panel_sizes = None
+        self.__allocated_size = None
+        self.__applying_sizes = False
+        self.toplevel_widget.connect("size-allocate", self.__toplevel_size_allocate_cb)
+        self.__propshpaned_width = None
+        self.propshpaned.connect("size-allocate", self.__propshpaned_size_allocate_cb)
+        for paned in (self.toplevel_widget, self.mainhpaned, self.propshpaned):
+            paned.connect("notify::position", self.__paned_position_changed_cb)
 
-    def _set_default_positions(self):
-        window_width = self.app.gui.get_size()[0]
-        if self.settings.mainWindowHPanePosition is None:
-            self.settings.mainWindowHPanePosition = window_width / 3
-        if self.settings.mainWindowMainHPanePosition is None:
-            self.settings.mainWindowMainHPanePosition = 2 * window_width / 3
-        if self.settings.mainWindowVPanePosition is None:
-            screen_width = float(self.app.gui.get_screen().get_width())
-            screen_height = float(self.app.gui.get_screen().get_height())
-            req = self.toplevel_widget.get_preferred_size()[0]
-            if screen_width / screen_height < 0.75:
-                # Tall screen, give some more vertical space the the tabs.
-                value = req.height / 3
-            else:
-                value = req.height / 2
-            self.settings.mainWindowVPanePosition = value
+    def __create_side_panel(self, title, icon_name, action_widget, content):
+        """Creates an integrated panel with a header and the specified content."""
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=SPACING)
+        header.get_style_context().add_class("spl-panel-header")
+        image = Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.MENU)
+        header.pack_start(image, False, False, 0)
+        label = Gtk.Label(label=title)
+        label.set_xalign(0)
+        label.get_style_context().add_class("spl-panel-title")
+        header.pack_start(label, True, True, 0)
+        header.pack_end(action_widget, False, False, 0)
+
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        panel.get_style_context().add_class("spl-panel")
+        panel.pack_start(header, False, False, 0)
+        panel.pack_start(content, True, True, 0)
+        # The content manages the visibility of its own children.
+        header.show_all()
+        panel.show()
+        return panel
+
+    def __create_properties_rail(self):
+        """Creates the thin bar shown instead of the collapsed properties panel."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=SPACING)
+        image = Gtk.Image.new_from_icon_name("go-previous-symbolic", Gtk.IconSize.MENU)
+        box.pack_start(image, False, False, 0)
+        label = Gtk.Label(label=_("Properties"))
+        label.set_angle(90)
+        box.pack_start(label, False, False, 0)
+
+        rail = Gtk.Button()
+        rail.add(box)
+        rail.set_relief(Gtk.ReliefStyle.NONE)
+        rail.set_valign(Gtk.Align.FILL)
+        rail.get_style_context().add_class("spl-rail")
+        rail.set_tooltip_text(_("Show properties"))
+        rail.connect("clicked", self.__expand_properties_cb)
+        rail.show_all()
+        rail.set_no_show_all(True)
+        rail.get_accessible().set_name("show properties")
+        return rail
+
+    def __toplevel_size_allocate_cb(self, widget, allocation):
+        size = (allocation.width, allocation.height)
+        if size == self.__allocated_size or allocation.width < 400:
+            return
+        self.__allocated_size = size
+        # Changing positions during an allocation is not reliable.
+        self.__applying_sizes = True
+        GLib.idle_add(self.__apply_panel_sizes)
+
+    def __apply_panel_sizes(self):
+        width = self.toplevel_widget.get_allocated_width()
+        height = self.toplevel_widget.get_allocated_height()
+        if self.__panel_sizes is None:
+            # Sizes chosen by the user. The missing ones follow the window
+            # size, approximating the approved mockup.
+            self.__panel_sizes = {
+                "files": self.settings.filesPanelWidth,
+                "properties": self.settings.propertiesPanelWidth,
+                "timeline": self.settings.timelinePanelHeight,
+            }
+        sizes = self.__panel_sizes
+        files_width = sizes["files"] or int(min(max(width * 0.22, 290), 360))
+        files_width = max(files_width, self.files_panel.get_preferred_width()[0])
+        timeline_height = sizes["timeline"] or int(min(max(height * 0.38, 260), 420))
+
+        self.__applying_sizes = True
+        self.toplevel_widget.set_position(
+            height - self.__handle_size(self.toplevel_widget) - timeline_height)
+        self.mainhpaned.set_position(files_width)
+        self.__applying_sizes = False
+        # The properties width is applied once the viewer and the properties
+        # have their new size, see __propshpaned_size_allocate_cb.
+        self.__apply_properties_width()
+        return False
+
+    def __propshpaned_size_allocate_cb(self, widget, allocation):
+        if allocation.width == self.__propshpaned_width:
+            return
+        self.__propshpaned_width = allocation.width
+        GLib.idle_add(self.__apply_properties_width)
+
+    def __apply_properties_width(self):
+        if not self.props_panel.get_visible() or self.__panel_sizes is None:
+            return False
+        width = self.propshpaned.get_allocated_width()
+        props_width = self.__panel_sizes["properties"] or int(
+            min(max(self.toplevel_widget.get_allocated_width() * 0.24, 320), 380))
+        self.__applying_sizes = True
+        self.propshpaned.set_position(width - self.__handle_size(self.propshpaned) - props_width)
+        self.__applying_sizes = False
+        return False
+
+    @staticmethod
+    def __handle_size(paned):
+        """Returns the actual size of the handle of the specified paned."""
+        child1 = paned.get_child1()
+        child2 = paned.get_child2()
+        if paned.get_orientation() == Gtk.Orientation.HORIZONTAL:
+            size = paned.get_allocated_width() - child1.get_allocated_width() - child2.get_allocated_width()
+        else:
+            size = paned.get_allocated_height() - child1.get_allocated_height() - child2.get_allocated_height()
+        if not child1.get_visible() or not child2.get_visible() or size <= 0:
+            # Not measurable now.
+            return paned.style_get_property("handle-size")
+        return size
+
+    def __paned_position_changed_cb(self, paned, unused_pspec):
+        """Remembers the sizes chosen by the user by dragging the handles."""
+        if self.__applying_sizes or self.__panel_sizes is None:
+            return
+        # GTK also moves the handles when allocating the panels, which
+        # should not be taken as the user's choice.
+        event = Gtk.get_current_event()
+        if not event or event.type != Gdk.EventType.MOTION_NOTIFY:
+            return
+        handle = self.__handle_size(paned)
+        if paned is self.mainhpaned:
+            self.__panel_sizes["files"] = paned.get_position()
+        elif paned is self.propshpaned:
+            if self.props_panel.get_visible():
+                self.__panel_sizes["properties"] = (
+                    paned.get_allocated_width() - paned.get_position() - handle)
+        else:
+            self.__panel_sizes["timeline"] = (
+                paned.get_allocated_height() - paned.get_position() - handle)
+
+    def save_layout(self):
+        """Saves the sizes of the panels in the settings."""
+        if self.__panel_sizes:
+            # Only the sizes chosen by the user, the others follow the window.
+            self.settings.filesPanelWidth = self.__panel_sizes["files"]
+            self.settings.propertiesPanelWidth = self.__panel_sizes["properties"]
+            self.settings.timelinePanelHeight = self.__panel_sizes["timeline"]
+        self.settings.propertiesPanelCollapsed = not self.props_panel.get_visible()
+
+    def collapse_properties(self):
+        """Hides the properties panel, leaving a thin bar to show it again."""
+        if not self.props_panel.get_visible():
+            return
+        self.settings.propertiesPanelCollapsed = True
+        self.props_panel.hide()
+        self.props_rail.show()
+
+    def expand_properties(self):
+        """Shows the properties panel with its previous width."""
+        self.settings.propertiesPanelCollapsed = False
+        if self.props_panel.get_visible():
+            return
+        self.props_rail.hide()
+        self.props_panel.show()
+        self.__applying_sizes = True
+        GLib.idle_add(self.__apply_panel_sizes)
+
+    def __collapse_properties_cb(self, unused_button):
+        self.collapse_properties()
+
+    def __expand_properties_cb(self, unused_button):
+        self.expand_properties()
+
+    def __add_text_cb(self, unused_button):
+        self.expand_properties()
+        self.context_tabs.set_current_page(0)
+        self.clipconfig.create_title_clip_cb(None)
 
     def switch_context_tab(self, ges_clip):
         """Activates the appropriate tab on the second set of tabs.
@@ -490,6 +682,7 @@ class EditorPerspective(Perspective, Loggable):
 
         self.viewer.set_project(project)
         self.clipconfig.set_project(project, self.timeline_ui)
+        self.add_text_button.set_sensitive(True)
         self.timeline_ui.set_project(project)
 
         # When creating a blank project there's no project URI yet.
@@ -601,6 +794,7 @@ class EditorPerspective(Perspective, Loggable):
             project.pipeline.deactivate_position_listener()
 
         self.info("Project closed")
+        self.add_text_button.set_sensitive(False)
         if project.loaded:
             self._disconnect_from_project(project)
 

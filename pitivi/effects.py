@@ -43,6 +43,7 @@ from gi.repository import GLib
 from gi.repository import GObject
 from gi.repository import Gst
 from gi.repository import Gtk
+from gi.repository import Pango
 
 from pitivi.configure import get_pixmap_dir
 from pitivi.configure import get_ui_dir
@@ -484,6 +485,7 @@ class EffectListWidget(Gtk.Box, Loggable):
         effect_box.effect_name = effect_name
         effect_box.set_tooltip_text(effect_info.description)
         label = Gtk.Label(effect_info.human_name, xalign=0)
+        label.set_ellipsize(Pango.EllipsizeMode.END)
 
         if not only_text:
             # Show effect thumbnail

@@ -31,11 +31,13 @@ class BaseTabs(Gtk.Notebook, Loggable):
 
     Attributes:
         app (Pitivi): The app.
+        detachable (bool): Whether the tabs can be detached to new windows.
     """
 
-    def __init__(self, app):
+    def __init__(self, app, detachable=True):
         Gtk.Notebook.__init__(self)
         Loggable.__init__(self)
+        self.detachable = detachable
         self.set_border_width(SPACING)
         self.set_scrollable(True)
         self.settings = app.settings
@@ -50,7 +52,9 @@ class BaseTabs(Gtk.Notebook, Loggable):
 
         self._create_default_config(child_name)
         docked = getattr(self.settings, child_name + "docked")
-        if docked is False:
+        if not self.detachable:
+            setattr(self.settings, child_name + "docked", True)
+        elif docked is False:
             # Restore a previously undocked state.
             notebook = self._create_window(child)
             original_position = self.page_num(child)
@@ -60,7 +64,7 @@ class BaseTabs(Gtk.Notebook, Loggable):
         child.show()
 
     def _set_child_properties(self, child, label):
-        self.child_set_property(child, "detachable", True)
+        self.child_set_property(child, "detachable", self.detachable)
         self.child_set_property(child, "tab-expand", False)
         self.child_set_property(child, "tab-fill", True)
         label.props.xalign = 0.0
