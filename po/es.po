@@ -2692,6 +2692,26 @@ msgid "Cover the whole frame. Part of the image can be left out."
 msgstr "Cubre todo el cuadro. Puede quedar fuera una parte de la imagen."
 
 #: pitivi/clipproperties.py
+msgid "Deactivate one to compare without losing it."
+msgstr "Desactivá uno para comparar sin perderlo."
+
+#: pitivi/clipproperties.py
+msgid "Deactivate"
+msgstr "Desactivar"
+
+#: pitivi/clipproperties.py
+msgid "Activate"
+msgstr "Activar"
+
+#: pitivi/clipproperties.py
+msgid "Active"
+msgstr "Activo"
+
+#: pitivi/clipproperties.py
+msgid "Deactivated"
+msgstr "Desactivado"
+
+#: pitivi/clipproperties.py
 msgid "Rotate left"
 msgstr "Girar a la izquierda"
 

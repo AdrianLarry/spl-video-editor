@@ -366,13 +366,18 @@ class EditorPerspective(Perspective, Loggable):
         catalog_label.props.margin_top = SPACING
         separator = Gtk.Separator()
 
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
-        page.pack_start(effect_expander, False, False, 0)
-        page.pack_start(separator, False, False, 0)
-        page.pack_start(catalog_label, False, False, 0)
-        page.pack_start(self.effectlist, True, True, 0)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
+        box.pack_start(effect_expander, False, False, 0)
+        box.pack_start(separator, False, False, 0)
+        box.pack_start(catalog_label, False, False, 0)
+        box.pack_start(self.effectlist, True, True, 0)
+
+        # The settings of the applied effects can be taller than the panel.
+        page = Gtk.ScrolledWindow()
+        page.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        page.add(box)
         # The visibility of the effect expander depends on the selection.
-        for widget in (separator, catalog_label, self.effectlist, page):
+        for widget in (separator, catalog_label, self.effectlist, box, page.get_child(), page):
             widget.show()
         return page
 

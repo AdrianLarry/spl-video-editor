@@ -32,6 +32,7 @@ from gi.repository import GObject
 from gi.repository import Gst
 from gi.repository import GstController
 from gi.repository import Gtk
+from gi.repository import Pango
 
 from pitivi.check import MISSING_SOFT_DEPS
 from pitivi.clip_properties.alignment import AlignmentEditor
@@ -44,7 +45,6 @@ from pitivi.clip_properties.orientation import set_orientation
 from pitivi.clip_properties.sound import SoundProperties
 from pitivi.clip_properties.summary import ClipSummary
 from pitivi.clip_properties.title import TitleProperties
-from pitivi.configure import get_pixmap_dir
 from pitivi.configure import get_ui_dir
 from pitivi.configure import in_devel
 from pitivi.effects import EffectsPopover
@@ -85,6 +85,10 @@ DEFAULT_BLENDING = "over"
 # Max speed rate we allow to be applied to clips.
 # The minimum is 1 / MAX_RATE.
 MAX_RATE = 10
+
+# The size of the thumbnails of the applied effects.
+EFFECT_THUMBNAIL_WIDTH = 34
+EFFECT_THUMBNAIL_HEIGHT = 22
 
 
 class ClipProperties(Gtk.ScrolledWindow, Loggable):
@@ -603,10 +607,6 @@ class EffectProperties(Gtk.Expander, Loggable):
         self.effects_properties_manager.connect("create_widget", create_custom_widget_cb)
         self.effects_properties_manager.connect("create_property_widget", create_custom_prop_widget_cb)
 
-        self.drag_lines_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(
-            os.path.join(get_pixmap_dir(), "grip-lines-solid.svg"),
-            15, 15)
-
         self.expander_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.effects_listbox = Gtk.ListBox()
 
@@ -635,6 +635,13 @@ class EffectProperties(Gtk.Expander, Loggable):
         self.drag_dest_set(Gtk.DestDefaults.DROP, [EFFECT_TARGET_ENTRY],
                            Gdk.DragAction.COPY)
 
+        self.hint_label = Gtk.Label(label=_("Deactivate one to compare without losing it."))
+        self.hint_label.set_line_wrap(True)
+        self.hint_label.set_xalign(0)
+        self.hint_label.get_style_context().add_class("dim-label")
+        self.hint_label.set_no_show_all(True)
+
+        self.expander_box.pack_start(self.hint_label, False, False, PADDING)
         self.expander_box.pack_start(self.effects_listbox, False, False, 0)
         self.expander_box.pack_start(self.add_effect_button, False, False, PADDING)
         self.expander_box.pack_start(self.object_tracker_box, False, False, PADDING)
@@ -665,39 +672,51 @@ class EffectProperties(Gtk.Expander, Loggable):
         if is_time_effect(effect) or effect.props.bin_description in HIDDEN_EFFECTS:
             return None
 
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-
-        toggle = Gtk.CheckButton()
-        toggle.props.active = effect.props.active
-
         effect_info = self.app.effects.get_info(effect)
-        effect_label = Gtk.Label(effect_info.human_name)
-        effect_label.set_tooltip_text(effect_info.description)
+        thumbnail = Gtk.Image.new_from_pixbuf(effect_info.icon.scale_simple(
+            EFFECT_THUMBNAIL_WIDTH, EFFECT_THUMBNAIL_HEIGHT, GdkPixbuf.InterpType.BILINEAR))
+        thumbnail.props.valign = Gtk.Align.CENTER
 
-        # Set up revealer + expander
+        name_label = Gtk.Label(label=effect_info.human_name)
+        name_label.set_xalign(0)
+        name_label.set_ellipsize(Pango.EllipsizeMode.END)
+        state_label = Gtk.Label()
+        state_label.set_xalign(0)
+        state_label.get_style_context().add_class("dim-label")
+        name_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        name_box.pack_start(name_label, False, False, 0)
+        name_box.pack_start(state_label, False, False, 0)
+        name_box.set_tooltip_text(effect_info.description)
+
+        # The settings of the effect are shown when clicking its name.
         effect_config_ui = self.effects_properties_manager.get_effect_configuration_ui(effect)
+        # The settings can be wider than the panel, without widening it.
+        config_ui_scrolled = Gtk.ScrolledWindow()
+        config_ui_scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        config_ui_scrolled.props.propagate_natural_height = True
+        config_ui_scrolled.add(effect_config_ui)
         config_ui_revealer = Gtk.Revealer()
-        config_ui_revealer.add(effect_config_ui)
+        config_ui_revealer.add(config_ui_scrolled)
 
         expander = Gtk.Expander()
-        expander.set_label_widget(effect_label)
+        expander.set_label_widget(name_box)
         expander.props.valign = Gtk.Align.CENTER
-        expander.props.vexpand = True
 
-        config_ui_revealer.props.halign = Gtk.Align.CENTER
         expander.connect("notify::expanded", self._toggle_expander_cb, config_ui_revealer)
 
-        remove_effect_button = Gtk.Button.new_from_icon_name("window-close",
-                                                             Gtk.IconSize.BUTTON)
-        remove_effect_button.props.margin_end = PADDING
+        active_button = Gtk.Button()
+        remove_effect_button = Gtk.Button(label=_("Remove"))
+        remove_effect_button.props.relief = Gtk.ReliefStyle.NONE
+        remove_effect_button.get_style_context().add_class("spl-danger-text")
 
-        row_widgets_box = Gtk.Box()
-        row_drag_icon = Gtk.Image.new_from_pixbuf(self.drag_lines_pixbuf)
-        row_widgets_box.pack_start(row_drag_icon, False, False, PADDING)
-        row_widgets_box.pack_start(toggle, False, False, PADDING)
-        row_widgets_box.pack_start(expander, True, True, PADDING)
-        row_widgets_box.pack_end(remove_effect_button, False, False, 0)
+        row_widgets_box = Gtk.Box(spacing=PADDING)
+        row_widgets_box.props.margin = PADDING
+        row_widgets_box.pack_start(thumbnail, False, False, 0)
+        row_widgets_box.pack_start(expander, True, True, 0)
+        row_widgets_box.pack_start(active_button, False, False, 0)
+        row_widgets_box.pack_start(remove_effect_button, False, False, 0)
 
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         vbox.pack_start(row_widgets_box, False, False, 0)
         vbox.pack_start(config_ui_revealer, False, False, 0)
 
@@ -706,8 +725,11 @@ class EffectProperties(Gtk.Expander, Loggable):
 
         row = Gtk.ListBoxRow(selectable=False, activatable=False)
         row.effect = effect
-        row.toggle = toggle
+        row.active_button = active_button
+        row.state_label = state_label
+        row.dimmed_widgets = (thumbnail, name_box)
         row.add(event_box)
+        self.__update_row_active_state(row)
 
         # Set up drag&drop
         event_box.drag_source_set(Gdk.ModifierType.BUTTON1_MASK,
@@ -720,9 +742,18 @@ class EffectProperties(Gtk.Expander, Loggable):
         row.connect("drag-data-received", self._drag_data_received_cb)
 
         remove_effect_button.connect("clicked", self._remove_button_cb, row)
-        toggle.connect("toggled", self._effect_active_toggle_cb, row)
+        active_button.connect("clicked", self._effect_active_button_cb, row)
 
         return row
+
+    @staticmethod
+    def __update_row_active_state(row):
+        """Shows whether the effect of the row is active."""
+        active = row.effect.props.active
+        row.active_button.set_label(_("Deactivate") if active else _("Activate"))
+        row.state_label.set_text(_("Active") if active else _("Deactivated"))
+        for widget in row.dimmed_widgets:
+            widget.set_opacity(1 if active else 0.45)
 
     def _update_listbox(self):
         for row in self.effects_listbox.get_children():
@@ -734,6 +765,10 @@ class EffectProperties(Gtk.Expander, Loggable):
                 self.effects_listbox.add(effect_row)
 
         self.effects_listbox.show_all()
+        self.__update_hint()
+
+    def __update_hint(self):
+        self.hint_label.set_visible(bool(self.effects_listbox.get_children()))
 
     def _toggle_expander_cb(self, expander, unused_prop, revealer):
         revealer.props.reveal_child = expander.props.expanded
@@ -751,11 +786,13 @@ class EffectProperties(Gtk.Expander, Loggable):
 
         self.effects_listbox.add(row)
         self.effects_listbox.show_all()
+        self.__update_hint()
 
     def _remove_effect_row(self, effect):
         row = self._get_effect_row(effect)
         if row:
             self.effects_listbox.remove(row)
+            self.__update_hint()
 
     def _move_effect_row(self, effect, new_index):
         row = self._get_effect_row(effect)
@@ -773,13 +810,13 @@ class EffectProperties(Gtk.Expander, Loggable):
                                          toplevel=True):
             effect.get_parent().remove(effect)
 
-    def _effect_active_toggle_cb(self, toggle, row):
+    def _effect_active_button_cb(self, unused_button, row):
         effect = row.effect
         pipeline = self.app.project_manager.current_project.pipeline
         with self.app.action_log.started("change active state",
                                          finalizing_action=CommitTimelineFinalizingAction(pipeline),
                                          toplevel=True):
-            effect.props.active = toggle.props.active
+            effect.props.active = not effect.props.active
 
     def set_clip(self, clip):
         if self.clip:
@@ -827,7 +864,7 @@ class EffectProperties(Gtk.Expander, Loggable):
     def _notify_active_cb(self, track_element, unused_param_spec):
         row = self._get_effect_row(track_element)
         if row:
-            row.toggle.props.active = track_element.props.active
+            self.__update_row_active_state(row)
 
     def _notify_priority_cb(self, track_element, unused_param_spec):
         if not self._get_effect_row(track_element):

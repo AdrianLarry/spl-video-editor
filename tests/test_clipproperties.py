@@ -487,6 +487,49 @@ class ClipSummaryTest(common.TestCase):
         self.assertFalse(summary.get_visible())
 
 
+class EffectPropertiesTest(common.TestCase):
+    """Tests for the EffectProperties widget."""
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_effect_rows(self):
+        """Checks deactivating and removing the applied effects."""
+        effects_box = self.clipproperties.effect_expander
+        clip = self.add_clips_simple(self.timeline_container.timeline, 1)[0]
+        self.timeline_container.timeline.selection.select([clip])
+        self.assertFalse(effects_box.hint_label.get_visible())
+
+        with self.action_log.started("add effects"):
+            effect = GES.Effect.new("agingtv")
+            clip.add(effect)
+            # The effect for rotating and mirroring is not listed.
+            clip.add(GES.Effect.new("videoflip"))
+        row, = effects_box.effects_listbox.get_children()
+        self.assertIs(row.effect, effect)
+        self.assertTrue(effects_box.hint_label.get_visible())
+        self.assertEqual(row.active_button.get_label(), "Deactivate")
+        self.assertEqual(row.state_label.get_text(), "Active")
+
+        row.active_button.clicked()
+        self.assertFalse(effect.props.active)
+        self.assertEqual(row.active_button.get_label(), "Activate")
+        self.assertEqual(row.state_label.get_text(), "Deactivated")
+
+        self.action_log.undo()
+        self.assertTrue(effect.props.active)
+        self.assertEqual(row.active_button.get_label(), "Deactivate")
+
+        effects_box._remove_button_cb(None, row)
+        self.assertNotIn(effect, clip.get_top_effects())
+        self.assertEqual(effects_box.effects_listbox.get_children(), [])
+        self.assertFalse(effects_box.hint_label.get_visible())
+
+        # Removing the hidden effect does not fail.
+        with self.action_log.started("remove effect"):
+            clip.remove(clip.get_top_effects()[0])
+        self.assertEqual(clip.get_top_effects(), [])
+
+
 class TitlePropertiesTest(common.TestCase):
     """Tests for the TitleProperties class."""
 
