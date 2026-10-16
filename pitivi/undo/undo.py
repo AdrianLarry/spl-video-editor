@@ -264,6 +264,21 @@ class UndoableActionLog(GObject.Object, Loggable):
         stack, position = mark
         stack.done_actions.insert(position, action)
 
+    def push_to_last_operation(self, action):
+        """Records a change completing the last operation, already committed.
+
+        Args:
+            action (UndoableAction): The action representing the change.
+
+        Returns:
+            bool: Whether the action has been recorded.
+        """
+        if self.running or self.rolling_back or self.stacks or not self.undo_stacks:
+            return False
+
+        self.undo_stacks[-1].push(action)
+        return True
+
     def rollback(self, undo=True):
         """Forgets about the last started operation.
 

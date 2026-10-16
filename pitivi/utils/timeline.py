@@ -317,6 +317,17 @@ class EditingContext(GObject.Object, Loggable):
                     self.__previous_end = max(self.__previous_end, clip_end)
             self.__following.sort(key=lambda item: item[1])
 
+        # When moving a clip onto other clips, it is inserted before or after
+        # them and the following clips are pushed. The clips pushed are put
+        # back when the clip is moved further.
+        self.__original_starts = {}
+        self.__pushed = set()
+        if timeline and self.__moves_single_clip():
+            for layer in timeline.get_layers():
+                for clip in layer.get_clips():
+                    if not isinstance(clip, GES.TransitionClip):
+                        self.__original_starts[clip] = clip.props.start
+
         from pitivi.undo.timeline import CommitTimelineFinalizingAction
         self.__log_actions = log_actions
         if log_actions:
@@ -338,6 +349,15 @@ class EditingContext(GObject.Object, Loggable):
         if self.__actions_mark:
             self.__record_keyframes()
 
+        if not self.__log_actions and self.__pushed and self.app:
+            # The clips being dropped have been added by an operation
+            # already committed, the clips pushed complete it.
+            from pitivi.undo.timeline import TimelineElementPropertyChangedAction
+            for clip in self.__pushed:
+                action = TimelineElementPropertyChangedAction(
+                    clip, "start", self.__original_starts[clip], clip.props.start)
+                self.app.action_log.push_to_last_operation(action)
+
         if self.__log_actions:
             self.app.action_log.commit("move-clip")
         self.timeline.get_asset().pipeline.commit_timeline()
@@ -358,6 +378,63 @@ class EditingContext(GObject.Object, Loggable):
             # so these are performed last, both when undoing and redoing.
             self.app.action_log.insert(self.__actions_mark, restore_before)
             self.app.action_log.push(restore_after)
+
+    def __moves_single_clip(self):
+        """Whether a single clip is moved, the only case keeping the layers tidy."""
+        if not isinstance(self.focus, GES.Clip) or not self.focus.get_layer():
+            return False
+        toplevel = self.focus.get_toplevel_parent()
+        if toplevel == self.focus:
+            return True
+        clips = [child for child in toplevel.get_children(True) if isinstance(child, GES.Clip)]
+        return clips == [self.focus]
+
+    def __make_room(self, position, layer):
+        """Puts back the pushed clips and pushes the clips in the way.
+
+        Returns:
+            int: The position where the focus should be placed.
+        """
+        # Move the focus out of the way, so that the clips can be moved freely.
+        end = max(clip.props.start + clip.props.duration for clip in self.__original_starts)
+        self.focus.set_start(end + self.focus.props.duration)
+
+        for clip in sorted(self.__pushed, key=lambda clip: self.__original_starts[clip]):
+            clip.set_start(self.__original_starts[clip])
+        self.__pushed = set()
+
+        duration = self.focus.props.duration
+        overlapping = [clip for clip in self.__get_other_clips(layer)
+                       if clip.props.start < position + duration and
+                       position < clip.props.start + clip.props.duration]
+        if overlapping:
+            first = min(overlapping, key=lambda clip: clip.props.start)
+            if first.props.start < position:
+                # Insert before or after the clip, whichever is closer.
+                if position < first.props.start + first.props.duration / 2:
+                    position = first.props.start
+                else:
+                    position = first.props.start + first.props.duration
+        self.__push_clips_after(position + duration, position, layer)
+        return position
+
+    def __get_other_clips(self, layer):
+        return [clip for clip in layer.get_clips()
+                if clip in self.__original_starts and clip != self.focus]
+
+    def __push_clips_after(self, end, start, layer):
+        """Pushes the clips starting after start so that they start after end."""
+        following = sorted([clip for clip in self.__get_other_clips(layer)
+                            if clip.props.start >= start],
+                           key=lambda clip: clip.props.start)
+        if not following:
+            return
+        shift = end - following[0].props.start
+        if shift <= 0:
+            return
+        for clip in reversed(following):
+            clip.set_start(clip.props.start + shift)
+            self.__pushed.add(clip)
 
     def __get_max_end(self):
         """Returns the latest end of the focus, limited by its media."""
@@ -412,6 +489,10 @@ class EditingContext(GObject.Object, Loggable):
                 else:
                     position = time
 
+        previous_start = self.focus.props.start
+        if self.mode == GES.EditMode.EDIT_NORMAL and self.__original_starts:
+            position = self.__make_room(position, layer)
+
         trimming = self.mode == GES.EditMode.EDIT_TRIM and isinstance(self.focus, GES.Clip)
         if trimming and self.edge == GES.Edge.EDGE_START:
             position = max(position, self.__previous_end)
@@ -420,6 +501,13 @@ class EditingContext(GObject.Object, Loggable):
             self.__place_following(position)
 
         res = self.focus.edit([], priority, self.mode, self.edge, int(position))
+        if self.mode == GES.EditMode.EDIT_NORMAL and self.__original_starts:
+            if not res:
+                # Not left out of the way.
+                self.focus.set_start(previous_start)
+            # The position can be different because of snapping.
+            self.__push_clips_after(self.focus.props.start + self.focus.props.duration,
+                                    self.focus.props.start, self.focus.get_layer())
         if trimming and self.edge == GES.Edge.EDGE_END:
             # The end can be different because of snapping or if refused.
             self.__place_following(self.focus.props.start + self.focus.props.duration)

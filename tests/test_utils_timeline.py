@@ -232,3 +232,72 @@ class TestTrimmingRules(common.TestCase):
 
         self._trim(clip2, GES.Edge.EDGE_START, 1)
         self.assertEqual(self._get_ranges(clip1, clip2), [(0, 2), (2, 4)])
+
+
+class TestMovingRules(common.TestCase):
+    """Tests for the clips of a layer never overlapping when moving clips."""
+
+    def _add_clip(self, start, duration=2, layer=None):
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
+        clip = (layer or self.layer).add_asset(asset, start * Gst.SECOND, 0, duration * Gst.SECOND,
+                                               GES.TrackType.UNKNOWN)
+        self.assertIsNotNone(clip)
+        return clip
+
+    def _move(self, clip, *positions, log_actions=True):
+        context = EditingContext(clip, self.timeline, GES.EditMode.EDIT_NORMAL,
+                                 GES.Edge.EDGE_NONE, self.app, log_actions)
+        for position in positions:
+            context.edit_to(position * Gst.SECOND, self.layer)
+        context.finish()
+
+    @staticmethod
+    def _get_starts(*clips):
+        return [clip.props.start / Gst.SECOND for clip in clips]
+
+    @common.setup_timeline
+    def test_moving_onto_clips_inserts_and_pushes(self):
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(2)
+        clip_c = self._add_clip(4)
+        clip_d = self._add_clip(8)
+        other_layer = self.timeline.append_layer()
+        other_clip = self._add_clip(4, layer=other_layer)
+
+        # Dropped on the second half of B, A goes after B. The positions while
+        # dragging go back and forth, only the last one counts.
+        self._move(clip_a, 5, 9, 3.5)
+        self.assertEqual(self._get_starts(clip_a, clip_b, clip_c, clip_d, other_clip),
+                         [4, 2, 6, 10, 4])
+
+        self.action_log.undo()
+        self.assertEqual(self._get_starts(clip_a, clip_b, clip_c, clip_d), [0, 2, 4, 8])
+
+        # Dropped on the first half of C, B goes before C. The following
+        # clips are pushed together, keeping the gaps between them.
+        self._move(clip_b, 4.5)
+        self.assertEqual(self._get_starts(clip_a, clip_b, clip_c, clip_d), [0, 4, 6, 10])
+
+    @common.setup_timeline
+    def test_moving_into_a_gap_which_fits(self):
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(2)
+        clip_c = self._add_clip(8)
+
+        self._move(clip_a, 5)
+        self.assertEqual(self._get_starts(clip_a, clip_b, clip_c), [5, 2, 8])
+
+    @common.setup_timeline
+    def test_dropping_a_new_clip_pushes_undoably(self):
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(2)
+        # The clips being dropped are added first, by an operation of their own.
+        with self.action_log.started("Add clips"):
+            new_clip = self._add_clip(20)
+
+        self._move(new_clip, 0.5, log_actions=False)
+        self.assertEqual(self._get_starts(new_clip, clip_a, clip_b), [0, 2, 4])
+
+        self.action_log.undo()
+        self.assertNotIn(new_clip, self.layer.get_clips())
+        self.assertEqual(self._get_starts(clip_a, clip_b), [0, 2])
