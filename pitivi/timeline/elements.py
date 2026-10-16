@@ -1762,6 +1762,9 @@ class UriClip(FullSourceClip):
     def __init__(self, layer: GES.Layer, ges_clip: GES.Clip):
         FullSourceClip.__init__(self, layer, ges_clip)
         self.get_style_context().add_class("UriClip")
+        asset = ges_clip.get_asset()
+        if asset and asset.is_image():
+            self.get_style_context().add_class("ImageClip")
         self.props.has_tooltip = True
 
     def do_query_tooltip(self, x, y, keyboard_mode, tooltip):

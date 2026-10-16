@@ -201,36 +201,46 @@ EDITOR_PERSPECTIVE_CSS = """
         transition: background-color 200ms ease-out, border-color 200ms ease-out;
     }
 
+    /* Each kind of clip has its color: video, image, text and audio. */
     .UriClip .AudioBackground {
-        background-color: rgb(60, 97, 43);
-        border: %(clip_border_width)spx solid shade(rgb(60, 97, 43), 1.2);
+        background-color: rgb(31, 107, 89);
+        border: %(clip_border_width)spx solid shade(rgb(31, 107, 89), 1.4);
     }
 
     .UriClip .VideoBackground {
-        background-color: rgb(25, 25, 25);
-        border: %(clip_border_width)spx solid shade(rgb(25, 25, 25), 2.5);
+        background-color: rgb(44, 82, 128);
+        border: %(clip_border_width)spx solid shade(rgb(44, 82, 128), 1.4);
+    }
+
+    .ImageClip .VideoBackground {
+        background-color: rgb(91, 74, 138);
+        border: %(clip_border_width)spx solid shade(rgb(91, 74, 138), 1.4);
     }
 
     .TitleClip .VideoBackground {
-        background-color: rgb(94, 78, 102);
-        border: %(clip_border_width)spx solid shade(rgb(25, 25, 25), 2.5);
+        background-image: linear-gradient(rgb(163, 108, 39), rgb(138, 87, 25));
+        border: %(clip_border_width)spx solid shade(rgb(163, 108, 39), 1.3);
     }
 
     .AudioBackground:selected,
     .VideoBackground:selected {
-        border-color: rgb(132, 131, 79)
+        border-color: rgb(255, 255, 255)
     }
 
     .UriClip .AudioBackground:selected {
-        background-color: shade(rgb(60, 97, 43), 0.4);
+        background-color: shade(rgb(31, 107, 89), 0.7);
     }
 
     .UriClip .VideoBackground:selected {
-        background-color: shade(rgb(25, 25, 25), 0.4);
+        background-color: shade(rgb(44, 82, 128), 0.7);
+    }
+
+    .ImageClip .VideoBackground:selected {
+        background-color: shade(rgb(91, 74, 138), 0.7);
     }
 
     .TitleClip .VideoBackground:selected  {
-        background-color: shade(rgb(94, 78, 102), 0.4);
+        background-image: linear-gradient(shade(rgb(163, 108, 39), 0.75), shade(rgb(138, 87, 25), 0.75));
     }
 
 

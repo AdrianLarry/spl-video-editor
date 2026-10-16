@@ -1425,8 +1425,8 @@ class TitlePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
         if not exists:
             return
 
-        # Text color white
-        context.set_source_rgb(1, 1, 1)
+        # A light text color, readable on the color of the text clips.
+        context.set_source_rgb(1, 0.906, 0.769)
 
         # Get text
         res, escaped_text = self.ges_elem.get_child_property("text")
@@ -1457,29 +1457,6 @@ class TitlePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
             # Draw text
             context.move_to(x_pos, y_pos)
             PangoCairo.show_layout(context, layout)
-
-        # Draw gradient on top of text to make the text "fade out".
-        # The gradient is mostly transparent and turning opaque at the very end.
-        if ltr:
-            x0 = width * 0.66
-            x1 = width * 0.91
-        else:
-            x0 = width * 0.09
-            x1 = width * 0.34
-        # Control vector of the gradient is x0 -> x1.
-        grad = cairo.LinearGradient(x0, 0, x1, 0)
-        if self._selected:
-            color = (0.14, 0.133, 0.15)
-        else:
-            color = (0.368, 0.305, 0.4)
-        # Set the start offset of the control vector to transparent (if ltr).
-        grad.add_color_stop_rgba(0.0, color[0], color[1], color[2], 0 if ltr else 1)
-        # Set the end offset of the control vector to opaque (if ltr).
-        grad.add_color_stop_rgba(1.0, color[0], color[1], color[2], 1 if ltr else 0)
-        # The rectangle to be filled represents the entire surface.
-        context.rectangle(0, 0, rect.width, rect.height)
-        context.set_source(grad)
-        context.fill()
 
     def set_selected(self, selected):
         self._selected = selected
