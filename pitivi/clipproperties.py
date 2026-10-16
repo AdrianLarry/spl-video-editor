@@ -38,6 +38,7 @@ from pitivi.clip_properties.alignment import AlignmentEditor
 from pitivi.clip_properties.color import ColorProperties
 from pitivi.clip_properties.compositing import CompositingProperties
 from pitivi.clip_properties.markers import ClipMarkersProperties
+from pitivi.clip_properties.sound import SoundProperties
 from pitivi.clip_properties.summary import ClipSummary
 from pitivi.clip_properties.title import TitleProperties
 from pitivi.configure import get_pixmap_dir
@@ -137,6 +138,10 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.compositing_expander.set_vexpand(False)
         vbox.pack_start(self.compositing_expander, False, False, 0)
 
+        self.sound_expander = SoundProperties(app)
+        self.sound_expander.set_vexpand(False)
+        vbox.pack_start(self.sound_expander, False, False, 0)
+
         self.summary = ClipSummary()
 
         self.effect_expander = EffectProperties(app)
@@ -158,6 +163,7 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.title_expander.set_source(None)
         self.color_expander.set_source(None)
         self.compositing_expander.set_source(None)
+        self.sound_expander.set_source(None)
         self.effect_expander.set_clip(None)
         self.marker_expander.set_clip(None)
 
@@ -239,12 +245,15 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.summary.set_clip(ges_clip)
 
         video_source = None
+        audio_source = None
         title_source = None
         color_clip_source = None
         if ges_clip:
             for child in ges_clip.get_children(False):
                 if isinstance(child, GES.VideoSource):
                     video_source = child
+                elif isinstance(child, GES.AudioSource):
+                    audio_source = child
 
                 if isinstance(child, GES.TitleSource):
                     title_source = child
@@ -256,6 +265,7 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.title_expander.set_source(title_source)
         self.color_expander.set_source(color_clip_source)
         self.compositing_expander.set_source(video_source)
+        self.sound_expander.set_source(audio_source)
         self.effect_expander.set_clip(ges_clip)
         self.marker_expander.set_clip(ges_clip)
 

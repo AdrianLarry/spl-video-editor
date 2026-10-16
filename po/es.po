@@ -2727,6 +2727,34 @@ msgstr "Abajo al centro"
 msgid "Bottom right"
 msgstr "Abajo a la derecha"
 
+#: pitivi/clip_properties/sound.py
+msgid "Sound"
+msgstr "Sonido"
+
+#: pitivi/clip_properties/sound.py
+msgid "Volume:"
+msgstr "Volumen:"
+
+#: pitivi/clip_properties/sound.py
+msgid "Mute"
+msgstr "Silenciar"
+
+#: pitivi/clip_properties/sound.py
+msgid "Fade in from silence:"
+msgstr "Entrada suave:"
+
+#: pitivi/clip_properties/sound.py
+msgid "Fade out to silence:"
+msgstr "Salida suave:"
+
+#: pitivi/clip_properties/sound.py
+msgid "The volume has been edited on the timeline."
+msgstr "El volumen se editó en la línea de tiempo."
+
+#: pitivi/clip_properties/sound.py
+msgid "Use a simple volume"
+msgstr "Usar un volumen simple"
+
 #: pitivi/render.py
 msgid "The output file could not be linked to the muxer."
 msgstr "No se pudo preparar el archivo de salida. Intentá exportar de nuevo."
