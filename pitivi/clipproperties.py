@@ -44,6 +44,7 @@ from pitivi.clip_properties.orientation import Orientation
 from pitivi.clip_properties.orientation import set_orientation
 from pitivi.clip_properties.sound import SoundProperties
 from pitivi.clip_properties.summary import ClipSummary
+from pitivi.clip_properties.title import get_default_font_description
 from pitivi.clip_properties.title import TitleProperties
 from pitivi.configure import get_ui_dir
 from pitivi.configure import in_devel
@@ -71,13 +72,12 @@ from pitivi.utils.ui import SPACING
  COL_TRACK_EFFECT) = list(range(6))
 
 # Translators: This is the default text of a title clip.
-DEFAULT_TEXT = _("Title Clip")
+DEFAULT_TEXT = _("Write your text")
 FOREGROUND_DEFAULT_COLOR = 0xFFFFFFFF  # White
 BACKGROUND_DEFAULT_COLOR = 0x00000000  # Transparent
 OUTLINE_DEFAULT_COLOR = 0xFF000000  # Black
-DEFAULT_FONT_DESCRIPTION = "Sans 36"
 # Centered, so the position grid of the title properties shows it.
-DEFAULT_VALIGNMENT = "center"
+DEFAULT_VALIGNMENT = "bottom"
 DEFAULT_HALIGNMENT = "center"
 DEFAULT_DROP_SHADOW = True
 DEFAULT_BLENDING = "over"
@@ -216,7 +216,7 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
                           "foreground-color": BACKGROUND_DEFAULT_COLOR,
                           "color": FOREGROUND_DEFAULT_COLOR,
                           "outline-color": OUTLINE_DEFAULT_COLOR,
-                          "font-desc": DEFAULT_FONT_DESCRIPTION,
+                          "font-desc": get_default_font_description(self._project.videoheight),
                           "valignment": DEFAULT_VALIGNMENT,
                           "halignment": DEFAULT_HALIGNMENT,
                           "draw-shadow": DEFAULT_DROP_SHADOW}

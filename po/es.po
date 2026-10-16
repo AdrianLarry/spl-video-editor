@@ -2595,8 +2595,9 @@ msgid "Standard output color"
 msgstr "Color de salida estándar"
 
 #: plugins/console/console.py:139
+#: pitivi/clip_properties/title.py
 msgid "Font"
-msgstr "Tipografía"
+msgstr "Fuente"
 
 #: plugins/console/console.py:146 plugins/console/console.py:164
 msgid "Developer Console"
@@ -2730,6 +2731,74 @@ msgstr "Espejar verticalmente"
 #: pitivi/clip_properties/title.py
 msgid "Position"
 msgstr "Posición"
+
+#: pitivi/clip_properties/title.py
+msgid "Choose where the text goes in the frame."
+msgstr "Elegí dónde se ubica el texto en el cuadro."
+
+#: pitivi/clip_properties/title.py
+msgid "It stays in place when changing the format."
+msgstr "Se mantiene en su lugar al cambiar de formato."
+
+#: pitivi/clip_properties/title.py
+msgid "Placed by dragging it in the viewer."
+msgstr "Ubicado arrastrándolo en el visor."
+
+#: pitivi/clip_properties/title.py
+msgid "Content"
+msgstr "Contenido"
+
+#: pitivi/clip_properties/title.py
+msgid "What you write shows at once in the viewer."
+msgstr "Lo que escribas se ve al instante en el visor."
+
+#: pitivi/clip_properties/title.py
+msgid "Style"
+msgstr "Estilo"
+
+#: pitivi/clip_properties/title.py
+msgid "Size"
+msgstr "Tamaño"
+
+#: pitivi/clip_properties/title.py
+msgid "Choose a color"
+msgstr "Elegí un color"
+
+#: pitivi/clip_properties/title.py
+msgid "Choose another color"
+msgstr "Elegir otro color"
+
+#: pitivi/clip_properties/title.py
+msgid "Black"
+msgstr "Negro"
+
+#: pitivi/clip_properties/title.py
+msgid "Use this color"
+msgstr "Usar este color"
+
+#: pitivi/clip_properties/title.py
+msgid "Clear"
+msgstr "Clara"
+
+#: pitivi/clip_properties/title.py
+msgid "Classic"
+msgstr "Clásica"
+
+#: pitivi/clip_properties/title.py
+msgid "Rounded"
+msgstr "Redondeada"
+
+#: pitivi/clip_properties/title.py
+msgid "Handwritten"
+msgstr "Manuscrita"
+
+#: pitivi/clip_properties/title.py
+msgid "Headline"
+msgstr "Titular"
+
+#: pitivi/clipproperties.py
+msgid "Write your text"
+msgstr "Escribí tu texto"
 
 #: pitivi/clip_properties/title.py
 msgid "Top left"

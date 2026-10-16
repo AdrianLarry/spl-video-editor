@@ -109,6 +109,9 @@ class TitleOverlayTest(common.TestCase):
             return tuple(source.get_child_property(prop)[1].value_name
                          for prop in ("halignment", "valignment"))
 
+        # Dragging a centered title did not move it.
+        self.assertTrue(source.set_child_property("valignment", "center"))
+        mainloop.run(until_empty=True)
         self.assertEqual(get_alignment(), ("center", "center"))
 
         # Simulate hover and drag&drop.

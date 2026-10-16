@@ -22,6 +22,7 @@ from typing import Optional
 from typing import Union
 
 from gi.repository import GES
+from gi.repository import GLib
 from gi.repository import GObject
 from gi.repository import Gtk
 from gi.repository import Pango
@@ -33,7 +34,64 @@ from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.ui import argb_to_gdk_rgba
 from pitivi.utils.ui import gdk_rgba_to_argb
+from pitivi.utils.ui import PADDING
+from pitivi.utils.ui import SPACING
 from pitivi.utils.widgets import ColorPickerButton
+
+
+# The fonts offered: a name and the families, the first one installed being
+# used, and the weight.
+FONTS = (
+    (_("Clear"), "Inter,Cantarell,Ubuntu Sans,Ubuntu,Sans", Pango.Weight.BOLD),
+    (_("Classic"), "Georgia,DejaVu Serif,Liberation Serif,Serif", Pango.Weight.BOLD),
+    (_("Rounded"), "Nunito,Comfortaa,Varela Round,URW Gothic,Ubuntu,Sans", Pango.Weight.BOLD),
+    (_("Handwritten"), "Comic Neue,Purisa,Comic Sans MS,Z003,Serif", Pango.Weight.NORMAL),
+    (_("Headline"), "Impact,Anton,Oswald,Nimbus Sans Narrow,Liberation Sans Narrow,Sans",
+     Pango.Weight.BOLD),
+)
+# The text sizes offered, relative to a frame of the reference height,
+# so that a text keeps its proportion in any frame.
+MIN_TEXT_SIZE = 24
+MAX_TEXT_SIZE = 160
+DEFAULT_TEXT_SIZE = 72
+REFERENCE_FRAME_HEIGHT = 1080
+# The text colors offered, as ARGB.
+TEXT_COLORS = (0xFFFFFFFF, 0xFFFFD166, 0xFFFF8A5B, 0xFF7EE0C3, 0xFF8EC5FF, 0xFF141414)
+BLACK_TEXT_COLOR = 0xFF141414
+
+
+def get_font_description(font_index: int, points: float) -> str:
+    """Returns the font description of one of the offered fonts."""
+    unused_name, families, weight = FONTS[font_index]
+    font_desc = Pango.FontDescription()
+    font_desc.set_family(families)
+    font_desc.set_weight(weight)
+    font_desc.set_size(round(points * Pango.SCALE))
+    return font_desc.to_string()
+
+
+def text_size_to_points(size: float, frame_height: int) -> float:
+    """Returns the font size for showing a text size in a frame."""
+    return size * frame_height / REFERENCE_FRAME_HEIGHT
+
+
+def points_to_text_size(points: float, frame_height: int) -> float:
+    """Returns the text size shown by a font size in a frame."""
+    return points * REFERENCE_FRAME_HEIGHT / frame_height
+
+
+def get_default_font_description(frame_height: int) -> str:
+    """Returns the font description for new texts."""
+    return get_font_description(0, text_size_to_points(DEFAULT_TEXT_SIZE, frame_height))
+
+
+def find_font(font_desc: Pango.FontDescription) -> int:
+    """Returns the index of the offered font described, or -1."""
+    for index, (unused_name, families, unused_weight) in enumerate(FONTS):
+        if font_desc.get_family() == families:
+            return index
+    return -1
+
 
 
 GlobalSettings.add_config_option("titleClipLength",
@@ -60,7 +118,7 @@ class TitleProperties(Gtk.Expander, Loggable):
     def __init__(self, app):
         Loggable.__init__(self)
         Gtk.Expander.__init__(self)
-        self.set_label(_("Title"))
+        self.set_label(_("Text"))
         self.set_expanded(True)
         self.app = app
         self.source: Optional[GES.TitleSource] = None
@@ -112,6 +170,14 @@ class TitleProperties(Gtk.Expander, Loggable):
 
         self.drop_shadow_checkbox = builder.get_object("check_drop_shadow")
 
+        # The font button, the background and outline colors, the color
+        # pickers and the shadow are not for beginners. They are kept
+        # hidden because they reflect the state of the source.
+        for widget in (self.font_button, self.foreground_color_button.get_parent(),
+                       self.drop_shadow_checkbox):
+            widget.set_no_show_all(True)
+            widget.hide()
+
         self.valignment_combo = builder.get_object("valignment")
         self.halignment_combo = builder.get_object("halignment")
         self.x_absolute_spin = builder.get_object("x-absolute")
@@ -137,13 +203,113 @@ class TitleProperties(Gtk.Expander, Loggable):
         for widget in (builder.get_object("label7"), self.halignment_combo.get_parent()):
             widget.set_no_show_all(True)
             widget.hide()
+
+        self._create_content_section()
+        self._create_style_section()
         self._create_position_grid()
 
         self.show_all()
 
+    def _add_heading(self, text, subtitle=None):
+        label = Gtk.Label(xalign=0)
+        label.set_markup("<b>%s</b>" % GLib.markup_escape_text(text))
+        label.props.margin_top = SPACING
+        self.editing_box.pack_start(label, False, False, 0)
+        if subtitle:
+            subtitle_label = Gtk.Label(label=subtitle, xalign=0)
+            subtitle_label.set_line_wrap(True)
+            subtitle_label.get_style_context().add_class("dim-label")
+            self.editing_box.pack_start(subtitle_label, False, False, 0)
+        return label
+
+    def _create_content_section(self):
+        heading = self._add_heading(_("Content"), _("What you write shows at once in the viewer."))
+        heading.props.margin_top = 0
+        # The text goes below the heading, framed so that it looks editable.
+        self.editing_box.remove(self.textarea)
+        self.textarea.props.margin_start = PADDING
+        self.textarea.props.margin_end = PADDING
+        self.textarea.props.margin_top = PADDING
+        self.textarea.props.margin_bottom = PADDING
+        self.textarea.set_size_request(-1, 40)
+        frame = Gtk.Frame()
+        frame.set_shadow_type(Gtk.ShadowType.IN)
+        frame.props.margin_top = PADDING
+        frame.add(self.textarea)
+        self.editing_box.pack_start(frame, False, False, 0)
+
+    def _create_style_section(self):
+        self._add_heading(_("Style"))
+
+        font_label = Gtk.Label(label=_("Font"), xalign=0)
+        self.font_combo = Gtk.ComboBoxText()
+        for name, unused_families, unused_weight in FONTS:
+            self.font_combo.append_text(name)
+        self.font_combo.connect("changed", self._font_combo_changed_cb)
+
+        size_label = Gtk.Label(label=_("Size"), xalign=0, hexpand=True)
+        self.size_value_label = Gtk.Label()
+        self.size_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,
+                                                   MIN_TEXT_SIZE, MAX_TEXT_SIZE, 1)
+        self.size_scale.set_draw_value(False)
+        self.size_scale.connect("value-changed", self._size_scale_value_changed_cb)
+        size_box = Gtk.Box()
+        size_box.pack_start(size_label, True, True, 0)
+        size_box.pack_start(self.size_value_label, False, False, 0)
+
+        color_label = Gtk.Label(label=_("Color"), xalign=0)
+        # The colors go on several lines if they do not fit.
+        colors_box = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,
+                                 homogeneous=False, column_spacing=0, row_spacing=0)
+        colors_box.set_max_children_per_line(len(TEXT_COLORS) + 1)
+        self.color_buttons = {}
+        for argb in TEXT_COLORS:
+            button = self._create_color_button(argb)
+            colors_box.add(button)
+            self.color_buttons[argb] = button
+        self.other_color_button = Gtk.ColorButton(use_alpha=False)
+        self.other_color_button.set_title(_("Choose a color"))
+        self.other_color_button.set_tooltip_text(_("Choose another color"))
+        self.other_color_button.connect("color-set", self._other_color_set_cb)
+        other_color_box = Gtk.Box(spacing=PADDING)
+        other_color_box.pack_start(self.other_color_button, False, False, 0)
+        other_color_box.pack_start(Gtk.Label(label=_("Other")), False, False, 0)
+        colors_box.add(other_color_box)
+
+        for widget, margin_top in ((font_label, PADDING), (self.font_combo, PADDING),
+                                   (size_box, SPACING), (self.size_scale, 0),
+                                   (color_label, SPACING), (colors_box, PADDING)):
+            widget.props.margin_top = margin_top
+            self.editing_box.pack_start(widget, False, False, 0)
+
+    def _create_color_button(self, argb):
+        drawing_area = Gtk.DrawingArea()
+        drawing_area.set_size_request(22, 22)
+        drawing_area.connect("draw", self._draw_color_cb, argb)
+        button = Gtk.ToggleButton()
+        button.props.relief = Gtk.ReliefStyle.NONE
+        button.add(drawing_area)
+        button.set_tooltip_text(_("Black") if argb == BLACK_TEXT_COLOR else _("Use this color"))
+        button.connect("toggled", self._color_button_toggled_cb, argb)
+        return button
+
+    @staticmethod
+    def _draw_color_cb(drawing_area, cr, argb):
+        width = drawing_area.get_allocated_width()
+        height = drawing_area.get_allocated_height()
+        radius = min(width, height) / 2 - 1
+        cr.arc(width / 2, height / 2, radius, 0, 2 * 3.141592653589793)
+        rgba = argb_to_gdk_rgba(argb)
+        cr.set_source_rgb(rgba.red, rgba.green, rgba.blue)
+        cr.fill_preserve()
+        # A border, so that the colors close to the background are seen.
+        cr.set_source_rgba(0.5, 0.5, 0.5, 0.8)
+        cr.set_line_width(1)
+        cr.stroke()
+
     def _create_position_grid(self):
         """Creates the buttons for placing the title in nine positions."""
-        names = {("top", "left"): _("Top left"),
+        self.position_names = names = {("top", "left"): _("Top left"),
                  ("top", "center"): _("Top center"),
                  ("top", "right"): _("Top right"),
                  ("center", "left"): _("Center left"),
@@ -153,8 +319,9 @@ class TitleProperties(Gtk.Expander, Loggable):
                  ("bottom", "center"): _("Bottom center"),
                  ("bottom", "right"): _("Bottom right")}
 
-        label = Gtk.Label(label=_("Position"), xalign=0)
+        self._add_heading(_("Position"), _("Choose where the text goes in the frame."))
         grid = Gtk.Grid(row_spacing=2, column_spacing=2, halign=Gtk.Align.START)
+        grid.props.valign = Gtk.Align.START
         self.position_buttons = {}
         for row, valignment in enumerate(("top", "center", "bottom")):
             for column, halignment in enumerate(("left", "center", "right")):
@@ -166,8 +333,15 @@ class TitleProperties(Gtk.Expander, Loggable):
                 grid.attach(button, column, row, 1, 1)
                 self.position_buttons[(valignment, halignment)] = button
 
-        self.editing_box.pack_start(label, False, False, 0)
-        self.editing_box.pack_start(grid, False, False, 0)
+        self.position_label = Gtk.Label(xalign=0, yalign=0)
+        self.position_label.set_line_wrap(True)
+        self.position_label.set_max_width_chars(16)
+        self.position_label.get_style_context().add_class("dim-label")
+        box = Gtk.Box(spacing=SPACING)
+        box.props.margin_top = PADDING
+        box.pack_start(grid, False, False, 0)
+        box.pack_start(self.position_label, True, True, 0)
+        self.editing_box.pack_start(box, False, False, 0)
 
     def _update_position_buttons(self):
         """Shows the position of the source on the position grid."""
@@ -175,6 +349,10 @@ class TitleProperties(Gtk.Expander, Loggable):
                    self.halignment_combo.get_active_id())
         for position, button in self.position_buttons.items():
             button.set_active(position == current)
+        name = self.position_names.get(current)
+        self.position_label.set_text(
+            "%s.\n%s" % (name, _("It stays in place when changing the format."))
+            if name else _("Placed by dragging it in the viewer."))
 
     def _position_button_toggled_cb(self, button, valignment, halignment):
         if self._setting_ui:
@@ -265,6 +443,82 @@ class TitleProperties(Gtk.Expander, Loggable):
         self.debug("Setting title outline color to %x", color)
         self._set_child_property("outline-color", color)
 
+    def _get_font_desc(self) -> Pango.FontDescription:
+        res, font = self.source.get_child_property("font-desc")
+        assert res
+        return Pango.FontDescription.from_string(font)
+
+    def _get_frame_height(self) -> int:
+        project = self.app.project_manager.current_project
+        return project.videoheight if project else REFERENCE_FRAME_HEIGHT
+
+    def _font_combo_changed_cb(self, combo):
+        if self._setting_ui:
+            return
+
+        points = self._get_font_desc().get_size() / Pango.SCALE or \
+            text_size_to_points(DEFAULT_TEXT_SIZE, self._get_frame_height())
+        self._set_child_property("font-desc", get_font_description(combo.get_active(), points))
+
+    def _size_scale_value_changed_cb(self, scale):
+        self._update_size_value_label()
+        if self._setting_ui:
+            return
+
+        font_desc = self._get_font_desc()
+        points = text_size_to_points(scale.get_value(), self._get_frame_height())
+        font_desc.set_size(round(points * Pango.SCALE))
+        self._set_child_property("font-desc", font_desc.to_string(), mergeable=True)
+
+    def _update_size_value_label(self):
+        self.size_value_label.set_markup("<b>%d</b>" % round(self.size_scale.get_value()))
+
+    def _color_button_toggled_cb(self, button, argb):
+        if self._setting_ui:
+            return
+
+        if not button.get_active():
+            # The current color cannot be unset, only replaced.
+            self._setting_ui = True
+            try:
+                button.set_active(True)
+            finally:
+                self._setting_ui = False
+            return
+
+        self._set_child_property("color", argb)
+        self._setting_ui = True
+        try:
+            self._update_style_widgets()
+        finally:
+            self._setting_ui = False
+
+    def _other_color_set_cb(self, button):
+        self._set_child_property("color", gdk_rgba_to_argb(button.get_rgba()))
+        self._setting_ui = True
+        try:
+            self._update_style_widgets()
+        finally:
+            self._setting_ui = False
+
+    def _update_style_widgets(self, source=None):
+        """Shows the font, size and color of the source."""
+        source = source or self.source
+        res, font = source.get_child_property("font-desc")
+        assert res
+        font_desc = Pango.FontDescription.from_string(font)
+        self.font_combo.set_active(find_font(font_desc))
+        points = font_desc.get_size() / Pango.SCALE
+        size = points_to_text_size(points, self._get_frame_height()) if points else DEFAULT_TEXT_SIZE
+        self.size_scale.set_value(size)
+        self._update_size_value_label()
+
+        res, argb = source.get_child_property("color")
+        assert res
+        for button_argb, button in self.color_buttons.items():
+            button.set_active(button_argb == argb)
+        self.other_color_button.set_rgba(argb_to_gdk_rgba(argb))
+
     def _font_button_cb(self, widget):
         if self._setting_ui:
             return
@@ -320,6 +574,8 @@ class TitleProperties(Gtk.Expander, Loggable):
         assert res
         color = argb_to_gdk_rgba(argb)
         self.outline_color_button.set_rgba(color)
+
+        self._update_style_widgets(source)
 
     def _text_changed_cb(self, unused_text_buffer):
         if self._setting_ui:
@@ -434,11 +690,13 @@ class TitleProperties(Gtk.Expander, Loggable):
             widget.set_active_id(value)
             self._update_position_buttons()
         elif pspec.name == "font-desc":
+            self._update_style_widgets()
             if self.font_button.get_font_desc() == value:
                 return
             font_desc = Pango.FontDescription.from_string(value)
             self.font_button.set_font_desc(font_desc)
         elif pspec.name == "color":
+            self._update_style_widgets()
             color = argb_to_gdk_rgba(value)
             if color == self.foreground_color_button.get_rgba():
                 return

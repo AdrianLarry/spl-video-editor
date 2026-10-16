@@ -21,10 +21,13 @@ from unittest import mock
 
 from gi.repository import GES
 from gi.repository import Gst
+from gi.repository import Pango
 
 from pitivi.clip_properties.orientation import get_flip_effect
 from pitivi.clip_properties.orientation import get_orientation
 from pitivi.clip_properties.orientation import Orientation
+from pitivi.clip_properties.title import FONTS
+from pitivi.clip_properties.title import TEXT_COLORS
 from pitivi.utils.misc import filename_from_uri
 from pitivi.utils.timeline import SELECT
 from tests import common
@@ -583,8 +586,9 @@ class TitlePropertiesTest(common.TestCase):
         def get_active_buttons():
             return [position for position, button in buttons.items() if button.get_active()]
 
-        self.assertEqual(get_alignment(), ("center", "center"))
-        self.assertEqual(get_active_buttons(), [("center", "center")])
+        # New texts go at the bottom, as subtitles.
+        self.assertEqual(get_alignment(), ("bottom", "center"))
+        self.assertEqual(get_active_buttons(), [("bottom", "center")])
 
         buttons[("top", "left")].set_active(True)
         self.assertEqual(get_alignment(), ("top", "left"))
@@ -592,8 +596,56 @@ class TitlePropertiesTest(common.TestCase):
 
         # Both alignments are changed by a single operation.
         self.action_log.undo()
-        self.assertEqual(get_alignment(), ("center", "center"))
-        self.assertEqual(get_active_buttons(), [("center", "center")])
+        self.assertEqual(get_alignment(), ("bottom", "center"))
+        self.assertEqual(get_active_buttons(), [("bottom", "center")])
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_style(self):
+        """Checks changing the font, size and color of the text."""
+        self.project.pipeline.get_position = mock.Mock(return_value=0)
+        self.clipproperties.create_title_clip_cb(None)
+        title_box = self.clipproperties.title_expander
+
+        def get_font_desc():
+            font = self._get_title_source_child_props()["font-desc"][1]
+            return Pango.FontDescription.from_string(font)
+
+        def get_color():
+            return self._get_title_source_child_props()["color"][1]
+
+        # New texts use the first font, the default size and white.
+        self.assertEqual(title_box.font_combo.get_active(), 0)
+        self.assertEqual(get_font_desc().get_family(), FONTS[0][1])
+        self.assertEqual(title_box.size_scale.get_value(), 72)
+        self.assertEqual(get_color(), TEXT_COLORS[0])
+        self.assertTrue(title_box.color_buttons[TEXT_COLORS[0]].get_active())
+
+        title_box.font_combo.set_active(1)
+        self.assertEqual(get_font_desc().get_family(), FONTS[1][1])
+        self.assertEqual(get_font_desc().get_size(), 72 * Pango.SCALE)
+
+        # Consecutive size changes are undone together.
+        title_box.size_scale.set_value(100)
+        title_box.size_scale.set_value(120)
+        self.assertEqual(get_font_desc().get_size(), 120 * Pango.SCALE)
+        self.assertEqual(get_font_desc().get_family(), FONTS[1][1])
+        self.action_log.undo()
+        self.assertEqual(get_font_desc().get_size(), 72 * Pango.SCALE)
+        self.assertEqual(title_box.size_scale.get_value(), 72)
+
+        title_box.color_buttons[TEXT_COLORS[1]].set_active(True)
+        self.assertEqual(get_color(), TEXT_COLORS[1])
+        self.assertFalse(title_box.color_buttons[TEXT_COLORS[0]].get_active())
+
+        # The current color cannot be unset.
+        title_box.color_buttons[TEXT_COLORS[1]].set_active(False)
+        self.assertTrue(title_box.color_buttons[TEXT_COLORS[1]].get_active())
+
+        self.action_log.undo()
+        self.assertEqual(get_color(), TEXT_COLORS[0])
+        self.assertTrue(title_box.color_buttons[TEXT_COLORS[0]].get_active())
+        self.assertFalse(title_box.color_buttons[TEXT_COLORS[1]].get_active())
 
     @common.setup_timeline
     @common.setup_clipproperties
