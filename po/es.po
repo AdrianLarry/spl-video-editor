@@ -2080,6 +2080,10 @@ msgstr "Eliminar capa"
 msgid "Layer %d"
 msgstr "Capa %d"
 
+#: pitivi/timeline/timeline.py
+msgid "New layer"
+msgstr "Nueva pista"
+
 #: pitivi/timeline/ruler.py:242
 #, python-format
 msgid "Frame #%d"

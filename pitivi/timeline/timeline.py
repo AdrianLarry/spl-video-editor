@@ -26,6 +26,8 @@ from gi.repository import Gio
 from gi.repository import GLib
 from gi.repository import Gst
 from gi.repository import Gtk
+from gi.repository import Pango
+from gi.repository import PangoCairo
 
 from pitivi.action_search_bar import ActionSearchBar
 from pitivi.autoaligner import AutoAligner
@@ -73,6 +75,8 @@ from pitivi.utils.widgets import ZoomBox
 
 # Creates new layer if a clip is held at layers separator after this time interval
 SEPARATOR_ACCEPTING_DROP_INTERVAL_MS = 1000
+# The color showing where a new layer would be created, as in the mockup.
+NEW_LAYER_ZONE_COLOR = (1.0, 0.541, 0.357)
 
 
 GlobalSettings.add_config_option('markersSnappableByDefault',
@@ -243,6 +247,8 @@ class LayersLayout(Gtk.Layout, Loggable):
 
         self.snap_position = 0
         self.playhead_position = 0
+        # The separator where dropping would create a new layer, if any.
+        self.new_layer_separator: Optional[Gtk.Widget] = None
 
         self.layers_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.layers_vbox.get_style_context().add_class("LayersBox")
@@ -259,6 +265,55 @@ class LayersLayout(Gtk.Layout, Loggable):
 
         self._draw_playhead(cr)
         self._draw_snap_indicator(cr)
+        self._draw_new_layer_zone(cr)
+
+    def set_new_layer_separator(self, separator: Optional[Gtk.Widget]):
+        """Shows where dropping would create a new layer, or nothing."""
+        if self.new_layer_separator is not separator:
+            self.new_layer_separator = separator
+            self.queue_draw()
+
+    def _draw_new_layer_zone(self, cr):
+        """Draws a dashed line and a label where a new layer would be created."""
+        separator = self.new_layer_separator
+        if not separator or not separator.get_parent():
+            return
+
+        allocation = separator.get_allocation()
+        y = allocation.y + allocation.height / 2 - self.get_vadjustment().get_value()
+        width = self.get_allocated_width()
+
+        cr.save()
+        cr.set_source_rgb(*NEW_LAYER_ZONE_COLOR)
+        cr.set_line_width(2)
+        cr.set_dash([8, 6])
+        cr.move_to(0, y)
+        cr.line_to(width, y)
+        cr.stroke()
+        cr.set_dash([])
+
+        layout = PangoCairo.create_layout(cr)
+        layout.set_text("+ " + _("New layer"), -1)
+        font_desc = Pango.FontDescription.from_string("Sans Bold 9")
+        layout.set_font_description(font_desc)
+        text_width, text_height = layout.get_pixel_size()
+        padding = 8
+        x = 10
+        box_height = text_height + 4
+        box_y = y - box_height / 2
+        radius = box_height / 2
+        cr.new_sub_path()
+        cr.arc(x + radius, box_y + radius, radius, 1.5708, 4.7124)
+        cr.arc(x + text_width + 2 * padding - radius, box_y + radius, radius, -1.5708, 1.5708)
+        cr.close_path()
+        cr.set_source_rgb(0.09, 0.1, 0.125)
+        cr.fill_preserve()
+        cr.set_source_rgb(*NEW_LAYER_ZONE_COLOR)
+        cr.set_line_width(1)
+        cr.stroke()
+        cr.move_to(x + padding, box_y + 2)
+        PangoCairo.show_layout(cr, layout)
+        cr.restore()
 
     def update_width(self, width):
         """Updates the width of the area and the width of the layers_vbox."""
@@ -1168,6 +1223,7 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         # De-highlight the separators. We still need to remember them.
         # See how __on_separators is used in __dragDropCb for details
         self._set_separators_prelight(False)
+        self.layout.set_new_layer_separator(None)
 
         target = self.drag_dest_find_target(context, None)
         if self.dragging_element:
@@ -1574,6 +1630,7 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         if self.__on_separators:
             self._separator_accepting_drop_id = GLib.timeout_add(SEPARATOR_ACCEPTING_DROP_INTERVAL_MS,
                                                                  self._separator_accepting_drop_timeout_cb)
+        self.__update_new_layer_zone()
 
         self.editing_context.edit_to(position, self._on_layer)
 
@@ -1581,6 +1638,17 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         self._separator_accepting_drop_id = 0
         self._set_separators_prelight(True)
         self._separator_accepting_drop = True
+        self.__update_new_layer_zone()
+
+    def __update_new_layer_zone(self):
+        """Shows where dropping would create a new layer."""
+        separator = None
+        if self.dragging_element and self.__on_separators:
+            # Dropped files create a layer at once, the clips being moved
+            # only after waiting a moment on the separator.
+            if self.dropping_clips or self._separator_accepting_drop:
+                separator = self.__on_separators[1]
+        self.layout.set_new_layer_separator(separator)
 
     def create_layer(self, priority):
         """Adds a new layer to the GES timeline."""
@@ -1600,6 +1668,7 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
 
     def drag_end(self):
         self.debug("Ending dragging")
+        self.layout.set_new_layer_separator(None)
         if self.editing_context:
             self.__end_snap()
 
