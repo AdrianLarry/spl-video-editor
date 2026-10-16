@@ -35,6 +35,8 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from pitivi.configure import get_pixmap_dir
+from pitivi.clip_properties.orientation import Orientation
+from pitivi.clip_properties.orientation import ORIENTATIONS
 from pitivi.effects import ALLOWED_ONLY_ONCE_EFFECTS
 from pitivi.timeline.markers import ClipMarkersBox
 from pitivi.timeline.markers import Marker
@@ -1103,7 +1105,8 @@ class VideoSource(TimelineElement):
         if self.__videoflip:
             res, method = self.__videoflip.get_child_property("method")
             assert res
-            if "clockwise" in method.value_nick and self.__videoflip.props.active:
+            orientation = ORIENTATIONS.get(int(method), Orientation())
+            if orientation.swaps_dimensions and self.__videoflip.props.active:
                 asset_width = sinfo.get_natural_height()
                 asset_height = sinfo.get_natural_width()
 

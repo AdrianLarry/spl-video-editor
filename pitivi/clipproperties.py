@@ -38,6 +38,9 @@ from pitivi.clip_properties.alignment import AlignmentEditor
 from pitivi.clip_properties.color import ColorProperties
 from pitivi.clip_properties.compositing import CompositingProperties
 from pitivi.clip_properties.markers import ClipMarkersProperties
+from pitivi.clip_properties.orientation import get_orientation
+from pitivi.clip_properties.orientation import Orientation
+from pitivi.clip_properties.orientation import set_orientation
 from pitivi.clip_properties.sound import SoundProperties
 from pitivi.clip_properties.summary import ClipSummary
 from pitivi.clip_properties.title import TitleProperties
@@ -659,7 +662,7 @@ class EffectProperties(Gtk.Expander, Loggable):
             self.cover_popover.update_object_list()
 
     def _create_effect_row(self, effect):
-        if is_time_effect(effect):
+        if is_time_effect(effect) or effect.props.bin_description in HIDDEN_EFFECTS:
             return None
 
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -726,9 +729,6 @@ class EffectProperties(Gtk.Expander, Loggable):
             self.effects_listbox.remove(row)
 
         for effect in self.clip.get_top_effects():
-            if effect.props.bin_description in HIDDEN_EFFECTS:
-                continue
-
             effect_row = self._create_effect_row(effect)
             if effect_row:
                 self.effects_listbox.add(effect_row)
@@ -754,7 +754,8 @@ class EffectProperties(Gtk.Expander, Loggable):
 
     def _remove_effect_row(self, effect):
         row = self._get_effect_row(effect)
-        self.effects_listbox.remove(row)
+        if row:
+            self.effects_listbox.remove(row)
 
     def _move_effect_row(self, effect, new_index):
         row = self._get_effect_row(effect)
@@ -825,10 +826,17 @@ class EffectProperties(Gtk.Expander, Loggable):
 
     def _notify_active_cb(self, track_element, unused_param_spec):
         row = self._get_effect_row(track_element)
-        row.toggle.props.active = track_element.props.active
+        if row:
+            row.toggle.props.active = track_element.props.active
 
     def _notify_priority_cb(self, track_element, unused_param_spec):
-        index = self.clip.get_top_effect_index(track_element)
+        if not self._get_effect_row(track_element):
+            return
+
+        # Some effects are not listed.
+        listed_effects = [effect for effect in self.clip.get_top_effects()
+                          if self._get_effect_row(effect)]
+        index = listed_effects.index(track_element)
         row = self.effects_listbox.get_row_at_index(index)
 
         if not row:
@@ -977,6 +985,8 @@ class TransformationProperties(Gtk.Expander, Loggable):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=SPACING)
         self._framing_box = self.__create_framing_buttons()
         box.pack_start(self._framing_box, False, False, 0)
+        self._orientation_box = self.__create_orientation_buttons()
+        box.pack_start(self._orientation_box, False, False, 0)
         # The position and size fields are not for beginners: the clip can
         # be placed by dragging it in the viewer. They are kept hidden
         # because they reflect the state of the source.
@@ -1014,6 +1024,64 @@ class TransformationProperties(Gtk.Expander, Loggable):
         box.pack_start(fit_button, False, False, 0)
         box.pack_start(fill_button, False, False, 0)
         return box
+
+    def __create_orientation_buttons(self):
+        """Creates the buttons to rotate and mirror the clip."""
+        def create_button(icon_name, tooltip, turn):
+            button = Gtk.Button.new_from_icon_name(icon_name, Gtk.IconSize.BUTTON)
+            button.set_tooltip_text(tooltip)
+            button.connect("clicked", self.__orientation_button_clicked_cb, turn)
+            return button
+
+        self.rotate_left_button = create_button(
+            "object-rotate-left-symbolic", _("Rotate left"),
+            lambda orientation: orientation.rotated(-90))
+        self.rotate_right_button = create_button(
+            "object-rotate-right-symbolic", _("Rotate right"),
+            lambda orientation: orientation.rotated(90))
+        self.mirror_horizontally_button = create_button(
+            "object-flip-horizontal-symbolic", _("Mirror horizontally"),
+            Orientation.mirrored_horizontally)
+        self.mirror_vertically_button = create_button(
+            "object-flip-vertical-symbolic", _("Mirror vertically"),
+            Orientation.mirrored_vertically)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=SPACING)
+        box.props.halign = Gtk.Align.START
+        box.props.margin_start = SPACING
+        for buttons in ((self.rotate_left_button, self.rotate_right_button),
+                        (self.mirror_horizontally_button, self.mirror_vertically_button)):
+            linked_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            linked_box.get_style_context().add_class("linked")
+            for button in buttons:
+                linked_box.pack_start(button, False, False, 0)
+            box.pack_start(linked_box, False, False, 0)
+        return box
+
+    def __orientation_button_clicked_cb(self, unused_button, turn):
+        clip = self.source.get_parent()
+        orientation = get_orientation(clip)
+        new_orientation = turn(orientation)
+        # Keep filling the frame if it was filled, otherwise fit the clip.
+        fill_position = self.get_framing_position(True)
+        fill = self.__get_position() == fill_position != self.get_framing_position(False)
+        with self.app.action_log.started("Transformation orientation",
+                                         finalizing_action=CommitTimelineFinalizingAction(
+                                             self._project.pipeline),
+                                         toplevel=True):
+            set_orientation(clip, new_orientation)
+            if new_orientation.swaps_dimensions != orientation.swaps_dimensions:
+                # The image keeps its aspect ratio, so it has to be framed again.
+                if self.__source_uses_keyframes():
+                    self.__remove_control_bindings()
+                for prop, value in self.get_framing_position(fill).items():
+                    self.source.set_child_property(prop, value)
+
+        self.__update_keyframes_ui()
+
+    def __get_position(self):
+        return {prop: self.source.get_child_property(prop)[1]
+                for prop in ("posx", "posy", "width", "height")}
 
     def get_framing_position(self, fill):
         """Returns the position for fitting or filling the frame with the clip.

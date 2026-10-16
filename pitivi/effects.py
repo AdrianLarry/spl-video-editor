@@ -156,7 +156,9 @@ BLACKLISTED_EFFECTS = [
 
 HIDDEN_EFFECTS = [
     # Overlaying an image onto a video stream can already be done.
-    "gdkpixbufoverlay"]
+    "gdkpixbufoverlay",
+    # Rotating and mirroring are done with the buttons of the framing.
+    "videoflip"]
 
 GlobalSettings.add_config_section('effect-library')
 GlobalSettings.add_config_option('favourite_effects',

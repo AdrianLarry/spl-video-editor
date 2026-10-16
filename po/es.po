@@ -2691,6 +2691,22 @@ msgstr "Rellenar"
 msgid "Cover the whole frame. Part of the image can be left out."
 msgstr "Cubre todo el cuadro. Puede quedar fuera una parte de la imagen."
 
+#: pitivi/clipproperties.py
+msgid "Rotate left"
+msgstr "Girar a la izquierda"
+
+#: pitivi/clipproperties.py
+msgid "Rotate right"
+msgstr "Girar a la derecha"
+
+#: pitivi/clipproperties.py
+msgid "Mirror horizontally"
+msgstr "Espejar horizontalmente"
+
+#: pitivi/clipproperties.py
+msgid "Mirror vertically"
+msgstr "Espejar verticalmente"
+
 #: pitivi/clip_properties/title.py
 msgid "Position"
 msgstr "Posición"

@@ -22,6 +22,9 @@ from unittest import mock
 from gi.repository import GES
 from gi.repository import Gst
 
+from pitivi.clip_properties.orientation import get_flip_effect
+from pitivi.clip_properties.orientation import get_orientation
+from pitivi.clip_properties.orientation import Orientation
 from pitivi.utils.misc import filename_from_uri
 from pitivi.utils.timeline import SELECT
 from tests import common
@@ -91,6 +94,78 @@ class TransformationPropertiesTest(common.TestCase):
 
         fit_button.clicked()
         self.assertDictEqual(get_position(), source.ui.default_position)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_orientation(self):
+        """Checks rotating and mirroring the clip."""
+        clip = self.add_clips_simple(self.timeline_container.timeline, 1)[0]
+        self.timeline_container.timeline.selection.select([clip])
+        box = self.transformation_box
+        source = box.source
+
+        def get_position():
+            return {prop: source.get_child_property(prop)[1]
+                    for prop in ("posx", "posy", "width", "height")}
+
+        def get_effects():
+            return [effect.props.bin_description for effect in clip.get_top_effects()]
+
+        def get_method():
+            res, method = get_flip_effect(clip).get_child_property("method")
+            self.assertTrue(res)
+            return int(method)
+
+        initial_position = get_position()
+        self.assertGreater(initial_position["width"], initial_position["height"])
+
+        # Rotating turns the image and frames it again.
+        box.rotate_right_button.clicked()
+        self.assertEqual(get_effects(), ["videoflip"])
+        self.assertEqual(get_method(), 1)
+        position = get_position()
+        self.assertLess(position["width"], position["height"])
+        self.assertDictEqual(position, source.ui.default_position)
+
+        # Mirroring keeps the frame.
+        box.mirror_horizontally_button.clicked()
+        self.assertEqual(get_method(), 6)
+        self.assertDictEqual(get_position(), position)
+
+        # Back to the original orientation, the effect is removed.
+        box.rotate_right_button.clicked()
+        self.assertEqual(get_method(), 4)
+        box.mirror_horizontally_button.clicked()
+        self.assertEqual(get_effects(), [])
+        self.assertDictEqual(get_position(), initial_position)
+
+        # Each click is undone separately.
+        self.action_log.undo()
+        self.assertEqual(get_method(), 4)
+        for unused in range(3):
+            self.action_log.undo()
+        self.assertEqual(get_effects(), [])
+        self.assertDictEqual(get_position(), initial_position)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_orientation_keeps_filling(self):
+        """Checks a clip filling the frame keeps filling it when rotated."""
+        clip = self.add_clips_simple(self.timeline_container.timeline, 1)[0]
+        self.timeline_container.timeline.selection.select([clip])
+        box = self.transformation_box
+        source = box.source
+        self.project.videowidth = 1000
+        self.project.videoheight = 1000
+
+        unused_fit_button, fill_button = box._framing_box.get_children()
+        fill_button.clicked()
+        box.rotate_left_button.clicked()
+        self.assertEqual(get_orientation(clip), Orientation(270, False))
+        position = {prop: source.get_child_property(prop)[1]
+                    for prop in ("posx", "posy", "width", "height")}
+        self.assertDictEqual(position, box.get_framing_position(True))
+        self.assertLess(position["width"], position["height"])
 
     @common.setup_timeline
     @common.setup_clipproperties
