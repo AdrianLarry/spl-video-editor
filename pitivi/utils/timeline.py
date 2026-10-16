@@ -299,6 +299,24 @@ class EditingContext(GObject.Object, Loggable):
         self.edge = edge
         self.mode = mode
 
+        # The clips of a layer never overlap: extending the end of a clip
+        # pushes the following clips of its layer, extending its start
+        # stops at the previous clip.
+        self.__original_end = self.old_position
+        self.__following = []
+        self.__previous_end = 0
+        if timeline and isinstance(self.focus, GES.Clip) and self.focus.get_layer():
+            self.__original_end = self.focus.props.start + self.focus.props.duration
+            for clip in self.focus.get_layer().get_clips():
+                if clip == self.focus or isinstance(clip, GES.TransitionClip):
+                    continue
+                clip_end = clip.props.start + clip.props.duration
+                if clip.props.start >= self.__original_end:
+                    self.__following.append((clip, clip.props.start))
+                elif clip_end <= self.focus.props.start:
+                    self.__previous_end = max(self.__previous_end, clip_end)
+            self.__following.sort(key=lambda item: item[1])
+
         from pitivi.undo.timeline import CommitTimelineFinalizingAction
         self.__log_actions = log_actions
         if log_actions:
@@ -341,6 +359,24 @@ class EditingContext(GObject.Object, Loggable):
             self.app.action_log.insert(self.__actions_mark, restore_before)
             self.app.action_log.push(restore_after)
 
+    def __get_max_end(self):
+        """Returns the latest end of the focus, limited by its media."""
+        max_duration = self.focus.props.max_duration
+        if max_duration == Gst.CLOCK_TIME_NONE:
+            return Gst.CLOCK_TIME_NONE
+        return self.focus.props.start + max_duration - self.focus.props.in_point
+
+    def __place_following(self, end):
+        """Pushes the following clips so that they start after the end."""
+        delta = max(0, end - self.__original_end)
+        moves = [(clip, start + delta) for clip, start in self.__following
+                 if clip.props.start != start + delta]
+        if moves and moves[0][1] > moves[0][0].props.start:
+            # Moving right, start with the last one so that none overlap.
+            moves.reverse()
+        for clip, start in moves:
+            clip.set_start(start)
+
     def set_mode(self, mode):
         """Sets the current editing mode.
 
@@ -376,7 +412,17 @@ class EditingContext(GObject.Object, Loggable):
                 else:
                     position = time
 
+        trimming = self.mode == GES.EditMode.EDIT_TRIM and isinstance(self.focus, GES.Clip)
+        if trimming and self.edge == GES.Edge.EDGE_START:
+            position = max(position, self.__previous_end)
+        elif trimming and self.edge == GES.Edge.EDGE_END:
+            position = min(position, self.__get_max_end())
+            self.__place_following(position)
+
         res = self.focus.edit([], priority, self.mode, self.edge, int(position))
+        if trimming and self.edge == GES.Edge.EDGE_END:
+            # The end can be different because of snapping or if refused.
+            self.__place_following(self.focus.props.start + self.focus.props.duration)
         if res:
             if self.__fades_anchor:
                 self.__fades_anchor.apply()

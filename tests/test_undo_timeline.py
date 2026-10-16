@@ -583,6 +583,10 @@ class TestLayerObserver(common.TestCase):
                                                         transition_type=GES.VideoStandardTransitionType.BAR_WIPE_LR)
 
     def __check_move_transition_to_different_layer(self, asset, **props):
+        # Overlapping clips do not create transitions in the projects.
+        self.assertFalse(self.timeline.props.auto_transition)
+        self.timeline.props.auto_transition = True
+
         clip1 = asset.extract()
         clip1.set_start(0 * Gst.SECOND)
         self.layer.add_clip(clip1)

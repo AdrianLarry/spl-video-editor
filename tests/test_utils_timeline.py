@@ -17,6 +17,7 @@
 from unittest import mock
 
 from gi.repository import GES
+from gi.repository import Gst
 
 from pitivi.utils.timeline import EditingContext
 from pitivi.utils.timeline import SELECT
@@ -171,3 +172,63 @@ class TestEditingContext(common.TestCase):
             self.assertTrue(context.with_video)
         else:
             self.assertFalse(context.with_video)
+
+
+class TestTrimmingRules(common.TestCase):
+    """Tests for the clips of a layer never overlapping when trimming."""
+
+    def _add_clip(self, layer, start, duration):
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
+        clip = layer.add_asset(asset, start * Gst.SECOND, 0, duration * Gst.SECOND,
+                               GES.TrackType.UNKNOWN)
+        self.assertIsNotNone(clip)
+        return clip
+
+    def _trim(self, clip, edge, *positions):
+        with self.action_log.started("trim"):
+            context = EditingContext(clip, self.timeline, GES.EditMode.EDIT_TRIM, edge, self.app)
+            for position in positions:
+                context.edit_to(position * Gst.SECOND, clip.get_layer())
+            context.finish()
+
+    @staticmethod
+    def _get_ranges(*clips):
+        return [(clip.props.start / Gst.SECOND, clip.props.duration / Gst.SECOND)
+                for clip in clips]
+
+    @common.setup_timeline
+    def test_extending_the_end_pushes_the_following_clips(self):
+        clip1 = self._add_clip(self.layer, 0, 2)
+        clip2 = self._add_clip(self.layer, 2, 2)
+        clip3 = self._add_clip(self.layer, 6, 2)
+        # A clip in another layer is not moved.
+        other_layer = self.timeline.append_layer()
+        other_clip = self._add_clip(other_layer, 3, 2)
+
+        # The positions while dragging go back and forth.
+        self._trim(clip1, GES.Edge.EDGE_END, 4, 5, 3)
+        self.assertEqual(self._get_ranges(clip1, clip2, clip3, other_clip),
+                         [(0, 3), (3, 2), (7, 2), (3, 2)])
+
+        # Shortening leaves a gap.
+        self._trim(clip1, GES.Edge.EDGE_END, 1)
+        self.assertEqual(self._get_ranges(clip1, clip2, clip3),
+                         [(0, 1), (3, 2), (7, 2)])
+
+        self.action_log.undo()
+        self.action_log.undo()
+        self.assertEqual(self._get_ranges(clip1, clip2, clip3, other_clip),
+                         [(0, 2), (2, 2), (6, 2), (3, 2)])
+
+        self.action_log.redo()
+        self.assertEqual(self._get_ranges(clip1, clip2, clip3),
+                         [(0, 3), (3, 2), (7, 2)])
+
+    @common.setup_timeline
+    def test_extending_the_start_stops_at_the_previous_clip(self):
+        clip1 = self._add_clip(self.layer, 0, 2)
+        clip2 = self._add_clip(self.layer, 4, 2)
+        clip2.set_inpoint(4 * Gst.SECOND)
+
+        self._trim(clip2, GES.Edge.EDGE_START, 1)
+        self.assertEqual(self._get_ranges(clip1, clip2), [(0, 2), (2, 4)])

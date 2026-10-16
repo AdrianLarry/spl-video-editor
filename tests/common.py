@@ -624,15 +624,17 @@ class TestCase(unittest.TestCase, Loggable):
         stacks.append(stack)
 
     def _wait_until_project_loaded(self):
-        # Run the mainloop so the project is set up properly so that
-        # the timeline creates transitions automatically.
+        # Run the mainloop so the project is set up properly.
         mainloop = create_main_loop()
 
         def loaded_cb(project, timeline):
             mainloop.quit()
         self.app.project_manager.current_project.connect("loaded", loaded_cb)
         mainloop.run()
-        self.assertTrue(self.timeline.props.auto_transition)
+        # Overlapping clips do not create transitions in the projects, but
+        # the tests check undoing the transitions created that way.
+        self.assertFalse(self.timeline.props.auto_transition)
+        self.timeline.props.auto_transition = True
 
 
 @contextlib.contextmanager
