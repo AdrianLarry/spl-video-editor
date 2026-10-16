@@ -24,6 +24,7 @@ from gi.repository import Gst
 from gi.repository import Gtk
 
 from pitivi.utils.fades import FadesAnchor
+from pitivi.utils.fades import get_keyframes
 from pitivi.utils.loggable import Loggable
 
 
@@ -306,12 +307,39 @@ class EditingContext(GObject.Object, Loggable):
                                           self.timeline.get_asset().pipeline),
                                       toplevel=True)
 
+        # The keyframes before editing, to undo and redo the edit exactly.
+        from pitivi.undo.timeline import get_timeline_keyframes
+        self.__keyframes_before = {}
+        self.__actions_mark = None
+        if timeline and app and app.action_log.is_in_transaction():
+            self.__keyframes_before = get_timeline_keyframes(timeline)
+            self.__actions_mark = app.action_log.get_mark()
+
     def finish(self):
         self.debug("Finishing editing context")
+        if self.__actions_mark:
+            self.__record_keyframes()
+
         if self.__log_actions:
             self.app.action_log.commit("move-clip")
         self.timeline.get_asset().pipeline.commit_timeline()
         self.timeline.ui.app.gui.editor.viewer.clip_trim_preview_finished()
+
+    def __record_keyframes(self):
+        """Records the keyframes changed by the edit, before and after."""
+        from pitivi.undo.timeline import KeyframesRestoredAction
+        restore_before = KeyframesRestoredAction(when_undoing=True)
+        restore_after = KeyframesRestoredAction(when_undoing=False)
+        for control_source, keyframes in self.__keyframes_before.items():
+            current_keyframes = get_keyframes(control_source)
+            if current_keyframes != keyframes:
+                restore_before.keyframes[control_source] = keyframes
+                restore_after.keyframes[control_source] = current_keyframes
+        if restore_before.keyframes:
+            # Undoing an operation performs its actions in reverse order,
+            # so these are performed last, both when undoing and redoing.
+            self.app.action_log.insert(self.__actions_mark, restore_before)
+            self.app.action_log.push(restore_after)
 
     def set_mode(self, mode):
         """Sets the current editing mode.

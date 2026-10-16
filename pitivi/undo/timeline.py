@@ -14,19 +14,25 @@
 #
 # You should have received a copy of the GNU Lesser General Public
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
+from typing import Dict
 from typing import Optional
 
 from gi.repository import GES
 from gi.repository import GObject
 from gi.repository import Gst
+from gi.repository import GstController
 
 from pitivi.effects import PROPS_TO_IGNORE
 from pitivi.undo.base import ConditionsNotReadyYetError
 from pitivi.undo.base import FinalizingAction
 from pitivi.undo.base import GObjectObserver
+from pitivi.undo.base import PropertyChangedAction
 from pitivi.undo.base import UndoableAction
 from pitivi.undo.base import UndoableAutomaticObjectAction
 from pitivi.undo.markers import MetaContainerObserver
+from pitivi.utils.fades import get_keyframes
+from pitivi.utils.fades import Keyframes
+from pitivi.utils.fades import set_keyframes
 from pitivi.utils.loggable import Loggable
 
 
@@ -43,6 +49,33 @@ class CommitTimelineFinalizingAction(FinalizingAction):
 
     def do(self):
         self.__pipeline.commit_timeline()
+
+
+class TimelineElementPropertyChangedAction(PropertyChangedAction):
+    """A change of a property of a clip.
+
+    GES changes the start, in-point and duration one by one when trimming a
+    clip, going through states which it does not accept on their own, such
+    as an in-point and a duration going beyond the end of the media. When
+    undoing or redoing, a change of these refused by GES is delayed until
+    the others have been applied.
+    """
+
+    DELAYABLE_FIELDS = ("start", "in_point", "duration")
+
+    def do(self):
+        self.__set(self.new_value)
+
+    def undo(self):
+        self.__set(self.old_value)
+
+    def __set(self, value):
+        element = self.auto_object
+        element.set_property(self.field_name, value)
+        if self.field_name in self.DELAYABLE_FIELDS and \
+                element.get_property(self.field_name) != value:
+            raise ConditionsNotReadyYetError("%s.%s cannot be %s yet" %
+                                             (element, self.field_name, value))
 
 
 class TrackElementPropertyChanged(UndoableAction):
@@ -554,6 +587,55 @@ class LayerMoved(UndoableAction):
         return st
 
 
+def get_timeline_keyframes(ges_timeline: GES.Timeline) -> Dict[GstController.TimedValueControlSource, Keyframes]:
+    """Returns the keyframes of the control sources of the timeline elements."""
+    keyframes = {}
+    for layer in ges_timeline.get_layers():
+        for clip in layer.get_clips():
+            for track_element in clip.get_children(True):
+                for binding in track_element.get_all_control_bindings().values():
+                    control_source = binding.props.control_source
+                    if isinstance(control_source, GstController.TimedValueControlSource):
+                        keyframes[control_source] = get_keyframes(control_source)
+    return keyframes
+
+
+class KeyframesRestoredAction(UndoableAction):
+    """Restores the keyframes of control sources when undoing or redoing.
+
+    GES adjusts the keyframes of a source when its in-point or duration
+    change. Undoing or redoing an edit goes through other intermediate states
+    than the edit itself, so the keyframes would be adjusted differently.
+
+    Two of these actions surround an edit: the first restores the keyframes
+    from before the edit when undoing, the last restores the keyframes from
+    after the edit when redoing. Both are performed after the other actions.
+
+    Attributes:
+        keyframes (Dict[GstController.TimedValueControlSource, Keyframes]):
+            The keyframes to restore.
+        when_undoing (bool): Whether to restore them when undoing, otherwise
+            when redoing.
+    """
+
+    def __init__(self, when_undoing: bool):
+        UndoableAction.__init__(self)
+        self.keyframes: Dict[GstController.TimedValueControlSource, Keyframes] = {}
+        self.when_undoing = when_undoing
+
+    def do(self):
+        if not self.when_undoing:
+            self.__restore()
+
+    def undo(self):
+        if self.when_undoing:
+            self.__restore()
+
+    def __restore(self):
+        for control_source, keyframes in self.keyframes.items():
+            set_keyframes(control_source, keyframes)
+
+
 class KeyframeAddedAction(UndoableAction):
 
     def __init__(self, control_source, keyframe, action_info):
@@ -708,7 +790,8 @@ class LayerObserver(MetaContainerObserver, Loggable):
             return
 
         props = ["start", "duration", "in-point", "priority"]
-        clip_observer = GObjectObserver(ges_clip, props, self.action_log)
+        clip_observer = GObjectObserver(ges_clip, props, self.action_log,
+                                        TimelineElementPropertyChangedAction)
         self.clip_observers[ges_clip] = clip_observer
 
     def _disconnect_from_clip(self, ges_clip):

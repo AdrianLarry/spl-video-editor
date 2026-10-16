@@ -240,6 +240,30 @@ class UndoableActionLog(GObject.Object, Loggable):
 
         self.emit("push", stack, action)
 
+    def get_mark(self):
+        """Returns a mark of where the next action would be recorded.
+
+        Returns:
+            Tuple[UndoableActionStack, int]: The current operation and the
+                position in it.
+        """
+        stack = self._get_last_stack()
+        return stack, len(stack.done_actions)
+
+    def insert(self, mark, action):
+        """Records a change before the ones recorded after the mark.
+
+        Args:
+            mark (Tuple[UndoableActionStack, int]): The mark returned by
+                `get_mark`.
+            action (UndoableAction): The action representing the change.
+        """
+        if self.running or self.rolling_back:
+            return
+
+        stack, position = mark
+        stack.done_actions.insert(position, action)
+
     def rollback(self, undo=True):
         """Forgets about the last started operation.
 

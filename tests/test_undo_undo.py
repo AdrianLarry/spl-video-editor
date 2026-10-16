@@ -165,6 +165,26 @@ class TestUndoableActionLog(common.TestCase):
         self.log.begin("meh")
         self.assertRaises(UndoWrongStateError, self.log.commit, "notmeh")
 
+    def test_insert(self):
+        """Checks inserting an action before the ones pushed later."""
+        order = []
+
+        def create_action(name):
+            action = mock.Mock(spec=UndoableAction)
+            action.expand.return_value = False
+            action.undo.side_effect = lambda: order.append(name)
+            return action
+
+        self.log.begin("meh")
+        self.log.push(create_action("first"))
+        mark = self.log.get_mark()
+        self.log.push(create_action("third"))
+        self.log.insert(mark, create_action("second"))
+        self.log.commit("meh")
+
+        self.log.undo()
+        self.assertListEqual(order, ["third", "second", "first"])
+
     def test_nested_commit(self):
         """Checks two nested commits."""
         self.assertEqual(len(self.log.undo_stacks), 0)

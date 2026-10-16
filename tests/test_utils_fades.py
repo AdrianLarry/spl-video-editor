@@ -143,3 +143,25 @@ class FadesAnchorTest(common.TestCase):
         self.assertEqual(keyframes[:3], [(0, 0.0), (SECOND, 1.0), (3 * SECOND, 0.5)])
         self.assertEqual(keyframes[-1][0], 4 * SECOND)
         self.assertGreater(keyframes[-1][1], 0.0)
+
+    @common.setup_timeline
+    def test_undo_trim_of_clip_using_all_the_media(self):
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("tears_of_steel.webm"))
+        clip = self.layer.add_asset(asset, 0, 0, 2 * SECOND, GES.TrackType.UNKNOWN)
+        source = self.get_clip_element(clip)
+        original = [(0, 0.0), (SECOND // 2, 1.0), (3 * SECOND // 2, 1.0), (2 * SECOND, 0.0)]
+        control_source = self._set_fades(source, "alpha", original)
+
+        self._trim(clip, GES.Edge.EDGE_START, SECOND // 2)
+        trimmed = [(SECOND // 2, 0.0), (SECOND, 1.0), (3 * SECOND // 2, 1.0), (2 * SECOND, 0.0)]
+        self.assertEqual(get_keyframes(control_source), trimmed)
+
+        # GES adjusts the keyframes differently while undoing and redoing.
+        for unused in range(2):
+            self.action_log.undo()
+            self.assertEqual((clip.props.in_point, clip.props.duration), (0, 2 * SECOND))
+            self.assertEqual(get_keyframes(control_source), original)
+
+            self.action_log.redo()
+            self.assertEqual((clip.props.in_point, clip.props.duration), (SECOND // 2, 3 * SECOND // 2))
+            self.assertEqual(get_keyframes(control_source), trimmed)

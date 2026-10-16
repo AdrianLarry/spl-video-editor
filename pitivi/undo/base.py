@@ -148,13 +148,16 @@ class GObjectObserver(GObject.Object):
     Attributes:
         gobject (GObject.Object): The object to be monitored.
         property_names (List[str]): The props to be monitored.
+        action_class (type): The PropertyChangedAction subclass reporting
+            the changes.
     """
 
-    def __init__(self, gobject, property_names, action_log):
+    def __init__(self, gobject, property_names, action_log, action_class=PropertyChangedAction):
         GObject.Object.__init__(self)
         self.gobject = gobject
         self.property_names = property_names
         self.action_log = action_log
+        self.action_class = action_class
 
         self.properties = {}
         for property_name in self.property_names:
@@ -175,6 +178,6 @@ class GObjectObserver(GObject.Object):
         if old_value == property_value:
             return
         self.properties[property_name] = property_value
-        action = PropertyChangedAction(gobject, field_name,
-                                       old_value, property_value)
+        action = self.action_class(gobject, field_name,
+                                   old_value, property_value)
         self.action_log.push(action)

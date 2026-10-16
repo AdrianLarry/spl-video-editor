@@ -1028,6 +1028,34 @@ class TestTimelineElementObserver(common.TestCase):
         self.action_log.redo()
         self.assertEqual(effect1.get_child_property("scratch-lines")[1], 0)
 
+    @common.setup_timeline
+    def test_trim_clip_using_all_the_media(self):
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("tears_of_steel.webm"))
+        clip = self.layer.add_asset(asset, 0, 0, asset.get_duration(), GES.TrackType.UNKNOWN)
+        full_range = (0, 0, asset.get_duration())
+
+        def get_range():
+            return clip.props.start, clip.props.in_point, clip.props.duration
+
+        # When trimming, GES changes the start, in-point and duration one by
+        # one, going through states in which the clip goes beyond the media.
+        with self.action_log.started("trim start"):
+            context = EditingContext(clip, self.timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_START, self.app)
+            context.edit_to(Gst.SECOND // 2, self.layer)
+            context.finish()
+        trimmed_range = get_range()
+        self.assertEqual(trimmed_range[:2], (Gst.SECOND // 2, Gst.SECOND // 2))
+
+        self.action_log.undo()
+        self.assertEqual(get_range(), full_range)
+
+        self.action_log.redo()
+        self.assertEqual(get_range(), trimmed_range)
+
+        self.action_log.undo()
+        self.assertEqual(get_range(), full_range)
+
 
 class TestGObjectObserver(common.TestCase):
 
