@@ -23,6 +23,7 @@ from gi.repository import GObject
 from gi.repository import Gst
 from gi.repository import Gtk
 
+from pitivi.utils.fades import FadesAnchor
 from pitivi.utils.loggable import Loggable
 
 
@@ -291,6 +292,8 @@ class EditingContext(GObject.Object, Loggable):
 
         self.timeline = timeline
         self.app = app
+        # Keeps the fades at the ends of the trimmed sources.
+        self.__fades_anchor = FadesAnchor(timeline) if timeline else None
 
         self.edge = edge
         self.mode = mode
@@ -347,6 +350,8 @@ class EditingContext(GObject.Object, Loggable):
 
         res = self.focus.edit([], priority, self.mode, self.edge, int(position))
         if res:
+            if self.__fades_anchor:
+                self.__fades_anchor.apply()
             self.app.write_action("edit-container",
                                   container_name=self.focus.get_name(),
                                   position=float(position / Gst.SECOND),

@@ -107,7 +107,7 @@ class CompositingProperties(Gtk.Expander, Loggable):
         if self._control_source:
             disconnect_all_by_func(self._control_source, self.__keyframe_changed_cb)
             self._video_source.disconnect_by_func(self._source_deep_notify_cb)
-            self._video_source.disconnect_by_func(self.__keyframe_changed_cb)
+            disconnect_all_by_func(self._video_source, self.__keyframe_changed_cb)
             self._control_source = None
 
         self._video_source = video_source
@@ -122,6 +122,7 @@ class CompositingProperties(Gtk.Expander, Loggable):
             self._control_source.connect("value-changed", self.__keyframe_changed_cb)
             self._control_source.connect("value-removed", self.__keyframe_changed_cb)
             self._video_source.connect("notify::duration", self.__keyframe_changed_cb)
+            self._video_source.connect("notify::in-point", self.__keyframe_changed_cb)
             self._update_adjustments()
 
             self._video_source.connect("deep-notify", self._source_deep_notify_cb)
@@ -132,6 +133,15 @@ class CompositingProperties(Gtk.Expander, Loggable):
     @property
     def _duration(self) -> int:
         return self._video_source.duration
+
+    # The keyframes timestamps are in the internal time of the source.
+    @property
+    def _start(self) -> int:
+        return self._video_source.props.in_point
+
+    @property
+    def _end(self) -> int:
+        return self._start + self._duration
 
     def _update_adjustments(self) -> None:
         """Updates the UI to reflect the current opacity keyframes."""
@@ -154,8 +164,8 @@ class CompositingProperties(Gtk.Expander, Loggable):
             fade_in = keyframes[1].timestamp
             fade_out = keyframes[-2].timestamp
 
-        self._fade_in = fade_in if start_opacity <= FADE_OPACITY_THRESHOLD else 0
-        self._fade_out = self._duration - fade_out if end_opacity <= FADE_OPACITY_THRESHOLD else 0
+        self._fade_in = fade_in - self._start if start_opacity <= FADE_OPACITY_THRESHOLD else 0
+        self._fade_out = self._end - fade_out if end_opacity <= FADE_OPACITY_THRESHOLD else 0
 
         self._updating_adjustments = True
         try:
@@ -174,14 +184,16 @@ class CompositingProperties(Gtk.Expander, Loggable):
 
     def _fade_in_adjustment_value_changed_cb(self, adjustment: Gtk.Adjustment) -> None:
         if not self._updating_adjustments:
-            fade_timestamp: int = int(self._fade_in_adjustment.props.value * Gst.SECOND)
-            self._move_keyframe(self._fade_in, fade_timestamp, 0, self._duration - self._fade_out)
+            fade_timestamp: int = self._start + int(self._fade_in_adjustment.props.value * Gst.SECOND)
+            self._move_keyframe(self._start + self._fade_in, fade_timestamp,
+                                self._start, self._end - self._fade_out)
             self._update_adjustments()
 
     def _fade_out_adjustment_value_changed_cb(self, adjustment: Gtk.Adjustment) -> None:
         if not self._updating_adjustments:
-            fade_timestamp: int = self._duration - int(self._fade_out_adjustment.props.value * Gst.SECOND)
-            self._move_keyframe(self._duration - self._fade_out, fade_timestamp, self._duration, self._fade_in)
+            fade_timestamp: int = self._end - int(self._fade_out_adjustment.props.value * Gst.SECOND)
+            self._move_keyframe(self._end - self._fade_out, fade_timestamp,
+                                self._end, self._start + self._fade_in)
             self._update_adjustments()
 
     def _reset_fade_in_clicked_cb(self, button: Gtk.Button) -> None:
@@ -215,7 +227,7 @@ class CompositingProperties(Gtk.Expander, Loggable):
         Args:
             current_fade_timestamp: The current position of the keyframe.
             fade_timestamp: The new position of the keyframe.
-            edge_timestamp: 0 for fade-in, duration for fade-out.
+            edge_timestamp: The start for fade-in, the end for fade-out.
             middle_timestamp: The position of the keyframe of the other fade.
         """
         if current_fade_timestamp == fade_timestamp:
@@ -238,7 +250,7 @@ class CompositingProperties(Gtk.Expander, Loggable):
                 end = max(current_fade_timestamp, fade_timestamp)
                 for keyframe in self._get_keyframes_in_range(start, end):
                     timestamp = keyframe.timestamp
-                    if 0 < timestamp < self._duration:
+                    if self._start < timestamp < self._end:
                         self._control_source.unset(timestamp)
 
                 self._control_source.set(fade_timestamp, opacity)

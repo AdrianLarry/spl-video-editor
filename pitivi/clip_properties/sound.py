@@ -28,6 +28,10 @@ from gi.repository import GstController
 from gi.repository import Gtk
 
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.utils.fades import Fades
+from pitivi.utils.fades import fades_keyframes
+from pitivi.utils.fades import read_fades
+from pitivi.utils.fades import set_keyframes
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.ui import format_fade_duration
 from pitivi.utils.ui import PADDING
@@ -40,8 +44,6 @@ VOLUME_RANGE = 10.0
 MAX_VOLUME_PERCENT = 200
 # The longest fade offered, in seconds.
 MAX_FADE_SECONDS = 10
-# Values closer than this are considered equal.
-EPSILON = 1e-6
 
 
 class Envelope(NamedTuple):
@@ -66,27 +68,12 @@ def envelope_keyframes(envelope: Envelope, start: int, end: int) -> List[Tuple[i
         start: The timestamp where the envelope starts, the inpoint of the source.
         end: The timestamp where the envelope ends.
     """
-    value = envelope.volume / VOLUME_RANGE
-    duration = end - start
-    fade_in = max(0, min(envelope.fade_in, duration))
-    fade_out = max(0, min(envelope.fade_out, duration - fade_in))
-
-    keyframes = []
-    if fade_in:
-        keyframes.append((start, 0.0))
-    keyframes.append((start + fade_in, value))
-    keyframes.append((end - fade_out, value))
-    if fade_out:
-        keyframes.append((end, 0.0))
-    # Without fades the volume is constant and the duplicates are dropped.
-    return sorted(dict(keyframes).items())
+    fades = Fades(envelope.volume / VOLUME_RANGE, envelope.fade_in, envelope.fade_out)
+    return fades_keyframes(fades, start, end)
 
 
 def read_envelope(keyframes: List[Tuple[int, float]]) -> Optional[Envelope]:
     """Returns the envelope described by the keyframes, if any.
-
-    The first and last keyframes are taken as the ends of the envelope, so
-    the envelope is still found after the clip has been trimmed.
 
     Args:
         keyframes: The timestamps and values of the volume control source,
@@ -95,28 +82,12 @@ def read_envelope(keyframes: List[Tuple[int, float]]) -> Optional[Envelope]:
     Returns:
         The envelope, or None if the keyframes have been edited freely.
     """
-    if len(keyframes) < 2:
+    fades = read_fades(keyframes)
+    if not fades:
         return None
-
-    values = [value for unused_timestamp, value in keyframes]
-    first, last = 0, len(keyframes) - 1
-    if values[first] < EPSILON:
-        first = 1
-    if values[last] < EPSILON and last > first:
-        last -= 1
-    plateau = values[first:last + 1]
-    if not plateau or any(abs(value - plateau[0]) > EPSILON for value in plateau):
-        return None
-
-    if plateau[0] < EPSILON:
-        # Silent all along.
-        return Envelope(0.0, 0, 0)
-
-    fade_in = keyframes[first][0] - keyframes[0][0]
-    fade_out = keyframes[-1][0] - keyframes[last][0]
     # The values can be stored with a single precision.
-    volume = round(plateau[0] * VOLUME_RANGE, 6)
-    return Envelope(volume, fade_in, fade_out)
+    volume = round(fades.level * VOLUME_RANGE, 6)
+    return Envelope(volume, fades.fade_in, fades.fade_out)
 
 
 class SoundProperties(Gtk.Expander, Loggable):
@@ -308,14 +279,7 @@ class SoundProperties(Gtk.Expander, Loggable):
                     self.source.set_control_source(control_source, "volume", "direct")
                     self.__watch_control_source()
                 start, end = self._get_range()
-                wanted = dict(envelope_keyframes(envelope, start, end))
-                # Remove and set the keyframes one by one, so that the undo
-                # system records the changes.
-                for timestamp, unused_value in self._get_keyframes():
-                    if timestamp not in wanted:
-                        self._control_source.unset(timestamp)
-                for timestamp, value in wanted.items():
-                    self._control_source.set(timestamp, value)
+                set_keyframes(self._control_source, envelope_keyframes(envelope, start, end))
             finally:
                 self._writing = False
         self.update()

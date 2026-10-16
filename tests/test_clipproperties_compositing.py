@@ -137,3 +137,28 @@ class CompositingPropertiesTest(common.TestCase):
 
         self.assertEqual(fade_in_adjustment.props.value, 0.4)
         self.assertEqual(fade_out_adjustment.props.value, 0.2)
+
+    @common.setup_project_with_clips(assets_names=["1sec_simpsons_trailer.mp4"])
+    @common.setup_clipproperties
+    def test_fades_start_at_inpoint(self):
+        clip, = self.layer.get_clips()
+        clip.set_duration(0.8 * Gst.SECOND)
+        clip.set_inpoint(0.3 * Gst.SECOND)
+        self.timeline_container.timeline.selection.select([clip])
+
+        fade_in_adjustment = self.compositing_box._fade_in_adjustment
+        fade_out_adjustment = self.compositing_box._fade_out_adjustment
+        fade_in_adjustment.props.value = 0.2
+        fade_out_adjustment.props.value = 0.1
+
+        # The keyframes are in the internal time of the source.
+        control_source = self._get_control_source(clip)
+        self.assert_control_source_values(control_source,
+                                          [0, 1, 1, 0],
+                                          [0.3 * Gst.SECOND, 0.5 * Gst.SECOND, 1.0 * Gst.SECOND, 1.1 * Gst.SECOND])
+
+        # The adjustments read the fades back when selecting the clip again.
+        self.timeline_container.timeline.selection.select([])
+        self.timeline_container.timeline.selection.select([clip])
+        self.assertAlmostEqual(fade_in_adjustment.props.value, 0.2)
+        self.assertAlmostEqual(fade_out_adjustment.props.value, 0.1)
