@@ -636,6 +636,37 @@ class MultipleKeyframeCurve(KeyframeCurve):
         self.set_tooltip_markup(markup)
 
 
+# Keyframe values up to this are considered silence or transparency.
+FADE_VALUE_THRESHOLD = 0.001
+
+
+def get_fade_durations(keyframes):
+    """Returns the durations of the fade-in and fade-out described by keyframes.
+
+    A fade-in starts from zero and a fade-out ends at zero.
+
+    Args:
+        keyframes (List[Tuple[int, float]]): The timestamps and values,
+            sorted by timestamp.
+
+    Returns:
+        Tuple[int, int]: The durations of the fade-in and fade-out.
+    """
+    if len(keyframes) < 2:
+        return 0, 0
+    values = [value for unused_timestamp, value in keyframes]
+    if all(value <= FADE_VALUE_THRESHOLD for value in values):
+        return 0, 0
+
+    fade_in = 0
+    if values[0] <= FADE_VALUE_THRESHOLD:
+        fade_in = keyframes[1][0] - keyframes[0][0]
+    fade_out = 0
+    if values[-1] <= FADE_VALUE_THRESHOLD:
+        fade_out = keyframes[-1][0] - keyframes[-2][0]
+    return fade_in, fade_out
+
+
 class TimelineElement(Gtk.Layout, Zoomable, Loggable):
     __gsignals__ = {
         # Signal the keyframes curve are being hovered
@@ -679,10 +710,15 @@ class TimelineElement(Gtk.Layout, Zoomable, Loggable):
         self.__controlled_property = None
         self.show_all()
 
+        # The fades are shaded, so redraw when the keyframes change.
+        self.__fades_control_source = None
+        self._ges_elem.connect("control-binding-added", self.__fades_binding_added_cb)
+
         # We set up the default mixing property right here, if a binding was
         # already set (when loading a project), it will be added later
         # and override that one.
         self.show_default_keyframes(lazy_render=True)
+        self.__watch_fades()
 
     def update_previewer(self):
         """Refreshes the previewer widget."""
@@ -692,6 +728,11 @@ class TimelineElement(Gtk.Layout, Zoomable, Loggable):
     def release(self):
         if self.previewer:
             self.previewer.release()
+
+        disconnect_all_by_func(self._ges_elem, self.__fades_binding_added_cb)
+        if self.__fades_control_source:
+            disconnect_all_by_func(self.__fades_control_source, self.__fades_changed_cb)
+            self.__fades_control_source = None
 
         if self.markers:
             self._ges_elem.markers_manager.set_markers_box(None)
@@ -800,11 +841,85 @@ class TimelineElement(Gtk.Layout, Zoomable, Loggable):
         if binding.props.name == self.__controlled_property.name:
             self.__ensure_keyframes(binding)
 
+    def __get_fades_control_source(self):
+        prop = self._get_default_mixing_property()
+        if not prop:
+            return None
+        binding = self._ges_elem.get_control_binding(prop.name)
+        return binding.props.control_source if binding else None
+
+    def __watch_fades(self):
+        control_source = self.__get_fades_control_source()
+        if control_source is self.__fades_control_source:
+            return
+        if self.__fades_control_source:
+            disconnect_all_by_func(self.__fades_control_source, self.__fades_changed_cb)
+        self.__fades_control_source = control_source
+        if control_source:
+            for signal in ("value-added", "value-changed", "value-removed"):
+                control_source.connect(signal, self.__fades_changed_cb)
+        self.queue_draw()
+
+    def __fades_binding_added_cb(self, unused_ges_elem, unused_binding):
+        self.__watch_fades()
+
+    def __fades_changed_cb(self, *unused_args):
+        self.queue_draw()
+
+    def __draw_fades(self, cr):
+        """Shades the fade-in and the fade-out of the clip."""
+        control_source = self.__fades_control_source
+        duration = self._ges_elem.props.duration
+        if not control_source or not duration or not self.__width:
+            return
+
+        keyframes = [(keyframe.timestamp, keyframe.value)
+                     for keyframe in control_source.get_all()]
+        fade_in, fade_out = get_fade_durations(keyframes)
+        if not fade_in and not fade_out:
+            return
+
+        top = self.markers.props.height_request
+        bottom = self.__height
+        width = self.__width
+        if isinstance(self._ges_elem, GES.AudioSource):
+            shade = (0.04, 0.08, 0.07, 0.7)
+        else:
+            shade = (0, 0, 0, 0.65)
+
+        # Each fade is a triangle above the line going from silence or
+        # transparency to the full volume or opacity.
+        triangles = []
+        if fade_in:
+            fade_width = min(width, width * fade_in / duration)
+            triangles.append(((0, bottom), (fade_width, top), (0, top)))
+        if fade_out:
+            fade_width = min(width, width * fade_out / duration)
+            triangles.append(((width - fade_width, top), (width, bottom), (width, top)))
+
+        cr.save()
+        for (line_start, line_end, corner) in triangles:
+            cr.move_to(*line_start)
+            cr.line_to(*line_end)
+            cr.line_to(*corner)
+            cr.close_path()
+            cr.set_source_rgba(*shade)
+            cr.fill()
+
+            cr.move_to(*line_start)
+            cr.line_to(*line_end)
+            cr.set_source_rgba(1, 1, 1, 0.6)
+            cr.set_line_width(1)
+            cr.stroke()
+        cr.restore()
+
     def do_draw(self, cr):
         self.propagate_draw(self.__background, cr)
 
         if self.previewer:
             self.propagate_draw(self.previewer, cr)
+
+        self.__draw_fades(cr)
 
         if self.keyframe_curve and self.keyframe_curve.is_drawable():
             project = self.timeline.app.project_manager.current_project

@@ -22,12 +22,14 @@ from typing import Optional
 from typing import Tuple
 
 from gi.repository import GES
+from gi.repository import GLib
 from gi.repository import Gst
 from gi.repository import GstController
 from gi.repository import Gtk
 
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.loggable import Loggable
+from pitivi.utils.ui import format_fade_duration
 from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import SPACING
 
@@ -36,6 +38,8 @@ from pitivi.utils.ui import SPACING
 VOLUME_RANGE = 10.0
 # The highest volume offered, in percents.
 MAX_VOLUME_PERCENT = 200
+# The longest fade offered, in seconds.
+MAX_FADE_SECONDS = 10
 # Values closer than this are considered equal.
 EPSILON = 1e-6
 
@@ -136,35 +140,40 @@ class SoundProperties(Gtk.Expander, Loggable):
         self.set_label(_("Sound"))
         self.set_expanded(True)
 
-        grid = Gtk.Grid(row_spacing=SPACING, column_spacing=PADDING)
+        grid = Gtk.Grid(row_spacing=PADDING, column_spacing=PADDING)
         grid.props.border_width = SPACING
 
-        volume_label = Gtk.Label(label=_("Volume:"), xalign=1)
+        # As in the approved mockup: each label with its value on the
+        # right, and the slider below.
         self.volume_scale = Gtk.Scale.new_with_range(
             Gtk.Orientation.HORIZONTAL, 0, MAX_VOLUME_PERCENT, 1)
-        self.volume_scale.set_hexpand(True)
-        self.volume_scale.set_digits(0)
         self.volume_scale.add_mark(100, Gtk.PositionType.BOTTOM, None)
-        self.volume_scale.connect("format-value", self.__format_volume_cb)
-        self.volume_scale.connect("value-changed", self.__envelope_widget_changed_cb)
-        grid.attach(volume_label, 0, 0, 1, 1)
-        grid.attach(self.volume_scale, 1, 0, 2, 1)
-
-        self.mute_button = Gtk.ToggleButton(label=_("Mute"))
-        self.mute_button.set_image(Gtk.Image.new_from_icon_name(
-            "audio-volume-muted-symbolic", Gtk.IconSize.BUTTON))
-        self.mute_button.set_always_show_image(True)
-        self.mute_button.props.halign = Gtk.Align.START
-        self.mute_button.connect("toggled", self.__mute_toggled_cb)
-        grid.attach(self.mute_button, 1, 1, 2, 1)
-
-        self.fade_in_spin = self.__create_fade_spin_button()
-        self.fade_out_spin = self.__create_fade_spin_button()
-        for row, (text, spin) in enumerate(((_("Fade in from silence:"), self.fade_in_spin),
-                                            (_("Fade out to silence:"), self.fade_out_spin)), 2):
-            grid.attach(Gtk.Label(label=text, xalign=1), 0, row, 1, 1)
-            grid.attach(spin, 1, row, 1, 1)
-            grid.attach(Gtk.Label(label=_("seconds"), xalign=0), 2, row, 1, 1)
+        self.fade_in_scale = self.__create_fade_scale()
+        self.fade_out_scale = self.__create_fade_scale()
+        rows = ((_("Volume:"), self.volume_scale, self.__format_volume),
+                (_("Fade in from silence:"), self.fade_in_scale, format_fade_duration),
+                (_("Fade out to silence:"), self.fade_out_scale, format_fade_duration))
+        row = 0
+        for text, scale, format_value in rows:
+            scale.set_draw_value(False)
+            scale.set_hexpand(True)
+            value_label = Gtk.Label(halign=Gtk.Align.END)
+            scale.connect("value-changed", self.__update_value_label, value_label, format_value)
+            scale.connect("value-changed", self.__envelope_widget_changed_cb)
+            self.__update_value_label(scale, value_label, format_value)
+            grid.attach(Gtk.Label(label=text, xalign=0), 0, row, 1, 1)
+            grid.attach(value_label, 1, row, 1, 1)
+            grid.attach(scale, 0, row + 1, 2, 1)
+            row += 2
+            if scale is self.volume_scale:
+                self.mute_button = Gtk.ToggleButton(label=_("Mute"))
+                self.mute_button.set_image(Gtk.Image.new_from_icon_name(
+                    "audio-volume-muted-symbolic", Gtk.IconSize.BUTTON))
+                self.mute_button.set_always_show_image(True)
+                self.mute_button.props.halign = Gtk.Align.START
+                self.mute_button.connect("toggled", self.__mute_toggled_cb)
+                grid.attach(self.mute_button, 0, row, 2, 1)
+                row += 1
 
         self.custom_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
         custom_label = Gtk.Label(
@@ -175,7 +184,7 @@ class SoundProperties(Gtk.Expander, Loggable):
         reset_button.connect("clicked", self.__reset_clicked_cb)
         self.custom_box.pack_start(custom_label, False, False, 0)
         self.custom_box.pack_start(reset_button, False, False, 0)
-        grid.attach(self.custom_box, 0, 4, 3, 1)
+        grid.attach(self.custom_box, 0, row, 2, 1)
 
         self.add(grid)
         self.show_all()
@@ -183,14 +192,19 @@ class SoundProperties(Gtk.Expander, Loggable):
         self.custom_box.hide()
         self.hide()
 
-    def __create_fade_spin_button(self):
-        spin = Gtk.SpinButton.new_with_range(0, 10, 0.1)
-        spin.set_digits(1)
-        spin.connect("value-changed", self.__envelope_widget_changed_cb)
-        return spin
+    @staticmethod
+    def __create_fade_scale():
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, MAX_FADE_SECONDS, 0.1)
+        scale.set_digits(1)
+        return scale
 
-    def __format_volume_cb(self, unused_scale, value):
-        return "%d %%" % value
+    @staticmethod
+    def __format_volume(value):
+        return "%d %%" % round(value)
+
+    @staticmethod
+    def __update_value_label(scale, label, format_value):
+        label.set_markup("<b>%s</b>" % GLib.markup_escape_text(format_value(scale.get_value())))
 
     def set_source(self, source: Optional[GES.AudioSource]):
         """Sets the audio source to be configured, or None to hide."""
@@ -265,16 +279,16 @@ class SoundProperties(Gtk.Expander, Loggable):
         self._updating_ui = True
         try:
             self.mute_button.set_active(muted)
-            for spin in (self.fade_in_spin, self.fade_out_spin):
-                spin.set_range(0, max_fade)
+            for scale in (self.fade_in_scale, self.fade_out_scale):
+                scale.set_range(0, min(max_fade, MAX_FADE_SECONDS))
             if envelope:
                 self.volume_scale.set_value(round(envelope.volume * 100))
-                self.fade_in_spin.set_value(envelope.fade_in / Gst.SECOND)
-                self.fade_out_spin.set_value(envelope.fade_out / Gst.SECOND)
+                self.fade_in_scale.set_value(envelope.fade_in / Gst.SECOND)
+                self.fade_out_scale.set_value(envelope.fade_out / Gst.SECOND)
         finally:
             self._updating_ui = False
 
-        for widget in (self.volume_scale, self.fade_in_spin, self.fade_out_spin):
+        for widget in (self.volume_scale, self.fade_in_scale, self.fade_out_scale):
             widget.set_sensitive(envelope is not None)
         self.custom_box.set_visible(envelope is None)
 
@@ -310,8 +324,8 @@ class SoundProperties(Gtk.Expander, Loggable):
         if self._updating_ui:
             return
         envelope = Envelope(self.volume_scale.get_value() / 100,
-                            round(self.fade_in_spin.get_value() * Gst.SECOND),
-                            round(self.fade_out_spin.get_value() * Gst.SECOND))
+                            round(self.fade_in_scale.get_value() * Gst.SECOND),
+                            round(self.fade_out_scale.get_value() * Gst.SECOND))
         # Consecutive changes of the same widget are undone together.
         action_name = "Sound volume" if widget is self.volume_scale else "Sound fades"
         self.set_envelope(envelope, action_name, mergeable=True)

@@ -37,7 +37,7 @@
       <object class="GtkLabel" id="label10">
         <property name="visible">True</property>
         <property name="can-focus">False</property>
-        <property name="halign">end</property>
+        <property name="halign">start</property>
         <property name="hexpand">True</property>
         <property name="label" translatable="yes">Fade-in:</property>
         <property name="xalign">0</property>
@@ -49,7 +49,8 @@
     </child>
     <child>
       <object class="GtkLabel">
-        <property name="visible">True</property>
+        <property name="visible">False</property>
+        <property name="no-show-all">True</property>
         <property name="can-focus">False</property>
         <property name="label" translatable="yes">seconds</property>
       </object>
@@ -60,7 +61,8 @@
     </child>
     <child>
       <object class="GtkSpinButton">
-        <property name="visible">True</property>
+        <property name="visible">False</property>
+        <property name="no-show-all">True</property>
         <property name="can-focus">True</property>
         <property name="adjustment">fade_in_adjustment</property>
         <property name="climb-rate">0.10</property>
@@ -81,7 +83,7 @@
         <property name="adjustment">fade_in_adjustment</property>
         <property name="round-digits">1</property>
         <property name="draw-value">False</property>
-        <property name="value-pos">left</property>
+        <property name="value-pos">right</property>
       </object>
       <packing>
         <property name="left-attach">0</property>
@@ -93,7 +95,7 @@
       <object class="GtkLabel" id="label11">
         <property name="visible">True</property>
         <property name="can-focus">False</property>
-        <property name="halign">end</property>
+        <property name="halign">start</property>
         <property name="hexpand">True</property>
         <property name="label" translatable="yes">Fade-out:</property>
         <property name="xalign">0</property>
@@ -105,7 +107,8 @@
     </child>
     <child>
       <object class="GtkSpinButton">
-        <property name="visible">True</property>
+        <property name="visible">False</property>
+        <property name="no-show-all">True</property>
         <property name="can-focus">True</property>
         <property name="adjustment">fade_out_adjustment</property>
         <property name="climb-rate">0.10</property>
@@ -118,7 +121,8 @@
     </child>
     <child>
       <object class="GtkLabel">
-        <property name="visible">True</property>
+        <property name="visible">False</property>
+        <property name="no-show-all">True</property>
         <property name="can-focus">False</property>
         <property name="label" translatable="yes">seconds</property>
       </object>
@@ -136,6 +140,7 @@
         <property name="adjustment">fade_out_adjustment</property>
         <property name="round-digits">1</property>
         <property name="draw-value">False</property>
+        <property name="value-pos">right</property>
       </object>
       <packing>
         <property name="left-attach">0</property>
@@ -145,7 +150,8 @@
     </child>
     <child>
       <object class="GtkButton" id="reset_fade_in_button">
-        <property name="visible">True</property>
+        <property name="visible">False</property>
+        <property name="no-show-all">True</property>
         <property name="can-focus">True</property>
         <property name="focus-on-click">False</property>
         <property name="receives-default">True</property>
@@ -161,7 +167,8 @@
     </child>
     <child>
       <object class="GtkButton" id="reset_fade_out_button">
-        <property name="visible">True</property>
+        <property name="visible">False</property>
+        <property name="no-show-all">True</property>
         <property name="can-focus">True</property>
         <property name="focus-on-click">False</property>
         <property name="receives-default">True</property>
@@ -177,7 +184,8 @@
     </child>
     <child>
       <object class="GtkLabel">
-        <property name="visible">True</property>
+        <property name="visible">False</property>
+        <property name="no-show-all">True</property>
         <property name="can-focus">False</property>
         <property name="halign">end</property>
         <property name="label" translatable="yes">Blending:</property>
@@ -189,7 +197,8 @@
     </child>
     <child>
       <object class="GtkComboBoxText" id="blending_mode">
-        <property name="visible">True</property>
+        <property name="visible">False</property>
+        <property name="no-show-all">True</property>
         <property name="can-focus">False</property>
         <property name="halign">start</property>
         <signal name="changed" handler="_blending_property_changed_cb" swapped="no"/>

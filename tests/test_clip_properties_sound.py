@@ -100,7 +100,7 @@ class SoundPropertiesTest(common.TestCase):
 
         sound.volume_scale.set_value(50)
         self.assertAlmostEqual(sound.get_envelope().volume, 0.5)
-        sound.fade_in_spin.set_value(0.5)
+        sound.fade_in_scale.set_value(0.5)
         self.assertEqual(sound.get_envelope().fade_in, SECOND // 2)
         self.assertEqual(self._get_keyframes(sound)[0][1], 0.0)
 
@@ -108,7 +108,7 @@ class SoundPropertiesTest(common.TestCase):
         self.action_log.undo()
         self.assertEqual(sound.get_envelope().fade_in, 0)
         self.assertAlmostEqual(sound.get_envelope().volume, 0.5)
-        self.assertEqual(sound.fade_in_spin.get_value(), 0)
+        self.assertEqual(sound.fade_in_scale.get_value(), 0)
         self.action_log.undo()
         self.assertEqual(self._get_keyframes(sound), initial_keyframes)
         self.assertEqual(sound.volume_scale.get_value(), 100)

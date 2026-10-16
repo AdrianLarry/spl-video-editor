@@ -956,7 +956,7 @@ class TransformationProperties(Gtk.Expander, Loggable):
         self.source = None
         self.spin_buttons = {}
         self.spin_buttons_handler_ids = {}
-        self.set_label(_("Transformation"))
+        self.set_label(_("Framing"))
         self.set_expanded(True)
         self._aspect_ratio: Optional[Gst.Fraction] = None
 
@@ -977,7 +977,13 @@ class TransformationProperties(Gtk.Expander, Loggable):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=SPACING)
         self._framing_box = self.__create_framing_buttons()
         box.pack_start(self._framing_box, False, False, 0)
-        box.pack_start(self.builder.get_object("transform_box"), False, False, 0)
+        # The position and size fields are not for beginners: the clip can
+        # be placed by dragging it in the viewer. They are kept hidden
+        # because they reflect the state of the source.
+        transform_box = self.builder.get_object("transform_box")
+        transform_box.set_no_show_all(True)
+        transform_box.hide()
+        box.pack_start(transform_box, False, False, 0)
         self.add(box)
 
         self._init_buttons()
@@ -1387,8 +1393,8 @@ class TransformationProperties(Gtk.Expander, Loggable):
             self.source.connect("deep-notify", self.__source_property_changed_cb)
             self.source.connect("control-binding-added", self._control_bindings_changed)
             self.source.connect("control-binding-removed", self._control_bindings_changed)
-            # Titles and color clips always cover the whole frame.
-            self._framing_box.set_visible(
-                isinstance(self.source.get_asset(), GES.UriSourceAsset))
 
-        self.set_visible(bool(self.source))
+        # Titles and color clips always cover the whole frame, so there is
+        # nothing to choose for them.
+        self.set_visible(bool(self.source) and
+                         isinstance(self.source.get_asset(), GES.UriSourceAsset))

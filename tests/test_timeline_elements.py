@@ -27,12 +27,30 @@ from matplotlib.backend_bases import MouseButton
 from matplotlib.backend_bases import MouseEvent
 
 from pitivi.timeline.elements import GES_TYPE_UI_TYPE
+from pitivi.timeline.elements import get_fade_durations
 from pitivi.undo.undo import UndoableActionLog
 from pitivi.utils.timeline import SELECT
 from pitivi.utils.timeline import UNSELECT
 from pitivi.utils.timeline import Zoomable
 from pitivi.utils.ui import LAYER_HEIGHT
 from tests import common
+
+
+class TestFadeDurations(common.TestCase):
+    """Tests for the get_fade_durations function."""
+
+    def test_fades(self):
+        """Checks the fades are found at the ends of the keyframes."""
+        second = Gst.SECOND
+        for keyframes, expected in (
+                ([], (0, 0)),
+                ([(0, 1.0), (10 * second, 1.0)], (0, 0)),
+                ([(0, 0.0), (2 * second, 1.0), (10 * second, 1.0)], (2 * second, 0)),
+                ([(0, 1.0), (7 * second, 1.0), (10 * second, 0.0)], (0, 3 * second)),
+                ([(0, 0.0), (2 * second, 0.1), (7 * second, 0.1), (10 * second, 0.0)],
+                 (2 * second, 3 * second)),
+                ([(0, 0.0), (10 * second, 0.0)], (0, 0))):
+            self.assertEqual(get_fade_durations(keyframes), expected, keyframes)
 
 
 class TestKeyframeCurve(common.TestCase):

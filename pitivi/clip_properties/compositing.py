@@ -25,6 +25,7 @@ from typing import Iterable
 from typing import Optional
 
 from gi.repository import GES
+from gi.repository import GLib
 from gi.repository import GObject
 from gi.repository import Gst
 from gi.repository import GstController
@@ -34,6 +35,7 @@ from pitivi.configure import get_ui_dir
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import disconnect_all_by_func
+from pitivi.utils.ui import format_fade_duration
 
 
 # The threshold for the lower value of a keyframe segment to consider it a fade.
@@ -54,7 +56,7 @@ class CompositingProperties(Gtk.Expander, Loggable):
         self.app: Gtk.Application = app
 
         self.set_expanded(True)
-        self.set_label(_("Compositing"))
+        self.set_label(_("Image fades"))
 
         builder = Gtk.Builder()
         builder.add_from_file(os.path.join(get_ui_dir(), "clipcompositing.ui"))
@@ -83,6 +85,19 @@ class CompositingProperties(Gtk.Expander, Loggable):
                                # ("add", _("Add")),
                                ):
             self.blending_combo.append(value_id, text)
+
+        # The sliders use the whole width, as those of the sound.
+        compositing_box.set_halign(Gtk.Align.FILL)
+        compositing_box.set_hexpand(True)
+
+        # The durations are shown next to the labels, as the spin buttons
+        # are hidden.
+        for label_id, adjustment, row in (("label10", self._fade_in_adjustment, 0),
+                                          ("label11", self._fade_out_adjustment, 2)):
+            value_label = Gtk.Label(halign=Gtk.Align.END, hexpand=True)
+            compositing_box.attach(value_label, 1, row, 1, 1)
+            adjustment.connect("value-changed", self.__update_value_label, value_label)
+            self.__update_value_label(adjustment, value_label)
 
         self.add(compositing_box)
         compositing_box.show_all()
@@ -151,6 +166,11 @@ class CompositingProperties(Gtk.Expander, Loggable):
 
         self._fade_in_adjustment.props.upper = (self._duration - self._fade_out) / Gst.SECOND
         self._fade_out_adjustment.props.upper = (self._duration - self._fade_in) / Gst.SECOND
+
+    @staticmethod
+    def __update_value_label(adjustment: Gtk.Adjustment, label: Gtk.Label) -> None:
+        label.set_markup("<b>%s</b>" % GLib.markup_escape_text(
+            format_fade_duration(adjustment.props.value)))
 
     def _fade_in_adjustment_value_changed_cb(self, adjustment: Gtk.Adjustment) -> None:
         if not self._updating_adjustments:

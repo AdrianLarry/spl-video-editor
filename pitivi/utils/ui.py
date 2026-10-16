@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 """UI constants and various functions and classes that help with UI drawing."""
+import locale
 import os
 import time
 import urllib.error
@@ -671,6 +672,13 @@ def time_to_string(value):
     hours = mins / 60
     mins = mins % 60
     return "%01d:%02d:%02d.%03d" % (hours, mins, sec, ms)
+
+
+def format_fade_duration(seconds):
+    """Returns a short text for the duration of a fade, in seconds."""
+    if seconds < 0.05:
+        return _("No fade")
+    return locale.format_string("%.1f s", seconds)
 
 
 def beautify_length(length):

@@ -150,7 +150,7 @@ msgstr "segundos"
 
 #: data/ui/clipcompositing.ui:97
 msgid "Fade-out:"
-msgstr "Desparecer:"
+msgstr "Desaparecer:"
 
 #: data/ui/clipcompositing.ui:150
 msgid "Reset fade-in"
@@ -2754,6 +2754,18 @@ msgstr "El volumen se editó en la línea de tiempo."
 #: pitivi/clip_properties/sound.py
 msgid "Use a simple volume"
 msgstr "Usar un volumen simple"
+
+#: pitivi/utils/ui.py
+msgid "No fade"
+msgstr "No"
+
+#: pitivi/clip_properties/compositing.py
+msgid "Image fades"
+msgstr "Fundido de imagen"
+
+#: pitivi/clipproperties.py
+msgid "Framing"
+msgstr "Encuadre"
 
 #: pitivi/render.py
 msgid "The output file could not be linked to the muxer."
