@@ -1231,6 +1231,9 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
                                           for clip in self.dragging_group.get_children(False)]
             self.drop_data_ready = False
             if self.dropping_clips:
+                if self.editing_context:
+                    # Pushed again when dropped on a layer.
+                    self.editing_context.put_back_pushed_clips()
                 self.selection.set_selection([], SELECT)
                 for clip in self.dragging_group.get_children(False):
                     clip.get_layer().remove_clip(clip)
@@ -1274,6 +1277,12 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
                             layer = created_layer
                         clip.first_placement = False
                         layer.add_clip(clip)
+                    if not created_layer and self.editing_context and \
+                            len(self.__last_clips_on_leave) == 1:
+                        # Make room for the clip again.
+                        layer, clip = self.__last_clips_on_leave[0]
+                        self.editing_context.set_making_room(True)
+                        self.editing_context.edit_to(clip.props.start, layer)
 
                 if zoom_was_fitted:
                     self.set_best_zoom_ratio()
@@ -1649,6 +1658,10 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
             if self.dropping_clips or self._separator_accepting_drop:
                 separator = self.__on_separators[1]
         self.layout.set_new_layer_separator(separator)
+        if self.editing_context:
+            # The clips of the layer below are not pushed by a clip which
+            # goes to a new layer.
+            self.editing_context.set_making_room(separator is None)
 
     def create_layer(self, priority):
         """Adds a new layer to the GES timeline."""

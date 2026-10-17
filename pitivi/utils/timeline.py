@@ -322,6 +322,10 @@ class EditingContext(GObject.Object, Loggable):
         # back when the clip is moved further.
         self.__original_starts = {}
         self.__pushed = set()
+        # The clips pushed while an operation was being recorded.
+        self.__recorded_pushes = set()
+        # Whether to make room for the clip, unless it creates a new layer.
+        self.__making_room = True
         if timeline and self.__moves_single_clip():
             for layer in timeline.get_layers():
                 for clip in layer.get_clips():
@@ -349,11 +353,12 @@ class EditingContext(GObject.Object, Loggable):
         if self.__actions_mark:
             self.__record_keyframes()
 
-        if not self.__log_actions and self.__pushed and self.app:
+        unrecorded_pushes = self.__pushed - self.__recorded_pushes
+        if unrecorded_pushes and self.app:
             # The clips being dropped have been added by an operation
             # already committed, the clips pushed complete it.
             from pitivi.undo.timeline import TimelineElementPropertyChangedAction
-            for clip in self.__pushed:
+            for clip in unrecorded_pushes:
                 action = TimelineElementPropertyChangedAction(
                     clip, "start", self.__original_starts[clip], clip.props.start)
                 self.app.action_log.push_to_last_operation(action)
@@ -389,19 +394,42 @@ class EditingContext(GObject.Object, Loggable):
         clips = [child for child in toplevel.get_children(True) if isinstance(child, GES.Clip)]
         return clips == [self.focus]
 
+    def set_making_room(self, making_room):
+        """Sets whether to push the clips in the way of the moved clip.
+
+        Args:
+            making_room (bool): False when dropping would create a new
+                layer, so the clips pushed are put back.
+        """
+        self.__making_room = making_room
+        if not making_room:
+            self.put_back_pushed_clips()
+
+    def put_back_pushed_clips(self):
+        """Puts the clips pushed to make room back in their places."""
+        if not self.__pushed:
+            return
+
+        if self.focus.get_layer():
+            # Move the focus out of the way, so that the clips can be moved freely.
+            end = max(clip.props.start + clip.props.duration for clip in self.__original_starts)
+            self.focus.set_start(end + self.focus.props.duration)
+
+        for clip in sorted(self.__pushed, key=lambda clip: self.__original_starts[clip]):
+            clip.set_start(self.__original_starts[clip])
+        self.__pushed = set()
+        self.__recorded_pushes = set()
+
     def __make_room(self, position, layer):
         """Puts back the pushed clips and pushes the clips in the way.
 
         Returns:
             int: The position where the focus should be placed.
         """
+        self.put_back_pushed_clips()
         # Move the focus out of the way, so that the clips can be moved freely.
         end = max(clip.props.start + clip.props.duration for clip in self.__original_starts)
         self.focus.set_start(end + self.focus.props.duration)
-
-        for clip in sorted(self.__pushed, key=lambda clip: self.__original_starts[clip]):
-            clip.set_start(self.__original_starts[clip])
-        self.__pushed = set()
 
         duration = self.focus.props.duration
         overlapping = [clip for clip in self.__get_other_clips(layer)
@@ -432,9 +460,12 @@ class EditingContext(GObject.Object, Loggable):
         shift = end - following[0].props.start
         if shift <= 0:
             return
+        recorded = bool(self.app) and self.app.action_log.is_in_transaction()
         for clip in reversed(following):
             clip.set_start(clip.props.start + shift)
             self.__pushed.add(clip)
+            if recorded:
+                self.__recorded_pushes.add(clip)
 
     def __get_max_end(self):
         """Returns the latest end of the focus, limited by its media."""
@@ -444,8 +475,11 @@ class EditingContext(GObject.Object, Loggable):
         return self.focus.props.start + max_duration - self.focus.props.in_point
 
     def __place_following(self, end):
-        """Pushes the following clips so that they start after the end."""
-        delta = max(0, end - self.__original_end)
+        """Pushes the following clips once the end reaches the next one."""
+        if not self.__following:
+            return
+        # A gap before the next clip is filled first.
+        delta = max(0, end - self.__following[0][1])
         moves = [(clip, start + delta) for clip, start in self.__following
                  if clip.props.start != start + delta]
         if moves and moves[0][1] > moves[0][0].props.start:
@@ -490,8 +524,12 @@ class EditingContext(GObject.Object, Loggable):
                     position = time
 
         previous_start = self.focus.props.start
-        if self.mode == GES.EditMode.EDIT_NORMAL and self.__original_starts:
+        making_room = self.mode == GES.EditMode.EDIT_NORMAL and self.__original_starts and \
+            self.__making_room
+        if making_room:
             position = self.__make_room(position, layer)
+        elif self.mode == GES.EditMode.EDIT_NORMAL:
+            self.put_back_pushed_clips()
 
         trimming = self.mode == GES.EditMode.EDIT_TRIM and isinstance(self.focus, GES.Clip)
         if trimming and self.edge == GES.Edge.EDGE_START:
@@ -501,7 +539,7 @@ class EditingContext(GObject.Object, Loggable):
             self.__place_following(position)
 
         res = self.focus.edit([], priority, self.mode, self.edge, int(position))
-        if self.mode == GES.EditMode.EDIT_NORMAL and self.__original_starts:
+        if making_room:
             if not res:
                 # Not left out of the way.
                 self.focus.set_start(previous_start)

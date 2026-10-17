@@ -225,6 +225,22 @@ class TestTrimmingRules(common.TestCase):
                          [(0, 3), (3, 2), (7, 2)])
 
     @common.setup_timeline
+    def test_extending_the_end_fills_the_gap_first(self):
+        clip1 = self._add_clip(self.layer, 0, 2)
+        clip2 = self._add_clip(self.layer, 4, 2)
+        clip3 = self._add_clip(self.layer, 7, 2)
+
+        # The next clip is pushed only once reached.
+        self._trim(clip1, GES.Edge.EDGE_END, 3)
+        self.assertEqual(self._get_ranges(clip1, clip2, clip3), [(0, 3), (4, 2), (7, 2)])
+
+        self._trim(clip1, GES.Edge.EDGE_END, 5, 4)
+        self.assertEqual(self._get_ranges(clip1, clip2, clip3), [(0, 4), (4, 2), (7, 2)])
+
+        self._trim(clip1, GES.Edge.EDGE_END, 6)
+        self.assertEqual(self._get_ranges(clip1, clip2, clip3), [(0, 6), (6, 2), (9, 2)])
+
+    @common.setup_timeline
     def test_extending_the_start_stops_at_the_previous_clip(self):
         clip1 = self._add_clip(self.layer, 0, 2)
         clip2 = self._add_clip(self.layer, 4, 2)
@@ -277,6 +293,25 @@ class TestMovingRules(common.TestCase):
         # clips are pushed together, keeping the gaps between them.
         self._move(clip_b, 4.5)
         self.assertEqual(self._get_starts(clip_a, clip_b, clip_c, clip_d), [0, 4, 6, 10])
+
+    @common.setup_timeline
+    def test_no_room_made_when_creating_a_layer(self):
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+
+        context = EditingContext(clip_b, self.timeline, GES.EditMode.EDIT_NORMAL,
+                                 GES.Edge.EDGE_NONE, self.app, True)
+        # Passing over the clips of the layer pushes them.
+        context.edit_to(0, self.layer)
+        self.assertEqual(self._get_starts(clip_b, clip_a), [0, 2])
+        # Dropping would create a new layer, the clips are put back.
+        context.set_making_room(False)
+        self.assertEqual(clip_a.props.start, 0)
+        new_layer = self.timeline.append_layer()
+        context.edit_to(0, new_layer)
+        context.finish()
+        self.assertEqual(self._get_starts(clip_b, clip_a), [0, 0])
+        self.assertEqual(clip_b.get_layer(), new_layer)
 
     @common.setup_timeline
     def test_moving_into_a_gap_which_fits(self):
