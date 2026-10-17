@@ -26,6 +26,10 @@ from pitivi.utils.transitions import FADE_TO_WHITE
 from pitivi.utils.transitions import get_contacts
 from pitivi.utils.transitions import get_image_fades
 from pitivi.utils.transitions import get_max_duration
+from pitivi.utils.transitions import get_video_transition
+from pitivi.utils.transitions import RIGHT
+from pitivi.utils.transitions import SOFT_WIPE
+from pitivi.utils.transitions import TOP
 from pitivi.utils.transitions import get_white_fades
 from pitivi.utils.transitions import is_white_effect
 from pitivi.utils.transitions import set_transition
@@ -195,3 +199,34 @@ class TransitionsTest(common.TestCase):
         self.assertEqual(get_max_duration(contact, DISSOLVE), SECOND // 2)
         self.assertEqual(get_max_duration(contact, FADE_TO_WHITE), SECOND)
         self.assertEqual(get_max_duration(contact, FADE_TO_BLACK), SECOND)
+
+    @common.setup_timeline
+    def test_soft_wipe(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+
+        contact, = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            contact = set_transition(contact, SOFT_WIPE, SECOND, TOP)
+        # The clips overlap as for a dissolve.
+        self.assertEqual(clip_b.props.start, 3 * SECOND)
+        self.assertEqual(get_contacts(self.layer), [contact])
+        self.assertEqual((contact.kind, contact.direction), (SOFT_WIPE, TOP))
+        element = get_video_transition(clip_b)
+        self.assertEqual(element.get_transition_type(), GES.VideoStandardTransitionType.BAR_WIPE_TB)
+        self.assertFalse(element.is_inverted())
+        self.assertGreater(element.get_border(), 0)
+
+        # Another direction.
+        with self.action_log.started("transition"):
+            contact = set_transition(contact, SOFT_WIPE, SECOND, RIGHT)
+        self.assertEqual(get_contacts(self.layer)[0].direction, RIGHT)
+        self.assertEqual(clip_b.props.start, 3 * SECOND)
+
+        self.action_log.undo()
+        contact, = get_contacts(self.layer)
+        self.assertEqual((contact.kind, contact.direction), (SOFT_WIPE, TOP))
+        self.action_log.undo()
+        self.assertEqual(get_contacts(self.layer)[0].kind, None)
+        self.assertEqual(clip_a.props.duration, 4 * SECOND)

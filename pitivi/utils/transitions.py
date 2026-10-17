@@ -23,6 +23,7 @@ record of it:
   the layer to the left, so the project gets shorter.
 - A fade to black is two clips meeting, the first fading out and the
   second fading in. Nothing moves.
+- A soft wipe is like a dissolve, the second clip appearing from a side.
 - A fade to white is two clips meeting, the first turning white and the
   second turning back from white, with an effect of each clip hidden
   from the user. Nothing moves.
@@ -45,6 +46,20 @@ from pitivi.utils.fades import set_keyframes
 DISSOLVE = "dissolve"
 FADE_TO_BLACK = "fade-to-black"
 FADE_TO_WHITE = "fade-to-white"
+SOFT_WIPE = "soft-wipe"
+
+# The sides the second clip appears from, and the wipes doing it.
+LEFT = "left"
+RIGHT = "right"
+TOP = "top"
+BOTTOM = "bottom"
+DIRECTIONS = (LEFT, RIGHT, TOP, BOTTOM)
+WIPES = {LEFT: (GES.VideoStandardTransitionType.BAR_WIPE_LR, False),
+         RIGHT: (GES.VideoStandardTransitionType.BAR_WIPE_LR, True),
+         TOP: (GES.VideoStandardTransitionType.BAR_WIPE_TB, False),
+         BOTTOM: (GES.VideoStandardTransitionType.BAR_WIPE_TB, True)}
+# How soft the edge of a soft wipe is.
+SOFT_WIPE_BORDER = 20000
 
 # The effect turning a clip white, marked with this metadata. It mixes the
 # image with white by lowering the contrast and the saturation, and raising
@@ -64,21 +79,52 @@ class Contact(NamedTuple):
     Attributes:
         clip_a (GES.Clip): The first clip.
         clip_b (GES.Clip): The second clip.
-        kind (Optional[str]): DISSOLVE, FADE_TO_BLACK or None.
+        kind (Optional[str]): DISSOLVE, SOFT_WIPE, FADE_TO_BLACK,
+            FADE_TO_WHITE or None.
         duration (int): The duration of the transition.
+        direction (Optional[str]): The side the second clip appears from,
+            for a wipe.
     """
 
     clip_a: GES.Clip
     clip_b: GES.Clip
     kind: Optional[str]
     duration: int
+    direction: Optional[str] = None
 
     @property
     def position(self) -> int:
         """The time in the middle of the transition, or where the clips meet."""
-        if self.kind == DISSOLVE:
+        if self.kind in OVERLAPPING_KINDS:
             return self.clip_b.props.start + self.duration // 2
         return self.clip_b.props.start
+
+
+# The kinds for which the clips overlap.
+OVERLAPPING_KINDS = (DISSOLVE, SOFT_WIPE)
+
+
+def get_video_transition(clip_b: GES.Clip) -> Optional[GES.VideoTransition]:
+    """Returns the video transition where the clip starts, if any."""
+    layer = clip_b.get_layer()
+    for clip in layer.get_clips() if layer else []:
+        if isinstance(clip, GES.TransitionClip) and clip.props.start == clip_b.props.start:
+            for element in clip.get_children(False):
+                if isinstance(element, GES.VideoTransition):
+                    return element
+    return None
+
+
+def get_overlap_kind(clip_b: GES.Clip):
+    """Returns the kind and direction of the transition where the clip starts."""
+    element = get_video_transition(clip_b)
+    if element:
+        transition_type = element.get_transition_type()
+        inverted = element.is_inverted()
+        for direction, wipe in WIPES.items():
+            if wipe == (transition_type, inverted):
+                return SOFT_WIPE, direction
+    return DISSOLVE, None
 
 
 def is_visual(clip: GES.Clip) -> bool:
@@ -202,7 +248,8 @@ def get_contacts(layer: GES.Layer) -> List[Contact]:
         end_a = clip_a.props.start + clip_a.props.duration
         start_b = clip_b.props.start
         if clip_a.props.start < start_b < end_a:
-            contacts.append(Contact(clip_a, clip_b, DISSOLVE, end_a - start_b))
+            kind, direction = get_overlap_kind(clip_b)
+            contacts.append(Contact(clip_a, clip_b, kind, end_a - start_b, direction))
         elif start_b == end_a:
             white_a = get_white_fades(clip_a)
             white_b = get_white_fades(clip_b)
@@ -222,10 +269,10 @@ def get_contacts(layer: GES.Layer) -> List[Contact]:
 def get_max_duration(contact: Contact, kind: str) -> int:
     """Returns the longest transition of the kind the clips allow."""
     shortest = min(contact.clip_a.props.duration, contact.clip_b.props.duration)
-    if contact.kind == DISSOLVE:
+    if contact.kind in OVERLAPPING_KINDS:
         # The clips overlap, they get back their length without it.
         shortest += contact.duration
-    if kind == DISSOLVE:
+    if kind in OVERLAPPING_KINDS:
         # The clips overlap at most half of their length, so a clip has
         # room for transitions at both ends.
         return min(MAX_DURATION, shortest // 2)
@@ -250,7 +297,7 @@ def _shift_following(contact: Contact, shift: int) -> None:
 
 def remove_transition(contact: Contact) -> Contact:
     """Removes the transition between the clips, returns the contact."""
-    if contact.kind == DISSOLVE:
+    if contact.kind in OVERLAPPING_KINDS:
         # GES removes the transition when the clips stop overlapping.
         _shift_following(contact, contact.duration)
     elif contact.kind == FADE_TO_BLACK:
@@ -262,17 +309,27 @@ def remove_transition(contact: Contact) -> Contact:
     return Contact(contact.clip_a, contact.clip_b, None, 0)
 
 
-def set_transition(contact: Contact, kind: str, duration: int) -> Contact:
+def set_transition(contact: Contact, kind: str, duration: int,
+                   direction: Optional[str] = None) -> Contact:
     """Replaces the transition between the clips, returns the contact."""
     contact = remove_transition(contact)
     duration = max(MIN_DURATION, min(duration, get_max_duration(contact, kind)))
-    if kind == DISSOLVE:
+    if kind in OVERLAPPING_KINDS:
         # GES creates the transition where the clips overlap.
         _shift_following(contact, -duration)
+        if kind == SOFT_WIPE:
+            direction = direction or RIGHT
+            element = get_video_transition(contact.clip_b)
+            transition_type, inverted = WIPES[direction]
+            element.set_transition_type(transition_type)
+            element.set_inverted(inverted)
+            element.set_border(SOFT_WIPE_BORDER)
+        else:
+            direction = None
     elif kind == FADE_TO_BLACK:
         set_image_fades(contact.clip_a, fade_out=duration // 2)
         set_image_fades(contact.clip_b, fade_in=duration - duration // 2)
     elif kind == FADE_TO_WHITE:
         set_white_fades(contact.clip_a, fade_out=duration // 2)
         set_white_fades(contact.clip_b, fade_in=duration - duration // 2)
-    return Contact(contact.clip_a, contact.clip_b, kind, duration)
+    return Contact(contact.clip_a, contact.clip_b, kind, duration, direction)

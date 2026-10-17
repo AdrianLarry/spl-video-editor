@@ -29,7 +29,12 @@ from pitivi.utils.transitions import Contact
 from pitivi.utils.transitions import DEFAULT_DURATION
 from pitivi.utils.transitions import DISSOLVE
 from pitivi.utils.transitions import FADE_TO_BLACK
+from pitivi.utils.transitions import BOTTOM
 from pitivi.utils.transitions import FADE_TO_WHITE
+from pitivi.utils.transitions import LEFT
+from pitivi.utils.transitions import RIGHT
+from pitivi.utils.transitions import SOFT_WIPE
+from pitivi.utils.transitions import TOP
 from pitivi.utils.transitions import get_max_duration
 from pitivi.utils.transitions import MIN_DURATION
 from pitivi.utils.transitions import remove_transition
@@ -40,9 +45,18 @@ from pitivi.utils.ui import SPACING
 # The kinds offered, as in the mockup. The ones without a kind are not
 # available yet.
 KINDS = ((DISSOLVE, _("Dissolve")),
+         (SOFT_WIPE, _("Soft wipe")),
          (FADE_TO_BLACK, _("Fade to black")),
          (FADE_TO_WHITE, _("Fade to white")),
          (None, _("Slide")))
+
+# The sides the second clip appears from, with their icons.
+DIRECTIONS = ((LEFT, _("Left"), "go-next-symbolic"),
+              (RIGHT, _("Right"), "go-previous-symbolic"),
+              (TOP, _("Top"), "go-down-symbolic"),
+              (BOTTOM, _("Bottom"), "go-up-symbolic"))
+# The kinds which have a direction.
+DIRECTED_KINDS = (SOFT_WIPE,)
 
 
 def get_kind_name(kind):
@@ -119,6 +133,23 @@ class TransitionPopover(Gtk.Popover):
         self.kind_buttons[contact.kind or DISSOLVE].set_active(True)
         box.pack_start(grid, False, False, 0)
 
+        self.direction_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
+        self.direction_box.pack_start(Gtk.Label(label=_("From"), xalign=0), False, False, 0)
+        directions_grid = Gtk.Grid(column_spacing=PADDING, column_homogeneous=True)
+        self.direction_buttons = {}
+        group = None
+        for index, (direction, name, icon_name) in enumerate(DIRECTIONS):
+            button = Gtk.RadioButton.new_with_label_from_widget(group, name)
+            group = group or button
+            button.set_mode(False)
+            button.set_image(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.MENU))
+            button.set_always_show_image(True)
+            directions_grid.attach(button, index, 0, 1, 1)
+            self.direction_buttons[direction] = button
+        self.direction_buttons[contact.direction or RIGHT].set_active(True)
+        self.direction_box.pack_start(directions_grid, False, False, 0)
+        box.pack_start(self.direction_box, False, False, 0)
+
         duration_box = Gtk.Box()
         duration_box.pack_start(Gtk.Label(label=_("Duration")), False, False, 0)
         self.duration_label = Gtk.Label()
@@ -153,6 +184,16 @@ class TransitionPopover(Gtk.Popover):
 
         self.add(box)
         box.show_all()
+        self.__update_direction_visibility()
+
+    def __update_direction_visibility(self):
+        self.direction_box.set_visible(self.get_kind() in DIRECTED_KINDS)
+
+    def get_direction(self):
+        for direction, button in self.direction_buttons.items():
+            if button.get_active():
+                return direction
+        return None
 
     def __update_duration_range(self):
         """Sets the durations offered, which depend on the kind."""
@@ -163,6 +204,8 @@ class TransitionPopover(Gtk.Popover):
     def __kind_toggled_cb(self, button):
         if button.get_active() and hasattr(self, "duration_scale"):
             self.__update_duration_range()
+        if button.get_active() and hasattr(self, "direction_box"):
+            self.__update_direction_visibility()
 
     def __duration_changed_cb(self, scale):
         self.duration_label.set_markup("<b>%s</b>" % GLib.markup_escape_text(
@@ -188,7 +231,8 @@ class TransitionPopover(Gtk.Popover):
 
     def __apply_clicked_cb(self, unused_button):
         duration = round(self.duration_scale.get_value() * 10) * Gst.SECOND // 10
-        self.__change(lambda: set_transition(self.contact, self.get_kind(), duration))
+        self.__change(lambda: set_transition(self.contact, self.get_kind(), duration,
+                                             self.get_direction()))
 
     def __remove_clicked_cb(self, unused_button):
         self.__change(lambda: remove_transition(self.contact))

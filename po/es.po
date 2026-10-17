@@ -2129,6 +2129,14 @@ msgid "Slide"
 msgstr "Desplazar"
 
 #: pitivi/timeline/transitions.py
+msgid "Soft wipe"
+msgstr "Barrido suave"
+
+#: pitivi/timeline/transitions.py
+msgid "From"
+msgstr "Desde"
+
+#: pitivi/timeline/transitions.py
 #, python-format
 msgid "%s, %s. Click to change or remove it."
 msgstr "%s, %s. Hacé clic para cambiarla o quitarla."
