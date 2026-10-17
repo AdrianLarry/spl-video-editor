@@ -471,15 +471,8 @@ def remove_fades(clip_a: GES.Clip, clip_b: GES.Clip, kind: Optional[str]) -> Non
         set_white_fades(clip_b, fade_in=0)
 
 
-def are_neighbors(clip_a: GES.Clip, clip_b: GES.Clip) -> bool:
-    """Whether the second clip is the one after the first in their layer.
-
-    There can be a gap between them, which can be closed.
-    """
+def are_in_contact(clip_a: GES.Clip, clip_b: GES.Clip) -> bool:
+    """Whether the second clip starts where the first ends, in their layer."""
     layer = clip_a.get_layer()
-    if layer is None or layer != clip_b.get_layer():
-        return False
-    following = [clip for clip in layer.get_clips()
-                 if not isinstance(clip, GES.TransitionClip) and clip != clip_a and
-                 clip.props.start >= clip_a.props.start]
-    return bool(following) and min(following, key=lambda clip: clip.props.start) == clip_b
+    return layer is not None and layer == clip_b.get_layer() and \
+        clip_b.props.start == clip_a.props.start + clip_a.props.duration

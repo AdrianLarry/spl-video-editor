@@ -476,12 +476,12 @@ class FullLayer(Layer, Zoomable):
                         if not isinstance(clip, GES.TransitionClip)),
                        key=lambda clip: clip.props.start)
         gaps = []
-        end = None
+        # Also the gap at the beginning of the layer.
+        end = 0
         for clip in clips:
-            if end is not None and clip.props.start > end:
+            if clip.props.start > end:
                 gaps.append((end, clip.props.start))
-            clip_end = clip.props.start + clip.props.duration
-            end = clip_end if end is None else max(end, clip_end)
+            end = max(end, clip.props.start + clip.props.duration)
         return gaps
 
     def update_gaps(self):

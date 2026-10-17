@@ -1788,7 +1788,11 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
     def insert_assets(self, assets, position=None):
         """Creates clips out of the specified assets on the longest layer."""
         layer = self._get_longest_layer()
-        self._insert_clips_and_assets(assets, position, layer)
+        # The clips added after the last one go right after it, without a gap.
+        position = self.__get_insert_position(position)
+        layer_end = max((clip.props.start + clip.props.duration for clip in layer.get_clips()),
+                        default=0)
+        self._insert_clips_and_assets(assets, min(position, layer_end), layer)
 
     def insert_clips_on_first_layer(self, clips, position=None):
         """Adds clips to the timeline on the first layer."""

@@ -336,3 +336,15 @@ class TestMovingRules(common.TestCase):
         self.action_log.undo()
         self.assertNotIn(new_clip, self.layer.get_clips())
         self.assertEqual(self._get_starts(clip_a, clip_b), [0, 2])
+
+    @common.setup_timeline
+    def test_dropping_after_the_last_clip_leaves_no_gap(self):
+        clip_a = self._add_clip(0)
+        with self.action_log.started("Add clips"):
+            new_clip = self._add_clip(20)
+        self._move(new_clip, 9, log_actions=False)
+        self.assertEqual(self._get_starts(clip_a, new_clip), [0, 2])
+
+        # Moving a clip of the timeline keeps the gap.
+        self._move(new_clip, 9)
+        self.assertEqual(self._get_starts(new_clip), [9])

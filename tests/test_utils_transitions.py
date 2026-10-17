@@ -170,13 +170,25 @@ class TransitionsTest(common.TestCase):
         contrast = effect.get_control_binding("contrast").props.control_source
         self.assertEqual(get_keyframes(contrast)[-1], (4 * SECOND, 0.0))
 
-        # Trimming keeps the fade to white at the new end.
+        # Extending the first clip pushes the second one, the fade to white
+        # stays at the new end.
+        with self.action_log.started("trim"):
+            context = EditingContext(clip_a, self.timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_END, self.app)
+            context.edit_to(5 * SECOND, self.layer)
+            context.finish()
+        self.assertEqual(get_white_fades(clip_a).fade_out, SECOND // 2)
+        self.assertEqual(get_contacts(self.layer)[0].kind, FADE_TO_WHITE)
+        self.action_log.undo()
+
+        # Shortening it, the clips lose contact and the transition goes away.
         with self.action_log.started("trim"):
             context = EditingContext(clip_a, self.timeline, GES.EditMode.EDIT_TRIM,
                                      GES.Edge.EDGE_END, self.app)
             context.edit_to(3 * SECOND, self.layer)
             context.finish()
-        self.assertEqual(get_white_fades(clip_a).fade_out, SECOND // 2)
+        self.assertEqual(get_white_fades(clip_a).fade_out, 0)
+        self.assertEqual(get_white_fades(clip_b).fade_in, 0)
         self.action_log.undo()
 
         # Removed, the effect goes away from the clips without fades to white.
@@ -346,3 +358,21 @@ class TransitionsTest(common.TestCase):
 
         self.action_log.undo()
         self.assertEqual(get_contacts(self.layer)[0].kind, FADE_TO_WHITE)
+
+    @common.setup_timeline
+    def test_separating_clips_removes_their_transition(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+        contact, = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            set_transition(contact, FADE_TO_BLACK, SECOND)
+
+        # Moved a little, with a gap between the clips.
+        with self.action_log.started("move"):
+            context = EditingContext(clip_b, self.timeline, GES.EditMode.EDIT_NORMAL,
+                                     GES.Edge.EDGE_NONE, self.app)
+            context.edit_to(5 * SECOND, self.layer)
+            context.finish()
+        self.assertEqual(get_image_fades(clip_a).fade_out, 0)
+        self.assertEqual(get_image_fades(clip_b).fade_in, 0)

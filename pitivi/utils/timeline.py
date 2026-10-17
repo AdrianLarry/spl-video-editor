@@ -304,7 +304,7 @@ class EditingContext(GObject.Object, Loggable):
         self.__white_fades = {}
         self.__wipes = []
         # The fades to black or white between clips, removed if the clips
-        # are not neighbors anymore after the edit.
+        # are not in contact anymore after the edit.
         self.__fade_contacts = []
         if timeline:
             for timeline_layer in timeline.get_layers():
@@ -352,6 +352,9 @@ class EditingContext(GObject.Object, Loggable):
         # back when the clip is moved further.
         self.__original_starts = {}
         self.__pushed = set()
+        # The clips being dropped are new, placed after the last clip of the
+        # layer without a gap.
+        self.__dropping = log_actions is False
         # The clips pushed while an operation was being recorded.
         self.__recorded_pushes = set()
         # Whether to make room for the clip, unless it creates a new layer.
@@ -381,10 +384,10 @@ class EditingContext(GObject.Object, Loggable):
     def finish(self):
         self.debug("Finishing editing context")
         if self.__fade_contacts:
-            from pitivi.utils.transitions import are_neighbors
+            from pitivi.utils.transitions import are_in_contact
             from pitivi.utils.transitions import remove_fades
             for clip_a, clip_b, kind in self.__fade_contacts:
-                if not are_neighbors(clip_a, clip_b):
+                if not are_in_contact(clip_a, clip_b):
                     remove_fades(clip_a, clip_b, kind)
 
         if self.__actions_mark:
@@ -469,7 +472,11 @@ class EditingContext(GObject.Object, Loggable):
         self.focus.set_start(end + self.focus.props.duration)
 
         duration = self.focus.props.duration
-        overlapping = [clip for clip in self.__get_other_clips(layer)
+        others = self.__get_other_clips(layer)
+        if self.__dropping and others:
+            layer_end = max(clip.props.start + clip.props.duration for clip in others)
+            position = min(position, layer_end)
+        overlapping = [clip for clip in others
                        if clip.props.start < position + duration and
                        position < clip.props.start + clip.props.duration]
         if overlapping:

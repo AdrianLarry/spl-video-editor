@@ -186,6 +186,16 @@ class TestLayer(common.TestCase):
         self.action_log.undo()
         self.assertEqual([clip.props.start / Gst.SECOND for clip in (clip1, clip2, clip3)],
                          [0, 5, 9])
+
+        # A gap at the beginning of the layer.
+        with self.action_log.started("move"):
+            clip1.set_start(Gst.SECOND)
+        self.assertEqual(layer_ui.get_gaps()[0], (0, Gst.SECOND))
+        layer_ui.close_gap(0, Gst.SECOND)
+        self.assertEqual([clip.props.start / Gst.SECOND for clip in (clip1, clip2, clip3)],
+                         [0, 4, 8])
+        self.action_log.undo()
+        self.action_log.undo()
         # The buttons are updated when the timeline has been committed.
         common.create_main_loop().run(until_empty=True)
         self.assertEqual(len(layer_ui.gap_buttons), 2)
