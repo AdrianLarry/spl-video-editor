@@ -60,6 +60,7 @@ from pitivi.utils.timeline import Zoomable
 from pitivi.utils.ui import EFFECT_TARGET_ENTRY
 from pitivi.utils.ui import LAYER_HEIGHT
 from pitivi.utils.ui import MINI_LAYER_HEIGHT
+from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import PLAYHEAD_COLOR
 from pitivi.utils.ui import PLAYHEAD_WIDTH
 from pitivi.utils.ui import SEPARATOR_HEIGHT
@@ -1954,13 +1955,25 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
 
         self.markers = MarkersBox(self.app, hadj=self.timeline.hadj)
 
-        self.attach(self.markers, 1, 0, 1, 1)
-        self.attach(self.zoom_box, 0, 1, 1, 1)
-        self.attach(self.ruler, 1, 1, 1, 1)
-        self.attach(self.timeline, 0, 2, 2, 1)
-        self.attach(self.vscrollbar, 2, 2, 1, 1)
-        self.attach(hscrollbar, 1, 3, 1, 1)
-        self.attach(self.toolbar, 3, 2, 1, 1)
+        # The main actions are in a toolbar with text above the timeline, as
+        # in the mockup. The other actions have shortcuts.
+        self.edit_toolbar = self.__create_edit_toolbar()
+        # The ruler was as high as the zoom box next to it.
+        self.ruler.props.height_request = self.zoom_box.get_preferred_height()[1]
+        # The zoom box stays, empty, keeping the width of the layer controls.
+        for widget in [self.toolbar] + self.zoom_box.get_children():
+            widget.set_no_show_all(True)
+            widget.hide()
+
+        self.insert_row(0)
+        self.attach(self.edit_toolbar, 0, 0, 4, 1)
+        self.attach(self.markers, 1, 1, 1, 1)
+        self.attach(self.zoom_box, 0, 2, 1, 1)
+        self.attach(self.ruler, 1, 2, 1, 1)
+        self.attach(self.timeline, 0, 3, 2, 1)
+        self.attach(self.vscrollbar, 2, 3, 1, 1)
+        self.attach(hscrollbar, 1, 4, 1, 1)
+        self.attach(self.toolbar, 3, 3, 1, 1)
 
         self.set_margin_top(SPACING)
 
@@ -1970,6 +1983,44 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
 
         self.timeline.selection.connect(
             "selection-changed", self.__selection_changed_cb)
+
+    def __create_edit_toolbar(self):
+        """Creates the toolbar with the main actions on the timeline."""
+        def create_button(label, icon_name, action_name, tooltip):
+            button = Gtk.Button()
+            if label:
+                button.set_label(label)
+                button.set_always_show_image(True)
+            image = Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.BUTTON)
+            button.set_image(image)
+            button.set_action_name(action_name)
+            button.set_tooltip_text(tooltip)
+            return button
+
+        box = Gtk.Box(spacing=SPACING)
+        box.props.margin_start = SPACING
+        box.props.margin_end = SPACING
+        box.props.margin_bottom = SPACING
+        box.pack_start(create_button(_("Split"), "scissors-symbolic", "timeline.split-clips",
+                                     _("Split the selected clip at the playhead")),
+                       False, False, 0)
+        box.pack_start(create_button(_("Delete"), "edit-delete-symbolic",
+                                     "timeline.delete-selected-clips",
+                                     _("Remove the selected clip and leave its space free")),
+                       False, False, 0)
+
+        zoom_box = Gtk.Box(spacing=PADDING)
+        zoom_box.pack_start(Gtk.Label(label=_("Zoom")), False, False, PADDING)
+        for button in (create_button(None, "zoom-out-symbolic", "navigation.zoom-out",
+                                     _("Zoom out (see more time)")),
+                       create_button(None, "zoom-in-symbolic", "navigation.zoom-in",
+                                     _("Zoom in (see more detail)")),
+                       create_button(_("Show all"), "zoom-fit-best-symbolic", "navigation.zoom-fit",
+                                     _("Fit the zoom to see the whole project"))):
+            button.props.relief = Gtk.ReliefStyle.NONE
+            zoom_box.pack_start(button, False, False, 0)
+        box.pack_end(zoom_box, False, False, 0)
+        return box
 
     def _get_longest_layer(self):
         """Returns the longest layer."""
@@ -1996,6 +2047,7 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
         self.timeline.layout.insert_action_group("timeline", group)
         self.timeline.add_layer_button.insert_action_group("timeline", group)
         self.toolbar.insert_action_group("timeline", group)
+        self.edit_toolbar.insert_action_group("timeline", group)
         self.app.shortcuts.register_group("timeline", _("Timeline"), position=30)
 
         # Action Search Bar.
@@ -2152,6 +2204,7 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
         navigation_group = Gio.SimpleActionGroup()
         self.timeline.layout.insert_action_group("navigation", navigation_group)
         self.toolbar.insert_action_group("navigation", navigation_group)
+        self.edit_toolbar.insert_action_group("navigation", navigation_group)
         self.app.shortcuts.register_group("navigation", _("Timeline Navigation"), position=40)
 
         self.zoom_in_action = Gio.SimpleAction.new("zoom-in", None)

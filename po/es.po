@@ -780,6 +780,30 @@ msgstr "Eliminar vídeos"
 msgid "Delete"
 msgstr "Eliminar"
 
+#: pitivi/timeline/timeline.py
+msgid "Split the selected clip at the playhead"
+msgstr "Corta el clip seleccionado en la posición del cursor"
+
+#: pitivi/timeline/timeline.py
+msgid "Remove the selected clip and leave its space free"
+msgstr "Quita el clip seleccionado y deja su espacio libre"
+
+#: pitivi/timeline/timeline.py
+msgid "Zoom out (see more time)"
+msgstr "Alejar (ver más tiempo)"
+
+#: pitivi/timeline/timeline.py
+msgid "Zoom in (see more detail)"
+msgstr "Acercar (ver más detalle)"
+
+#: pitivi/timeline/timeline.py
+msgid "Show all"
+msgstr "Mostrar todo"
+
+#: pitivi/timeline/timeline.py
+msgid "Fit the zoom to see the whole project"
+msgstr "Ajusta el zoom para ver todo el proyecto"
+
 #: data/ui/timelinetoolbar.ui:46
 msgid "Group clips"
 msgstr "Agrupar vídeos"
@@ -2495,7 +2519,7 @@ msgstr "Ajustar ampliación"
 
 #: pitivi/utils/widgets.py:1233
 msgid "Zoom"
-msgstr "Ampliación"
+msgstr "Zoom"
 
 #. Translators: %s represents a duration, for example "10 minutes"
 #: pitivi/utils/widgets.py:1309
