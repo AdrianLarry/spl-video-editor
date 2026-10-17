@@ -101,7 +101,9 @@ class TitleOverlayTest(common.TestCase):
         app.project_manager.new_blank_project()
         mainloop.run(until_empty=True)
 
-        app.gui.editor.clipconfig._title_button.clicked()
+        # Dragging a centered title did not move it.
+        with mock.patch("pitivi.clipproperties.DEFAULT_VALIGNMENT", "center"):
+            app.gui.editor.clipconfig._title_button.clicked()
         mainloop.run(until_empty=True)
         source = app.gui.editor.clipconfig.title_expander.source
 
@@ -109,9 +111,6 @@ class TitleOverlayTest(common.TestCase):
             return tuple(source.get_child_property(prop)[1].value_name
                          for prop in ("halignment", "valignment"))
 
-        # Dragging a centered title did not move it.
-        self.assertTrue(source.set_child_property("valignment", "center"))
-        mainloop.run(until_empty=True)
         self.assertEqual(get_alignment(), ("center", "center"))
 
         # Simulate hover and drag&drop.
