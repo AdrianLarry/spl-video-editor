@@ -1236,8 +1236,11 @@ class AudioUriSource(TimelineElement):
         self.mute_button.props.focus_on_click = False
         self.mute_button.get_style_context().add_class("ClipMuteButton")
         self.mute_button.connect("clicked", self.__mute_button_clicked_cb)
-        self.put(self.mute_button, PADDING, PADDING)
-        self.mute_button.show_all()
+        # The clip shows the button above the keyframes curve.
+        self.mute_button.props.halign = Gtk.Align.START
+        self.mute_button.props.valign = Gtk.Align.END
+        self.mute_button.props.margin_start = 2 * PADDING
+        self.mute_button.props.margin_bottom = PADDING
         self._ges_elem.connect("deep-notify", self.__deep_notify_cb)
         self.__update_mute()
 
@@ -1269,9 +1272,6 @@ class AudioUriSource(TimelineElement):
                                                   toplevel=True):
             self._ges_elem.set_child_property("mute", not self.is_muted())
 
-    def do_draw(self, cr):
-        TimelineElement.do_draw(self, cr)
-        self.propagate_draw(self.mute_button, cr)
 
     def _get_previewer(self):
         previewer = AudioPreviewer(self._ges_elem, self.timeline.app.settings.previewers_max_cpu)
@@ -1448,6 +1448,7 @@ class Clip(Gtk.EventBox, Loggable):
     def _add_trim_handles(self):
         overlay = Gtk.Overlay()
         self.add(overlay)
+        self._overlay = overlay
 
         self._elements_container = Gtk.Box.new(Gtk.Orientation.VERTICAL, 0)
         overlay.add_overlay(self._elements_container)
@@ -1481,6 +1482,10 @@ class Clip(Gtk.EventBox, Loggable):
         res, button = event.get_button()
         if res and not button == 1:
             # Only the left mouse button selects.
+            return False
+
+        if self.timeline.is_on_button(event):
+            # Clicking the mute button does not select the clip.
             return False
 
         mode = SELECT
@@ -1686,6 +1691,10 @@ class SourceClip():
         self.get_style_context().add_class("Clip")
 
     def _remove_child(self, ges_timeline_element):
+        mute_button = getattr(ges_timeline_element.ui, "mute_button", None)
+        if mute_button and mute_button.get_parent():
+            mute_button.get_parent().remove(mute_button)
+
         if ges_timeline_element.ui:
             ges_timeline_element.ui.release()
             self._elements_container.remove(ges_timeline_element.ui)
@@ -1752,6 +1761,12 @@ class FullSourceClip(SourceClip, FullClip):
         else:
             self._elements_container.pack_end(widget, expand=True, fill=False, padding=0)
         widget.set_visible(True)
+
+        mute_button = getattr(widget, "mute_button", None)
+        if mute_button:
+            # Above the keyframes curve shown when the clip is selected.
+            self._overlay.add_overlay(mute_button)
+            mute_button.show_all()
 
     def release(self):
         for child in self.ges_clip.get_children(True):

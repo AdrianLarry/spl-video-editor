@@ -881,9 +881,24 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         """
         self.__next_seek_position = next_seek_position
 
+    def is_on_button(self, event):
+        """Whether the event is on a button of a clip or of a layer.
+
+        The buttons, such as the one muting a clip, handle their clicks,
+        which do not select, move or seek.
+        """
+        try:
+            event_widget = Gtk.get_event_widget(event)
+        except TypeError:
+            # Not a Gdk.Event, as in some tests.
+            return False
+        return bool(event_widget) and self._get_parent_of_type(event_widget, Gtk.Button) is not None
+
     def _button_press_event_cb(self, unused_widget, event, mini=False):
         """Handles a mouse button press event."""
         self.debug("PRESSED %s", event)
+        if self.is_on_button(event):
+            return False
         self.app.gui.editor.focus_timeline()
 
         event_widget = Gtk.get_event_widget(event)
@@ -926,6 +941,8 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
 
     def _button_release_event_cb(self, unused_widget, event, mini=False):
         self.debug("RELEASED %s", event)
+        if self.is_on_button(event) and not self.dragging_element:
+            return False
         allow_seek = not self.__got_dragged
 
         res, button = event.get_button()

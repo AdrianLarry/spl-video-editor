@@ -578,3 +578,23 @@ class TestAudioUriSource(common.TestCase):
         sound.mute_button.set_active(True)
         self.assertTrue(audio_ui.is_muted())
         self.assertEqual(audio_ui.mute_button.get_tooltip_text(), "Unmute")
+
+    @common.setup_timeline
+    def test_mute_button_click_does_not_select(self):
+        """Checks clicking the mute button is left to the button."""
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("mp3_sample.mp3"))
+        clip = self.layer.add_asset(asset, 0, 0, Gst.SECOND, GES.TrackType.AUDIO)
+        source = clip.find_track_element(None, GES.AudioSource)
+        timeline = self.timeline_container.timeline
+
+        event = mock.Mock()
+        event.get_button.return_value = (True, 1)
+        with mock.patch.object(Gtk, "get_event_widget") as get_event_widget:
+            get_event_widget.return_value = source.ui.mute_button
+            self.assertTrue(timeline.is_on_button(event))
+            clip.ui._button_release_event_cb(None, event)
+        self.assertFalse(clip.selected)
+
+        with mock.patch.object(Gtk, "get_event_widget") as get_event_widget:
+            get_event_widget.return_value = source.ui
+            self.assertFalse(timeline.is_on_button(event))
