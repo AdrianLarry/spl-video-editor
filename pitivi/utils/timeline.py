@@ -295,11 +295,21 @@ class EditingContext(GObject.Object, Loggable):
         self.app = app
         # Keeps the fades at the ends of the trimmed sources.
         self.__fades_anchor = FadesAnchor(timeline) if timeline else None
-        # Keeps the fades to white at the ends of the trimmed clips.
+        # Keeps the fades to white at the ends of the trimmed clips, and the
+        # wipes and pushes, which GES recreates as dissolves when the clips
+        # stop overlapping for a moment.
+        from pitivi.utils.transitions import get_contacts
+        from pitivi.utils.transitions import get_video_transition
         from pitivi.utils.transitions import get_white_fades
         self.__white_fades = {}
+        self.__wipes = []
         if timeline:
             for timeline_layer in timeline.get_layers():
+                for contact in get_contacts(timeline_layer):
+                    element = get_video_transition(contact.clip_b)
+                    if contact.direction and element:
+                        self.__wipes.append((contact.clip_b, element.get_transition_type(),
+                                             element.is_inverted(), element.get_border()))
                 for clip in timeline_layer.get_clips():
                     fades = get_white_fades(clip)
                     if fades.fade_in or fades.fade_out:
@@ -572,6 +582,21 @@ class EditingContext(GObject.Object, Loggable):
                 for clip, fades in self.__white_fades.items():
                     if clip.get_layer():
                         set_white_fades(clip, fades.fade_in, fades.fade_out)
+            from pitivi.utils.transitions import get_video_transition
+            for clip_b, transition_type, inverted, border in self.__wipes:
+                element = get_video_transition(clip_b) if clip_b.get_layer() else None
+                if element:
+                    # As it was, also when GES recreated it as a dissolve.
+                    if element.get_transition_type() != transition_type:
+                        element.set_transition_type(transition_type)
+                    if element.is_inverted() != inverted:
+                        element.set_inverted(inverted)
+                    if element.get_border() != border:
+                        element.set_border(border)
+            # The clips move during their pushes, where they are now.
+            from pitivi.utils.transitions import sync_pushes
+            for timeline_layer in self.timeline.get_layers() if self.timeline else []:
+                sync_pushes(timeline_layer)
             self.app.write_action("edit-container",
                                   container_name=self.focus.get_name(),
                                   position=float(position / Gst.SECOND),

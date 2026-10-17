@@ -24,6 +24,9 @@ record of it:
 - A fade to black is two clips meeting, the first fading out and the
   second fading in. Nothing moves.
 - A soft wipe is like a dissolve, the second clip appearing from a side.
+- A push is like a dissolve, the second clip pushing the first one out of
+  the frame. Their positions are animated during the transition, and a
+  hard wipe follows the edge between them.
 - A fade to white is two clips meeting, the first turning white and the
   second turning back from white, with an effect of each clip hidden
   from the user. Nothing moves.
@@ -47,6 +50,7 @@ DISSOLVE = "dissolve"
 FADE_TO_BLACK = "fade-to-black"
 FADE_TO_WHITE = "fade-to-white"
 SOFT_WIPE = "soft-wipe"
+PUSH = "push"
 
 # The sides the second clip appears from, and the wipes doing it.
 LEFT = "left"
@@ -58,8 +62,24 @@ WIPES = {LEFT: (GES.VideoStandardTransitionType.BAR_WIPE_LR, False),
          RIGHT: (GES.VideoStandardTransitionType.BAR_WIPE_LR, True),
          TOP: (GES.VideoStandardTransitionType.BAR_WIPE_TB, False),
          BOTTOM: (GES.VideoStandardTransitionType.BAR_WIPE_TB, True)}
+# For a push, the wipe uncovers the side of the second clip which comes in
+# first. The wipe applies to the image of the clip, before it is placed.
+PUSH_WIPES = {LEFT: WIPES[RIGHT],
+              RIGHT: WIPES[LEFT],
+              TOP: WIPES[BOTTOM],
+              BOTTOM: WIPES[TOP]}
 # How soft the edge of a soft wipe is.
 SOFT_WIPE_BORDER = 20000
+
+# For the second clip appearing from a side, the position property and how
+# many frames the first clip moves at the end and the second one at the start.
+PUSHES = {LEFT: ("posx", 1, -1),
+          RIGHT: ("posx", -1, 1),
+          TOP: ("posy", 1, -1),
+          BOTTOM: ("posy", -1, 1)}
+# The position of a source when not pushed, kept while its position is
+# animated.
+PUSH_BASE_META = "spl::push-base-%s"
 
 # The effect turning a clip white, marked with this metadata. It mixes the
 # image with white by lowering the contrast and the saturation, and raising
@@ -101,7 +121,7 @@ class Contact(NamedTuple):
 
 
 # The kinds for which the clips overlap.
-OVERLAPPING_KINDS = (DISSOLVE, SOFT_WIPE)
+OVERLAPPING_KINDS = (DISSOLVE, SOFT_WIPE, PUSH)
 
 
 def get_video_transition(clip_b: GES.Clip) -> Optional[GES.VideoTransition]:
@@ -121,9 +141,12 @@ def get_overlap_kind(clip_b: GES.Clip):
     if element:
         transition_type = element.get_transition_type()
         inverted = element.is_inverted()
-        for direction, wipe in WIPES.items():
+        # A push has a hard edge.
+        kind = SOFT_WIPE if element.get_border() else PUSH
+        wipes = WIPES if kind == SOFT_WIPE else PUSH_WIPES
+        for direction, wipe in wipes.items():
             if wipe == (transition_type, inverted):
-                return SOFT_WIPE, direction
+                return kind, direction
     return DISSOLVE, None
 
 
@@ -295,11 +318,102 @@ def _shift_following(contact: Contact, shift: int) -> None:
         clip.set_start(clip.props.start + shift)
 
 
+def apply_wipe(clip_b: GES.Clip, kind: str, direction: str) -> None:
+    """Makes the transition where the clip starts a soft wipe or a push.
+
+    GES creates the transition as a dissolve when the clips start
+    overlapping, also when they stop overlapping for a moment.
+    """
+    element = get_video_transition(clip_b)
+    if not element:
+        return
+    transition_type, inverted = (WIPES if kind == SOFT_WIPE else PUSH_WIPES)[direction]
+    border = SOFT_WIPE_BORDER if kind == SOFT_WIPE else 0
+    if element.get_transition_type() != transition_type:
+        element.set_transition_type(transition_type)
+    if element.is_inverted() != inverted:
+        element.set_inverted(inverted)
+    if element.get_border() != border:
+        element.set_border(border)
+
+
+def _get_frame_size(source: GES.VideoSource):
+    caps = source.get_track().get_restriction_caps()
+    structure = caps.get_structure(0)
+    return structure.get_int("width")[1], structure.get_int("height")[1]
+
+
+def _get_push_control_source(source: GES.VideoSource, property_name: str):
+    """Returns the control source animating the position for pushes, if any."""
+    res, unused_base = source.get_int(PUSH_BASE_META % property_name)
+    binding = source.get_control_binding(property_name)
+    if res and binding:
+        return binding.props.control_source
+    return None
+
+
+def sync_pushes(layer: GES.Layer) -> None:
+    """Animates the positions of the clips of the layer for their pushes.
+
+    Called after the pushes or the clips change, so that the clips move
+    during the pushes where they are, and only there.
+    """
+    pushes = [contact for contact in get_contacts(layer) if contact.kind == PUSH]
+    for clip in layer.get_clips():
+        source = clip.find_track_element(None, GES.VideoSource) if is_visual(clip) else None
+        if not source or not source.get_track():
+            continue
+        width, height = _get_frame_size(source)
+        start, end = get_source_range(source)
+        for property_name in ("posx", "posy"):
+            control_source = _get_push_control_source(source, property_name)
+            if control_source:
+                unused_res, base = source.get_int(PUSH_BASE_META % property_name)
+            else:
+                if source.get_control_binding(property_name):
+                    # Animated by the user.
+                    continue
+                unused_res, base = source.get_child_property(property_name)
+            size = width if property_name == "posx" else height
+            keyframes = []
+            for contact in pushes:
+                push_property, factor_a, factor_b = PUSHES[contact.direction]
+                if push_property != property_name:
+                    continue
+                if contact.clip_a == clip:
+                    keyframes += [(end - contact.duration, base), (end, base + factor_a * size)]
+                if contact.clip_b == clip:
+                    keyframes += [(start, base + factor_b * size), (start + contact.duration, base)]
+
+            if keyframes:
+                # The value is defined for the whole clip, a control source
+                # has none before its first keyframe.
+                timestamps = [timestamp for timestamp, unused_value in keyframes]
+                if start not in timestamps:
+                    keyframes.append((start, base))
+                if end not in timestamps:
+                    keyframes.append((end, base))
+                if not control_source:
+                    source.set_int(PUSH_BASE_META % property_name, base)
+                    control_source = GstController.InterpolationControlSource()
+                    control_source.props.mode = GstController.InterpolationMode.LINEAR
+                    # Never empty, for whoever reads it.
+                    control_source.set(start, base)
+                    source.set_control_source(control_source, property_name, "direct-absolute")
+                set_keyframes(control_source, sorted(keyframes))
+            elif control_source:
+                # The animation is kept, still: GES changes the keyframes of
+                # a control source when added again, as when undoing.
+                set_keyframes(control_source, [(start, base), (end, base)])
+
+
 def remove_transition(contact: Contact) -> Contact:
     """Removes the transition between the clips, returns the contact."""
     if contact.kind in OVERLAPPING_KINDS:
         # GES removes the transition when the clips stop overlapping.
         _shift_following(contact, contact.duration)
+        if contact.kind == PUSH:
+            sync_pushes(contact.clip_b.get_layer())
     elif contact.kind == FADE_TO_BLACK:
         set_image_fades(contact.clip_a, fade_out=0)
         set_image_fades(contact.clip_b, fade_in=0)
@@ -317,13 +431,11 @@ def set_transition(contact: Contact, kind: str, duration: int,
     if kind in OVERLAPPING_KINDS:
         # GES creates the transition where the clips overlap.
         _shift_following(contact, -duration)
-        if kind == SOFT_WIPE:
+        if kind in (SOFT_WIPE, PUSH):
             direction = direction or RIGHT
-            element = get_video_transition(contact.clip_b)
-            transition_type, inverted = WIPES[direction]
-            element.set_transition_type(transition_type)
-            element.set_inverted(inverted)
-            element.set_border(SOFT_WIPE_BORDER)
+            apply_wipe(contact.clip_b, kind, direction)
+            if kind == PUSH:
+                sync_pushes(contact.clip_b.get_layer())
         else:
             direction = None
     elif kind == FADE_TO_BLACK:

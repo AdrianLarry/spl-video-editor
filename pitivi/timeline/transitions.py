@@ -32,6 +32,7 @@ from pitivi.utils.transitions import FADE_TO_BLACK
 from pitivi.utils.transitions import BOTTOM
 from pitivi.utils.transitions import FADE_TO_WHITE
 from pitivi.utils.transitions import LEFT
+from pitivi.utils.transitions import PUSH
 from pitivi.utils.transitions import RIGHT
 from pitivi.utils.transitions import SOFT_WIPE
 from pitivi.utils.transitions import TOP
@@ -48,7 +49,7 @@ KINDS = ((DISSOLVE, _("Dissolve")),
          (SOFT_WIPE, _("Soft wipe")),
          (FADE_TO_BLACK, _("Fade to black")),
          (FADE_TO_WHITE, _("Fade to white")),
-         (None, _("Slide")))
+         (PUSH, _("Slide")))
 
 # The sides the second clip appears from, with their icons.
 DIRECTIONS = ((LEFT, _("Left"), "go-next-symbolic"),
@@ -56,7 +57,7 @@ DIRECTIONS = ((LEFT, _("Left"), "go-next-symbolic"),
               (TOP, _("Top"), "go-down-symbolic"),
               (BOTTOM, _("Bottom"), "go-up-symbolic"))
 # The kinds which have a direction.
-DIRECTED_KINDS = (SOFT_WIPE,)
+DIRECTED_KINDS = (SOFT_WIPE, PUSH)
 
 
 def get_kind_name(kind):

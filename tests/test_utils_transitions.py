@@ -27,6 +27,7 @@ from pitivi.utils.transitions import get_contacts
 from pitivi.utils.transitions import get_image_fades
 from pitivi.utils.transitions import get_max_duration
 from pitivi.utils.transitions import get_video_transition
+from pitivi.utils.transitions import PUSH
 from pitivi.utils.transitions import RIGHT
 from pitivi.utils.transitions import SOFT_WIPE
 from pitivi.utils.transitions import TOP
@@ -230,3 +231,63 @@ class TransitionsTest(common.TestCase):
         self.action_log.undo()
         self.assertEqual(get_contacts(self.layer)[0].kind, None)
         self.assertEqual(clip_a.props.duration, 4 * SECOND)
+
+    @common.setup_timeline
+    def test_push(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+        source_a = clip_a.find_track_element(None, GES.VideoSource)
+        source_b = clip_b.find_track_element(None, GES.VideoSource)
+        width = self.project.videowidth
+        base_a = source_a.get_child_property("posx")[1]
+        base_b = source_b.get_child_property("posx")[1]
+
+        def get_posx_keyframes(source):
+            binding = source.get_control_binding("posx")
+            if not binding:
+                return None
+            return [(timestamp / SECOND, round(value)) for timestamp, value
+                    in get_keyframes(binding.props.control_source)]
+
+        contact, = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            contact = set_transition(contact, PUSH, SECOND, RIGHT)
+        self.assertEqual(clip_b.props.start, 3 * SECOND)
+        self.assertEqual((contact.kind, contact.direction), (PUSH, RIGHT))
+        self.assertEqual(get_contacts(self.layer), [contact])
+        # The first clip goes out to the left, the second comes from the right.
+        self.assertEqual(get_posx_keyframes(source_a), [(0, base_a), (3, base_a), (4, base_a - width)])
+        self.assertEqual(get_posx_keyframes(source_b), [(0, base_b + width), (1, base_b), (4, base_b)])
+        self.assertEqual(get_video_transition(clip_b).get_border(), 0)
+
+        # Extending the first clip moves its push with its end.
+        with self.action_log.started("trim"):
+            context = EditingContext(clip_a, self.timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_END, self.app)
+            context.edit_to(5 * SECOND, self.layer)
+            context.finish()
+        self.assertEqual(clip_b.props.start, 4 * SECOND)
+        self.assertEqual(get_posx_keyframes(source_a), [(0, base_a), (4, base_a), (5, base_a - width)])
+        self.action_log.undo()
+        self.assertEqual(get_posx_keyframes(source_a), [(0, base_a), (3, base_a), (4, base_a - width)])
+
+        # Replaced by a soft wipe, the clips stay in place.
+        contact = get_contacts(self.layer)[0]
+        with self.action_log.started("transition"):
+            set_transition(contact, SOFT_WIPE, SECOND, RIGHT)
+        self.assertEqual(get_posx_keyframes(source_a), [(0, base_a), (4, base_a)])
+        self.assertEqual(get_posx_keyframes(source_b), [(0, base_b), (4, base_b)])
+
+        self.action_log.undo()
+        self.assertEqual(get_contacts(self.layer)[0].kind, PUSH)
+        self.assertEqual(get_posx_keyframes(source_b), [(0, base_b + width), (1, base_b), (4, base_b)])
+
+        # Undoing and redoing the push itself.
+        self.action_log.undo()
+        self.assertEqual(get_contacts(self.layer)[0].kind, None)
+        self.assertIsNone(get_posx_keyframes(source_b))
+        self.action_log.redo()
+        self.assertEqual(get_contacts(self.layer)[0].kind, PUSH)
+        self.assertEqual(get_posx_keyframes(source_a), [(0, base_a), (3, base_a), (4, base_a - width)])
+        self.assertEqual(get_posx_keyframes(source_b), [(0, base_b + width), (1, base_b), (4, base_b)])
