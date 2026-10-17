@@ -248,6 +248,13 @@ class MarkersBox(Gtk.EventBox, Zoomable, Loggable):
                     return True
 
             else:
+                # Clicking next to the ruler seeks, as on the ruler.
+                self.__seek(event.x)
+                return True
+
+        if event.button == Gdk.BUTTON_SECONDARY and event.type == Gdk.EventType.BUTTON_PRESS:
+            event_widget = Gtk.get_event_widget(event)
+            if not isinstance(event_widget, Marker):
                 position = self.pixel_to_ns(event.x + self.offset)
                 with self.app.action_log.started("Added marker", toplevel=True):
                     self.__markers_container.add(position)
@@ -256,11 +263,17 @@ class MarkersBox(Gtk.EventBox, Zoomable, Loggable):
 
         return False
 
+    def __seek(self, x):
+        project = self.app.project_manager.current_project
+        if project:
+            position = max(0, self.pixel_to_ns(x + self.offset))
+            project.pipeline.simple_seek(min(position, project.ges_timeline.props.duration))
+
     def do_button_release_event(self, event):
         if not self.markers_container:
             return False
 
-        if event.button == Gdk.BUTTON_PRIMARY:
+        if event.button in (Gdk.BUTTON_PRIMARY, Gdk.BUTTON_SECONDARY):
             if self.marker_moving:
                 self.marker_moving.selected = False
                 self.marker_moving = None
@@ -279,6 +292,10 @@ class MarkersBox(Gtk.EventBox, Zoomable, Loggable):
             return False
 
         event_widget = Gtk.get_event_widget(event)
+        if not self.marker_moving and event.state & Gdk.ModifierType.BUTTON1_MASK:
+            self.__seek(event.x)
+            return True
+
         if event_widget is self.marker_moving:
             event_x, unused_y = event_widget.translate_coordinates(self, event.x, event.y)
             event_x = max(0, event_x)

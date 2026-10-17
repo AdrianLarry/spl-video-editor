@@ -39,7 +39,9 @@ class TestMarkers(common.TestCase):
         event = mock.Mock(spec=Gdk.EventButton)
         event.x = x
         event.y = 1
-        event.button = Gdk.BUTTON_PRIMARY
+        event.type = Gdk.EventType.BUTTON_PRESS
+        # The markers are added with the secondary button.
+        event.button = Gdk.BUTTON_SECONDARY
 
         with mock.patch.object(Gtk, "get_event_widget") as get_event_widget:
             get_event_widget.return_value = marker_box
@@ -50,6 +52,25 @@ class TestMarkers(common.TestCase):
 
         position = Zoomable.pixel_to_ns(event.x)
         self.assert_markers(markers, [(position, None)])
+
+    @common.setup_timeline
+    def test_primary_click_seeks(self):
+        """Checks clicking next to the ruler seeks instead of adding a marker."""
+        markers = self.timeline.get_marker_list("markers")
+        marker_box = self.timeline_container.markers
+        self.project.pipeline.simple_seek = mock.Mock()
+
+        event = mock.Mock(spec=Gdk.EventButton)
+        event.x = 100
+        event.y = 1
+        event.type = Gdk.EventType.BUTTON_PRESS
+        event.button = Gdk.BUTTON_PRIMARY
+        with mock.patch.object(Gtk, "get_event_widget") as get_event_widget:
+            get_event_widget.return_value = marker_box
+            marker_box.do_button_press_event(event)
+
+        self.project.pipeline.simple_seek.assert_called_once()
+        self.assert_markers(markers, [])
 
     @common.setup_timeline
     def test_marker_removed_ui(self):

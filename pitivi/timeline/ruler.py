@@ -198,7 +198,8 @@ class ScaleRuler(Gtk.DrawingArea, Loggable):
             return False
 
         button = event.button
-        if button == 3 or (button == 1 and self.settings.leftClickAlsoSeeks):
+        # Both buttons seek, as in the mockup.
+        if button in (1, 3):
             self.debug("button pressed at x:%d", event.x)
             position = self.pixel_to_ns(event.x + self.pixbuf_offset)
             self._pipeline.simple_seek(position)
@@ -207,7 +208,8 @@ class ScaleRuler(Gtk.DrawingArea, Loggable):
 
     def do_button_release_event(self, event):
         button = event.button
-        if button == 3 or (button == 1 and self.settings.leftClickAlsoSeeks):
+        # Both buttons seek, as in the mockup.
+        if button in (1, 3):
             self.debug("button released at x:%d", event.x)
             position = self.pixel_to_ns(event.x + self.pixbuf_offset)
             self.__set_tooltip_text(position)
@@ -219,9 +221,7 @@ class ScaleRuler(Gtk.DrawingArea, Loggable):
 
         position = self.pixel_to_ns(event.x + self.pixbuf_offset)
 
-        seek_mask = Gdk.ModifierType.BUTTON3_MASK
-        if self.settings.leftClickAlsoSeeks:
-            seek_mask |= Gdk.ModifierType.BUTTON1_MASK
+        seek_mask = Gdk.ModifierType.BUTTON1_MASK | Gdk.ModifierType.BUTTON3_MASK
 
         seeking = event.state & seek_mask
         if seeking:
