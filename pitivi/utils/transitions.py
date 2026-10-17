@@ -445,3 +445,41 @@ def set_transition(contact: Contact, kind: str, duration: int,
         set_white_fades(contact.clip_a, fade_out=duration // 2)
         set_white_fades(contact.clip_b, fade_in=duration - duration // 2)
     return Contact(contact.clip_a, contact.clip_b, kind, duration, direction)
+
+
+def remove_transitions_of(clips) -> None:
+    """Removes the transitions of clips about to be removed.
+
+    Nothing moves: the overlapping transitions go away with the overlap and
+    the fades of the other clips are removed. Call `sync_pushes` on the
+    layers once the clips are removed.
+    """
+    clips = set(clips)
+    for layer in {clip.get_layer() for clip in clips if clip.get_layer()}:
+        for contact in get_contacts(layer):
+            if contact.clip_a in clips or contact.clip_b in clips:
+                remove_fades(contact.clip_a, contact.clip_b, contact.kind)
+
+
+def remove_fades(clip_a: GES.Clip, clip_b: GES.Clip, kind: Optional[str]) -> None:
+    """Removes the fades of a fade to black or to white between the clips."""
+    if kind == FADE_TO_BLACK:
+        set_image_fades(clip_a, fade_out=0)
+        set_image_fades(clip_b, fade_in=0)
+    elif kind == FADE_TO_WHITE:
+        set_white_fades(clip_a, fade_out=0)
+        set_white_fades(clip_b, fade_in=0)
+
+
+def are_neighbors(clip_a: GES.Clip, clip_b: GES.Clip) -> bool:
+    """Whether the second clip is the one after the first in their layer.
+
+    There can be a gap between them, which can be closed.
+    """
+    layer = clip_a.get_layer()
+    if layer is None or layer != clip_b.get_layer():
+        return False
+    following = [clip for clip in layer.get_clips()
+                 if not isinstance(clip, GES.TransitionClip) and clip != clip_a and
+                 clip.props.start >= clip_a.props.start]
+    return bool(following) and min(following, key=lambda clip: clip.props.start) == clip_b

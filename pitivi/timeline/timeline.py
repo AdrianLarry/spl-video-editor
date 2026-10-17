@@ -57,6 +57,8 @@ from pitivi.utils.timeline import Selection
 from pitivi.utils.timeline import TimelineError
 from pitivi.utils.timeline import UNSELECT
 from pitivi.utils.timeline import Zoomable
+from pitivi.utils.transitions import remove_transitions_of
+from pitivi.utils.transitions import sync_pushes
 from pitivi.utils.ui import EFFECT_TARGET_ENTRY
 from pitivi.utils.ui import LAYER_HEIGHT
 from pitivi.utils.ui import MINI_LAYER_HEIGHT
@@ -2334,13 +2336,21 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
                 with self.app.action_log.started("delete clip",
                                                  finalizing_action=CommitTimelineFinalizingAction(self._project.pipeline),
                                                  toplevel=True):
-                    for clip in self.timeline.selection:
-                        if isinstance(clip, GES.TransitionClip):
-                            continue
-                        layer = clip.get_layer()
-                        layer.remove_clip(clip)
+                    clips = [clip for clip in self.timeline.selection
+                             if not isinstance(clip, GES.TransitionClip)]
+                    self.__remove_clips(clips)
 
             self.timeline.selection.set_selection([], SELECT)
+
+    def __remove_clips(self, clips):
+        """Removes the clips with their transitions, from their layers."""
+        layers = {clip.get_layer() for clip in clips if clip.get_layer()}
+        remove_transitions_of(clips)
+        for clip in clips:
+            clip.get_layer().remove_clip(clip)
+        # The other clips stop moving for the pushes with the removed clips.
+        for layer in layers:
+            sync_pushes(layer)
 
     def _delete_selected_and_shift_cb(self, unused_action, unused_parameter):
         if self.ges_timeline:
@@ -2351,13 +2361,12 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
                 end = []
 
                 # remove the clips and store their start/end positions
-                for clip in self.timeline.selection:
-                    if isinstance(clip, GES.TransitionClip):
-                        continue
-                    layer = clip.get_layer()
+                clips = [clip for clip in self.timeline.selection
+                         if not isinstance(clip, GES.TransitionClip)]
+                for clip in clips:
                     start.append(clip.start)
                     end.append(clip.start + clip.duration)
-                    layer.remove_clip(clip)
+                self.__remove_clips(clips)
 
                 if start:
                     start = min(start)

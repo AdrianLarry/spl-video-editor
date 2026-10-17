@@ -291,3 +291,58 @@ class TransitionsTest(common.TestCase):
         self.assertEqual(get_contacts(self.layer)[0].kind, PUSH)
         self.assertEqual(get_posx_keyframes(source_a), [(0, base_a), (3, base_a), (4, base_a - width)])
         self.assertEqual(get_posx_keyframes(source_b), [(0, base_b + width), (1, base_b), (4, base_b)])
+
+    def _get_posx_keyframes(self, clip):
+        source = clip.find_track_element(None, GES.VideoSource)
+        binding = source.get_control_binding("posx")
+        if not binding:
+            return None
+        return {round(value) for unused_timestamp, value in get_keyframes(binding.props.control_source)}
+
+    @common.setup_timeline
+    def test_deleting_a_clip_removes_its_transitions(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+        clip_c = self._add_clip(8)
+        contact_ab, contact_bc = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            set_transition(contact_ab, FADE_TO_BLACK, SECOND)
+        with self.action_log.started("transition"):
+            set_transition(contact_bc, PUSH, SECOND, RIGHT)
+        self.assertEqual(len(self._get_posx_keyframes(clip_c)), 2)
+
+        self.timeline_container.timeline.selection.select([clip_b])
+        self.timeline_container.delete_action.activate(None)
+        self.assertNotIn(clip_b, self.layer.get_clips())
+        # No half transitions are left on the other clips.
+        self.assertEqual(get_image_fades(clip_a).fade_out, 0)
+        self.assertEqual(self._get_posx_keyframes(clip_c), {0})
+        self.assertEqual(clip_c.props.start, 7 * SECOND)
+
+        self.action_log.undo()
+        self.assertEqual([contact.kind for contact in get_contacts(self.layer)],
+                         [FADE_TO_BLACK, PUSH])
+
+    @common.setup_timeline
+    def test_moving_a_clip_away_removes_its_fades(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+        self._add_clip(9)
+        contact, = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            set_transition(contact, FADE_TO_WHITE, SECOND)
+
+        # Moved after another clip, the clips are not neighbors anymore.
+        with self.action_log.started("move"):
+            context = EditingContext(clip_b, self.timeline, GES.EditMode.EDIT_NORMAL,
+                                     GES.Edge.EDGE_NONE, self.app)
+            context.edit_to(14 * SECOND, self.layer)
+            context.finish()
+        self.assertEqual(get_white_fades(clip_a).fade_out, 0)
+        self.assertEqual(get_white_fades(clip_b).fade_in, 0)
+        self.assertEqual(clip_a.get_top_effects(), [])
+
+        self.action_log.undo()
+        self.assertEqual(get_contacts(self.layer)[0].kind, FADE_TO_WHITE)

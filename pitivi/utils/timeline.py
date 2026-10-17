@@ -303,9 +303,15 @@ class EditingContext(GObject.Object, Loggable):
         from pitivi.utils.transitions import get_white_fades
         self.__white_fades = {}
         self.__wipes = []
+        # The fades to black or white between clips, removed if the clips
+        # are not neighbors anymore after the edit.
+        self.__fade_contacts = []
         if timeline:
             for timeline_layer in timeline.get_layers():
                 for contact in get_contacts(timeline_layer):
+                    if contact.kind and not contact.direction and contact.duration and \
+                            contact.clip_b.props.start == contact.clip_a.props.start + contact.clip_a.props.duration:
+                        self.__fade_contacts.append((contact.clip_a, contact.clip_b, contact.kind))
                     element = get_video_transition(contact.clip_b)
                     if contact.direction and element:
                         self.__wipes.append((contact.clip_b, element.get_transition_type(),
@@ -374,6 +380,13 @@ class EditingContext(GObject.Object, Loggable):
 
     def finish(self):
         self.debug("Finishing editing context")
+        if self.__fade_contacts:
+            from pitivi.utils.transitions import are_neighbors
+            from pitivi.utils.transitions import remove_fades
+            for clip_a, clip_b, kind in self.__fade_contacts:
+                if not are_neighbors(clip_a, clip_b):
+                    remove_fades(clip_a, clip_b, kind)
+
         if self.__actions_mark:
             self.__record_keyframes()
 
