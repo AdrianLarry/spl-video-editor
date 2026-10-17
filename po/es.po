@@ -2881,6 +2881,10 @@ msgstr "Volumen:"
 msgid "Mute"
 msgstr "Silenciar"
 
+#: pitivi/timeline/elements.py
+msgid "Unmute"
+msgstr "Activar el sonido"
+
 #: pitivi/clip_properties/sound.py
 msgid "Fade in from silence:"
 msgstr "Entrada suave:"

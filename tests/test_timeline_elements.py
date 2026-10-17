@@ -547,3 +547,34 @@ class TestClip(common.TestCase):
         timeline.selection.set_selection([clip1], UNSELECT)
         self.assertFalse(clip1.ui.get_state_flags() & Gtk.StateFlags.SELECTED)
         self.assertFalse(clip1.mini_ui.get_state_flags() & Gtk.StateFlags.SELECTED)
+
+
+class TestAudioUriSource(common.TestCase):
+    """Tests for the AudioUriSource widget."""
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_mute_button(self):
+        """Checks muting a clip from the timeline, as from the properties."""
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("mp3_sample.mp3"))
+        clip = self.layer.add_asset(asset, 0, 0, Gst.SECOND, GES.TrackType.AUDIO)
+        source = clip.find_track_element(None, GES.AudioSource)
+        self.timeline_container.timeline.selection.select([clip])
+        sound = self.clipproperties.sound_expander
+        audio_ui = source.ui
+        self.assertFalse(audio_ui.is_muted())
+
+        audio_ui.mute_button.clicked()
+        self.assertTrue(source.get_child_property("mute")[1])
+        self.assertTrue(sound.mute_button.get_active())
+        self.assertAlmostEqual(audio_ui.previewer.get_opacity(), 0.35, places=2)
+
+        self.action_log.undo()
+        self.assertFalse(source.get_child_property("mute")[1])
+        self.assertFalse(sound.mute_button.get_active())
+        self.assertEqual(audio_ui.previewer.get_opacity(), 1)
+
+        # Muting from the properties shows on the timeline.
+        sound.mute_button.set_active(True)
+        self.assertTrue(audio_ui.is_muted())
+        self.assertEqual(audio_ui.mute_button.get_tooltip_text(), "Unmute")

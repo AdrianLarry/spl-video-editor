@@ -34,9 +34,9 @@ from matplotlib.collections import PathCollection
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
-from pitivi.configure import get_pixmap_dir
 from pitivi.clip_properties.orientation import Orientation
 from pitivi.clip_properties.orientation import ORIENTATIONS
+from pitivi.configure import get_pixmap_dir
 from pitivi.effects import ALLOWED_ONLY_ONCE_EFFECTS
 from pitivi.timeline.markers import ClipMarkersBox
 from pitivi.timeline.markers import Marker
@@ -60,6 +60,7 @@ from pitivi.utils.ui import CURSORS
 from pitivi.utils.ui import DRAG_CURSOR
 from pitivi.utils.ui import EFFECT_TARGET_ENTRY
 from pitivi.utils.ui import NORMAL_CURSOR
+from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import set_state_flags_recurse
 
 KEYFRAME_LINE_HEIGHT = 2
@@ -1217,12 +1218,60 @@ class AudioBackground(Gtk.Box):
 
 
 class AudioUriSource(TimelineElement):
+    """The audio of a clip, with a button to mute it.
+
+    Attributes:
+        mute_button (Gtk.Button): The button for muting the clip, the same
+            as the one of the sound properties.
+    """
 
     __gtype_name__ = "PitiviAudioUriSource"
 
     def __init__(self, element, timeline):
         TimelineElement.__init__(self, element, timeline)
         self.get_style_context().add_class("AudioUriSource")
+
+        self.mute_button = Gtk.Button()
+        self.mute_button.props.relief = Gtk.ReliefStyle.NONE
+        self.mute_button.props.focus_on_click = False
+        self.mute_button.get_style_context().add_class("ClipMuteButton")
+        self.mute_button.connect("clicked", self.__mute_button_clicked_cb)
+        self.put(self.mute_button, PADDING, PADDING)
+        self.mute_button.show_all()
+        self._ges_elem.connect("deep-notify", self.__deep_notify_cb)
+        self.__update_mute()
+
+    def release(self):
+        TimelineElement.release(self)
+        disconnect_all_by_func(self._ges_elem, self.__deep_notify_cb)
+
+    def is_muted(self):
+        res, muted = self._ges_elem.get_child_property("mute")
+        return res and muted
+
+    def __update_mute(self):
+        muted = self.is_muted()
+        icon_name = "audio-volume-muted-symbolic" if muted else "audio-volume-high-symbolic"
+        self.mute_button.set_image(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.MENU))
+        self.mute_button.set_tooltip_text(_("Unmute") if muted else _("Mute"))
+        if self.previewer:
+            # The sound of a muted clip is not heard.
+            self.previewer.set_opacity(0.35 if muted else 1)
+
+    def __deep_notify_cb(self, unused_ges_elem, unused_element, pspec):
+        if pspec.name == "mute":
+            self.__update_mute()
+
+    def __mute_button_clicked_cb(self, unused_button):
+        pipeline = self.timeline.app.project_manager.current_project.pipeline
+        with self.timeline.app.action_log.started("Sound mute",
+                                                  finalizing_action=CommitTimelineFinalizingAction(pipeline),
+                                                  toplevel=True):
+            self._ges_elem.set_child_property("mute", not self.is_muted())
+
+    def do_draw(self, cr):
+        TimelineElement.do_draw(self, cr)
+        self.propagate_draw(self.mute_button, cr)
 
     def _get_previewer(self):
         previewer = AudioPreviewer(self._ges_elem, self.timeline.app.settings.previewers_max_cpu)
