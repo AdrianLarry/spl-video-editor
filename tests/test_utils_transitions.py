@@ -18,11 +18,15 @@
 from gi.repository import GES
 from gi.repository import Gst
 
+from pitivi.utils.fades import get_keyframes
 from pitivi.utils.timeline import EditingContext
 from pitivi.utils.transitions import DISSOLVE
 from pitivi.utils.transitions import FADE_TO_BLACK
+from pitivi.utils.transitions import FADE_TO_WHITE
 from pitivi.utils.transitions import get_contacts
 from pitivi.utils.transitions import get_image_fades
+from pitivi.utils.transitions import get_white_fades
+from pitivi.utils.transitions import is_white_effect
 from pitivi.utils.transitions import set_transition
 from tests import common
 
@@ -129,3 +133,48 @@ class TransitionsTest(common.TestCase):
             context.edit_to(2 * SECOND, self.layer)
             context.finish()
         self.assertEqual(self._get_transitions(), [(4, 1)])
+
+    @common.setup_timeline
+    def test_fade_to_white(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+        clip_c = self._add_clip(8)
+
+        contact_ab, contact_bc = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            set_transition(contact_ab, FADE_TO_WHITE, SECOND)
+        with self.action_log.started("transition"):
+            set_transition(contact_bc, FADE_TO_WHITE, 2 * SECOND)
+        # Nothing moves, the clips turn white with a single effect each.
+        self.assertEqual([clip.props.start / SECOND for clip in (clip_a, clip_b, clip_c)], [0, 4, 8])
+        self.assertEqual(get_white_fades(clip_b)[1:], (SECOND // 2, SECOND))
+        self.assertEqual(len([effect for effect in clip_b.get_top_effects()
+                              if is_white_effect(effect)]), 1)
+        self.assertEqual([contact.kind for contact in get_contacts(self.layer)],
+                         [FADE_TO_WHITE, FADE_TO_WHITE])
+
+        # The keyframes of the effect go from white to the original image.
+        effect, = clip_a.get_top_effects()
+        brightness = effect.get_control_binding("brightness").props.control_source
+        self.assertEqual([(timestamp, round(value, 3)) for timestamp, value in get_keyframes(brightness)],
+                         [(0, 0.5), (int(3.5 * SECOND), 0.5), (4 * SECOND, 1.0)])
+
+        # Trimming keeps the fade to white at the new end.
+        with self.action_log.started("trim"):
+            context = EditingContext(clip_a, self.timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_END, self.app)
+            context.edit_to(3 * SECOND, self.layer)
+            context.finish()
+        self.assertEqual(get_white_fades(clip_a).fade_out, SECOND // 2)
+        self.action_log.undo()
+
+        # Removed, the effect goes away from the clips without fades to white.
+        contact_ab = get_contacts(self.layer)[0]
+        with self.action_log.started("transition"):
+            set_transition(contact_ab, FADE_TO_BLACK, SECOND)
+        self.assertEqual(clip_a.get_top_effects(), [])
+        self.assertEqual(get_white_fades(clip_b)[1:], (0, SECOND))
+
+        self.action_log.undo()
+        self.assertEqual(get_contacts(self.layer)[0].kind, FADE_TO_WHITE)

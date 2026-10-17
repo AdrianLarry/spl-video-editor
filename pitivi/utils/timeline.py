@@ -295,6 +295,15 @@ class EditingContext(GObject.Object, Loggable):
         self.app = app
         # Keeps the fades at the ends of the trimmed sources.
         self.__fades_anchor = FadesAnchor(timeline) if timeline else None
+        # Keeps the fades to white at the ends of the trimmed clips.
+        from pitivi.utils.transitions import get_white_fades
+        self.__white_fades = {}
+        if timeline:
+            for timeline_layer in timeline.get_layers():
+                for clip in timeline_layer.get_clips():
+                    fades = get_white_fades(clip)
+                    if fades.fade_in or fades.fade_out:
+                        self.__white_fades[clip] = fades
 
         self.edge = edge
         self.mode = mode
@@ -558,6 +567,11 @@ class EditingContext(GObject.Object, Loggable):
         if res:
             if self.__fades_anchor:
                 self.__fades_anchor.apply()
+            if self.__white_fades:
+                from pitivi.utils.transitions import set_white_fades
+                for clip, fades in self.__white_fades.items():
+                    if clip.get_layer():
+                        set_white_fades(clip, fades.fade_in, fades.fade_out)
             self.app.write_action("edit-container",
                                   container_name=self.focus.get_name(),
                                   position=float(position / Gst.SECOND),

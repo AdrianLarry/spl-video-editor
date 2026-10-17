@@ -595,7 +595,8 @@ class FullLayer(Layer, Zoomable):
         widget = ui_type(self, ges_clip)
         self.put(widget, self.ns_to_pixel(ges_clip.props.start), 0)
         Layer._add_clip_ui(self, ges_clip, widget)
-        for signal in ("notify::start", "notify::duration"):
+        # The transitions depend on the clips positions and on effects.
+        for signal in ("notify::start", "notify::duration", "child-added", "child-removed"):
             ges_clip.connect(signal, self.__clip_moved_cb)
         self.__clip_moved_cb()
 

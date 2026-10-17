@@ -59,6 +59,7 @@ from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import disconnect_all_by_func
 from pitivi.utils.pipeline import PipelineError
 from pitivi.utils.timeline import SELECT
+from pitivi.utils.transitions import is_white_effect
 from pitivi.utils.ui import disable_scroll
 from pitivi.utils.ui import EFFECT_TARGET_ENTRY
 from pitivi.utils.ui import PADDING
@@ -669,7 +670,9 @@ class EffectProperties(Gtk.Expander, Loggable):
             self.cover_popover.update_object_list()
 
     def _create_effect_row(self, effect):
-        if is_time_effect(effect) or effect.props.bin_description in HIDDEN_EFFECTS:
+        if is_time_effect(effect) or effect.props.bin_description in HIDDEN_EFFECTS or \
+                is_white_effect(effect):
+            # The fade to white of a transition is not an effect for the user.
             return None
 
         effect_info = self.app.effects.get_info(effect)

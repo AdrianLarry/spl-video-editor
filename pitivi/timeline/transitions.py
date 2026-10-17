@@ -29,6 +29,7 @@ from pitivi.utils.transitions import Contact
 from pitivi.utils.transitions import DEFAULT_DURATION
 from pitivi.utils.transitions import DISSOLVE
 from pitivi.utils.transitions import FADE_TO_BLACK
+from pitivi.utils.transitions import FADE_TO_WHITE
 from pitivi.utils.transitions import get_max_duration
 from pitivi.utils.transitions import MIN_DURATION
 from pitivi.utils.transitions import remove_transition
@@ -40,7 +41,7 @@ from pitivi.utils.ui import SPACING
 # available yet.
 KINDS = ((DISSOLVE, _("Dissolve")),
          (FADE_TO_BLACK, _("Fade to black")),
-         (None, _("Fade to white")),
+         (FADE_TO_WHITE, _("Fade to white")),
          (None, _("Slide")))
 
 
@@ -169,6 +170,10 @@ class TransitionPopover(Gtk.Popover):
                                          toplevel=True):
             change()
         self.popdown()
+        # Nothing moves for some transitions, the buttons are updated anyway.
+        layer = self.get_relative_to().get_parent()
+        if hasattr(layer, "schedule_update_gaps"):
+            layer.schedule_update_gaps()
 
     def __apply_clicked_cb(self, unused_button):
         duration = round(self.duration_scale.get_value() * 10) * Gst.SECOND // 10

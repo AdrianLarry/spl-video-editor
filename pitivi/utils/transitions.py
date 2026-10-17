@@ -23,6 +23,9 @@ record of it:
   the layer to the left, so the project gets shorter.
 - A fade to black is two clips meeting, the first fading out and the
   second fading in. Nothing moves.
+- A fade to white is two clips meeting, the first turning white and the
+  second turning back from white, with an effect of each clip hidden
+  from the user. Nothing moves.
 """
 from typing import List
 from typing import NamedTuple
@@ -41,6 +44,12 @@ from pitivi.utils.fades import set_keyframes
 
 DISSOLVE = "dissolve"
 FADE_TO_BLACK = "fade-to-black"
+FADE_TO_WHITE = "fade-to-white"
+
+# The effect turning a clip white, marked with this metadata. With the
+# highest brightness and no saturation the image is white.
+WHITE_EFFECT_BIN_DESCRIPTION = "videobalance"
+WHITE_EFFECT_META = "spl::fade-to-white"
 
 MIN_DURATION = 3 * Gst.SECOND // 10
 MAX_DURATION = 2 * Gst.SECOND
@@ -116,6 +125,66 @@ def set_image_fades(clip: GES.Clip, fade_in: Optional[int] = None,
     return True
 
 
+def is_white_effect(effect: GES.TrackElement) -> bool:
+    """Whether the effect is the one turning the clip white."""
+    if not isinstance(effect, GES.BaseEffect):
+        return False
+    res, value = effect.get_boolean(WHITE_EFFECT_META)
+    return bool(res and value)
+
+
+def _get_white_effect(clip: GES.Clip) -> Optional[GES.BaseEffect]:
+    for effect in clip.get_top_effects():
+        if is_white_effect(effect):
+            return effect
+    return None
+
+
+def get_white_fades(clip: GES.Clip) -> Fades:
+    """Returns how long the clip turns from and to white, at its ends."""
+    effect = _get_white_effect(clip)
+    binding = effect.get_control_binding("saturation") if effect else None
+    if not binding:
+        return Fades(1.0, 0, 0)
+    # The saturation goes from zero, white, to its original value.
+    keyframes = [(timestamp, value * 2) for timestamp, value
+                 in get_keyframes(binding.props.control_source)]
+    return read_fades(keyframes) or Fades(1.0, 0, 0)
+
+
+def set_white_fades(clip: GES.Clip, fade_in: Optional[int] = None,
+                    fade_out: Optional[int] = None) -> None:
+    """Changes how long the clip turns from and to white, at its ends."""
+    fades = get_white_fades(clip)
+    fades = Fades(1.0, fades.fade_in if fade_in is None else fade_in,
+                  fades.fade_out if fade_out is None else fade_out)
+    effect = _get_white_effect(clip)
+    if not fades.fade_in and not fades.fade_out:
+        if effect:
+            clip.remove(effect)
+        return
+
+    if not effect:
+        effect = GES.Effect.new(WHITE_EFFECT_BIN_DESCRIPTION)
+        effect.set_boolean(WHITE_EFFECT_META, True)
+        clip.add(effect)
+    # The fades of the image, 1 being the original image and 0 white.
+    keyframes = fades_keyframes(fades, *get_source_range(effect))
+    # The "direct" bindings map 0 and 1 to the lowest and highest values:
+    # the brightness goes from -1 to 1 and the saturation from 0 to 2.
+    for property_name, value_of in (("brightness", lambda image: 1 - image / 2),
+                                    ("saturation", lambda image: image / 2)):
+        binding = effect.get_control_binding(property_name)
+        if binding:
+            control_source = binding.props.control_source
+        else:
+            control_source = GstController.InterpolationControlSource()
+            control_source.props.mode = GstController.InterpolationMode.LINEAR
+            effect.set_control_source(control_source, property_name, "direct")
+        set_keyframes(control_source, [(timestamp, value_of(image))
+                                       for timestamp, image in keyframes])
+
+
 def get_contacts(layer: GES.Layer) -> List[Contact]:
     """Returns where the visual clips of the layer meet or overlap."""
     clips = sorted((clip for clip in layer.get_clips()
@@ -130,9 +199,14 @@ def get_contacts(layer: GES.Layer) -> List[Contact]:
         if clip_a.props.start < start_b < end_a:
             contacts.append(Contact(clip_a, clip_b, DISSOLVE, end_a - start_b))
         elif start_b == end_a:
+            white_a = get_white_fades(clip_a)
+            white_b = get_white_fades(clip_b)
             fades_a = get_image_fades(clip_a)
             fades_b = get_image_fades(clip_b)
-            if fades_a and fades_b and fades_a.fade_out and fades_b.fade_in:
+            if white_a.fade_out and white_b.fade_in:
+                contacts.append(Contact(clip_a, clip_b, FADE_TO_WHITE,
+                                        white_a.fade_out + white_b.fade_in))
+            elif fades_a and fades_b and fades_a.fade_out and fades_b.fade_in:
                 contacts.append(Contact(clip_a, clip_b, FADE_TO_BLACK,
                                         fades_a.fade_out + fades_b.fade_in))
             else:
@@ -173,6 +247,9 @@ def remove_transition(contact: Contact) -> Contact:
     elif contact.kind == FADE_TO_BLACK:
         set_image_fades(contact.clip_a, fade_out=0)
         set_image_fades(contact.clip_b, fade_in=0)
+    elif contact.kind == FADE_TO_WHITE:
+        set_white_fades(contact.clip_a, fade_out=0)
+        set_white_fades(contact.clip_b, fade_in=0)
     return Contact(contact.clip_a, contact.clip_b, None, 0)
 
 
@@ -186,4 +263,7 @@ def set_transition(contact: Contact, kind: str, duration: int) -> Contact:
     elif kind == FADE_TO_BLACK:
         set_image_fades(contact.clip_a, fade_out=duration // 2)
         set_image_fades(contact.clip_b, fade_in=duration - duration // 2)
+    elif kind == FADE_TO_WHITE:
+        set_white_fades(contact.clip_a, fade_out=duration // 2)
+        set_white_fades(contact.clip_b, fade_in=duration - duration // 2)
     return Contact(contact.clip_a, contact.clip_b, kind, duration)
