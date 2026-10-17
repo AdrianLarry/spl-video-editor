@@ -299,22 +299,27 @@ class EditingContext(GObject.Object, Loggable):
         self.edge = edge
         self.mode = mode
 
-        # The clips of a layer never overlap: extending the end of a clip
-        # pushes the following clips of its layer, extending its start
-        # stops at the previous clip.
+        # The clips of a layer overlap only where they have a transition:
+        # extending the end of a clip pushes the following clips of its
+        # layer, extending its start stops at the previous clip.
         self.__original_end = self.old_position
         self.__following = []
         self.__previous_end = 0
         if timeline and isinstance(self.focus, GES.Clip) and self.focus.get_layer():
-            self.__original_end = self.focus.props.start + self.focus.props.duration
+            focus_start = self.focus.props.start
+            self.__original_end = focus_start + self.focus.props.duration
             for clip in self.focus.get_layer().get_clips():
                 if clip == self.focus or isinstance(clip, GES.TransitionClip):
                     continue
                 clip_end = clip.props.start + clip.props.duration
-                if clip.props.start >= self.__original_end:
+                if clip.props.start > focus_start:
+                    # Including a clip overlapping the end for a transition.
                     self.__following.append((clip, clip.props.start))
-                elif clip_end <= self.focus.props.start:
-                    self.__previous_end = max(self.__previous_end, clip_end)
+                else:
+                    # A clip overlapping the start for a transition is not
+                    # overlapped further.
+                    self.__previous_end = max(self.__previous_end,
+                                              min(clip_end, focus_start))
             self.__following.sort(key=lambda item: item[1])
 
         # When moving a clip onto other clips, it is inserted before or after
@@ -478,8 +483,9 @@ class EditingContext(GObject.Object, Loggable):
         """Pushes the following clips once the end reaches the next one."""
         if not self.__following:
             return
-        # A gap before the next clip is filled first.
-        delta = max(0, end - self.__following[0][1])
+        # A gap before the next clip is filled first. A clip overlapping
+        # the end for a transition keeps overlapping it.
+        delta = max(0, end - max(self.__original_end, self.__following[0][1]))
         moves = [(clip, start + delta) for clip, start in self.__following
                  if clip.props.start != start + delta]
         if moves and moves[0][1] > moves[0][0].props.start:

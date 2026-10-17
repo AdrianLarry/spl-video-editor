@@ -1,0 +1,131 @@
+# -*- coding: utf-8 -*-
+# Pitivi video editor
+# Copyright (c) 2026, AdrianLarry <familystyle@outlook.es>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this program; if not, see <http://www.gnu.org/licenses/>.
+"""Tests for the pitivi.utils.transitions module."""
+from gi.repository import GES
+from gi.repository import Gst
+
+from pitivi.utils.timeline import EditingContext
+from pitivi.utils.transitions import DISSOLVE
+from pitivi.utils.transitions import FADE_TO_BLACK
+from pitivi.utils.transitions import get_contacts
+from pitivi.utils.transitions import get_image_fades
+from pitivi.utils.transitions import set_transition
+from tests import common
+
+SECOND = Gst.SECOND
+
+
+class TransitionsTest(common.TestCase):
+    """Tests for adding and removing transitions where clips meet."""
+
+    def _add_clip(self, start, duration=4, layer=None):
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
+        clip = (layer or self.layer).add_asset(asset, start * SECOND, 0, duration * SECOND,
+                                               GES.TrackType.UNKNOWN)
+        self.assertIsNotNone(clip)
+        return clip
+
+    def _get_transitions(self):
+        return [(clip.props.start / SECOND, clip.props.duration / SECOND)
+                for clip in self.layer.get_clips() if isinstance(clip, GES.TransitionClip)]
+
+    @common.setup_timeline
+    def test_dissolve(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+        clip_c = self._add_clip(10)
+        other_layer = self.timeline.append_layer()
+        other_clip = self._add_clip(6, layer=other_layer)
+
+        # The clips meeting have a contact, the gap does not.
+        contact, = get_contacts(self.layer)
+        self.assertEqual((contact.clip_a, contact.clip_b, contact.kind), (clip_a, clip_b, None))
+
+        with self.action_log.started("transition"):
+            contact = set_transition(contact, DISSOLVE, SECOND)
+        # The second clip and the following ones moved to the left.
+        self.assertEqual([clip.props.start / SECOND for clip in (clip_a, clip_b, clip_c, other_clip)],
+                         [0, 3, 9, 6])
+        self.assertEqual(self._get_transitions(), [(3, 1)])
+        self.assertEqual(get_contacts(self.layer), [contact])
+        self.assertEqual(contact.kind, DISSOLVE)
+
+        # A longer one.
+        with self.action_log.started("transition"):
+            contact = set_transition(contact, DISSOLVE, 2 * SECOND)
+        self.assertEqual([clip.props.start / SECOND for clip in (clip_b, clip_c)], [2, 8])
+        self.assertEqual(self._get_transitions(), [(2, 2)])
+
+        self.action_log.undo()
+        self.assertEqual(self._get_transitions(), [(3, 1)])
+        self.action_log.undo()
+        self.assertEqual(self._get_transitions(), [])
+        self.assertEqual([clip.props.start / SECOND for clip in (clip_b, clip_c)], [4, 10])
+
+    @common.setup_timeline
+    def test_fade_to_black(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+
+        contact, = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            contact = set_transition(contact, FADE_TO_BLACK, SECOND)
+        # Nothing moves, the clips fade out and in.
+        self.assertEqual(clip_b.props.start, 4 * SECOND)
+        self.assertEqual(self._get_transitions(), [])
+        self.assertEqual(get_image_fades(clip_a).fade_out, SECOND // 2)
+        self.assertEqual(get_image_fades(clip_b).fade_in, SECOND // 2)
+        self.assertEqual(get_contacts(self.layer), [contact])
+
+        # Replaced by a dissolve.
+        with self.action_log.started("transition"):
+            contact = set_transition(contact, DISSOLVE, SECOND)
+        self.assertEqual(get_image_fades(clip_a).fade_out, 0)
+        self.assertEqual(get_image_fades(clip_b).fade_in, 0)
+        self.assertEqual(clip_b.props.start, 3 * SECOND)
+
+        self.action_log.undo()
+        self.assertEqual(get_contacts(self.layer)[0].kind, FADE_TO_BLACK)
+
+    @common.setup_timeline
+    def test_trimming_keeps_the_dissolve(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+        contact, = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            set_transition(contact, DISSOLVE, SECOND)
+
+        # Extending the first clip pushes the second one, keeping the
+        # transition.
+        with self.action_log.started("trim"):
+            context = EditingContext(clip_a, self.timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_END, self.app)
+            context.edit_to(5 * SECOND, self.layer)
+            context.finish()
+        self.assertEqual(clip_b.props.start, 4 * SECOND)
+        self.assertEqual(self._get_transitions(), [(4, 1)])
+
+        # Extending the start of the second clip does not overlap more.
+        with self.action_log.started("trim"):
+            context = EditingContext(clip_b, self.timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_START, self.app)
+            context.edit_to(2 * SECOND, self.layer)
+            context.finish()
+        self.assertEqual(self._get_transitions(), [(4, 1)])

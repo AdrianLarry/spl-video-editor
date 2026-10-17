@@ -1474,9 +1474,9 @@ class Project(Loggable, GES.Project):
             return
 
         self._ensure_tracks()
-        # Overlapping clips do not create transitions: the transitions are
-        # added where two clips meet.
-        self.ges_timeline.props.auto_transition = False
+        # The clips of a layer overlap only for a transition, added where
+        # two clips meet, so a transition is created where they overlap.
+        self.ges_timeline.props.auto_transition = True
         self._ensure_layer()
 
         if self.uri:
