@@ -18,10 +18,12 @@
 from unittest import mock
 
 from gi.repository import GES
+from gi.repository import Gst
 
 from pitivi.timeline.layer import AUDIO_ICONS
 from pitivi.timeline.layer import FullLayer
 from pitivi.timeline.layer import VIDEO_ICONS
+from pitivi.utils.timeline import Zoomable
 from pitivi.utils.ui import LAYER_HEIGHT
 from tests import common
 
@@ -146,6 +148,44 @@ class TestLayerControl(common.TestCase):
 
 
 class TestLayer(common.TestCase):
+
+    @common.setup_timeline
+    def test_close_gap(self):
+        """Checks closing a gap moves only the clips of the layer."""
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
+
+        def add_clip(layer, start):
+            clip = layer.add_asset(asset, start * Gst.SECOND, 0, 2 * Gst.SECOND,
+                                   GES.TrackType.UNKNOWN)
+            self.assertIsNotNone(clip)
+            return clip
+
+        clip1 = add_clip(self.layer, 0)
+        clip2 = add_clip(self.layer, 5)
+        clip3 = add_clip(self.layer, 9)
+        other_layer = self.timeline.append_layer()
+        other_clip = add_clip(other_layer, 6)
+        # Zoom in, so that the buttons fit in the gaps.
+        Zoomable.set_zoom_level(78)
+        self.project.pipeline.commit_timeline()
+
+        layer_ui = self.layer.ui
+        self.assertEqual(layer_ui.get_gaps(),
+                         [(2 * Gst.SECOND, 5 * Gst.SECOND), (7 * Gst.SECOND, 9 * Gst.SECOND)])
+        self.assertEqual(len(layer_ui.gap_buttons), 2)
+
+        layer_ui.gap_buttons[0].clicked()
+        self.assertEqual([clip.props.start / Gst.SECOND for clip in (clip1, clip2, clip3)],
+                         [0, 2, 6])
+        self.assertEqual(other_clip.props.start, 6 * Gst.SECOND)
+        self.assertEqual(len(layer_ui.gap_buttons), 1)
+
+        self.action_log.undo()
+        self.assertEqual([clip.props.start / Gst.SECOND for clip in (clip1, clip2, clip3)],
+                         [0, 5, 9])
+        # The buttons are updated when the timeline has been committed.
+        common.create_main_loop().run(until_empty=True)
+        self.assertEqual(len(layer_ui.gap_buttons), 2)
 
     def test_check_media_types(self):
         """Checks media types when there is no control UI."""

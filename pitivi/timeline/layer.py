@@ -14,12 +14,15 @@
 #
 # You should have received a copy of the GNU Lesser General Public
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
+import locale
 import re
 from gettext import gettext as _
 
 from gi.repository import Gdk
 from gi.repository import GES
 from gi.repository import Gio
+from gi.repository import GLib
+from gi.repository import Gst
 from gi.repository import Gtk
 
 from pitivi.timeline import elements
@@ -30,6 +33,7 @@ from pitivi.utils.ui import LAYER_HEIGHT
 from pitivi.utils.ui import MINI_LAYER_HEIGHT
 from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import SEPARATOR_HEIGHT
+from pitivi.utils.ui import SPACING
 
 
 AUDIO_ICONS = {
@@ -415,7 +419,12 @@ class Layer(Gtk.Layout, Loggable):
 
 
 class FullLayer(Layer, Zoomable):
-    """Container for the Full clips."""
+    """Container for the Full clips.
+
+    Attributes:
+        gap_buttons (List[Gtk.Button]): The buttons for closing the gaps
+            between the clips.
+    """
 
     __gtype_name__ = "PitiviFullLayer"
 
@@ -423,10 +432,104 @@ class FullLayer(Layer, Zoomable):
         Layer.__init__(self, ges_layer, timeline)
         Zoomable.__init__(self)
 
+        self.gap_buttons = []
+        self.__update_gaps_id = 0
         self.ges_layer.ui = self
         for ges_clip in ges_layer.get_clips():
             self._add_clip(ges_clip)
         self.check_media_types()
+        self.update_gaps()
+
+    def release(self):
+        Layer.release(self)
+        if self.__update_gaps_id:
+            GLib.source_remove(self.__update_gaps_id)
+            self.__update_gaps_id = 0
+
+    def __clip_moved_cb(self, *unused_args):
+        # Several clips can be moved at once, the gaps are updated once.
+        if not self.__update_gaps_id:
+            self.__update_gaps_id = GLib.idle_add(self.__update_gaps_idle_cb)
+
+    def __update_gaps_idle_cb(self):
+        self.__update_gaps_id = 0
+        self.update_gaps()
+        return False
+
+    def zoom_changed(self):
+        self.update_gaps()
+
+    def get_gaps(self):
+        """Returns the gaps between the clips, as (start, end) tuples."""
+        clips = sorted((clip for clip in self.ges_layer.get_clips()
+                        if not isinstance(clip, GES.TransitionClip)),
+                       key=lambda clip: clip.props.start)
+        gaps = []
+        end = None
+        for clip in clips:
+            if end is not None and clip.props.start > end:
+                gaps.append((end, clip.props.start))
+            clip_end = clip.props.start + clip.props.duration
+            end = clip_end if end is None else max(end, clip_end)
+        return gaps
+
+    def update_gaps(self):
+        """Shows a button for closing each gap between the clips."""
+        for button in self.gap_buttons:
+            self.remove(button)
+        self.gap_buttons = []
+
+        for start, end in self.get_gaps():
+            button = Gtk.Button()
+            button.set_image(Gtk.Image.new_from_icon_name("go-previous-symbolic",
+                                                          Gtk.IconSize.BUTTON))
+            button.set_always_show_image(True)
+            seconds = locale.format_string("%.1f", (end - start) / Gst.SECOND)
+            button.set_tooltip_text(
+                _("Join the clips of this layer (%s s). The other layers do not move.") % seconds)
+            button.connect("clicked", self.__close_gap_clicked_cb, start, end)
+
+            width = self.ns_to_pixel(end) - self.ns_to_pixel(start)
+            # Measured once in the layer, with its style.
+            self.put(button, 0, 0)
+            button.set_label(_("Close gap"))
+            button.show_all()
+            if button.get_preferred_width()[1] + SPACING > width:
+                # Not enough room for the text.
+                button.set_label("")
+                if button.get_preferred_width()[1] + SPACING > width:
+                    self.remove(button)
+                    continue
+            button_width = button.get_preferred_width()[1]
+            button_height = button.get_preferred_height()[1]
+            x = self.ns_to_pixel(start) + (width - button_width) // 2
+            # Centered on the clips, which are at the top when the layer
+            # has both audio and video.
+            y = max(0, (LAYER_HEIGHT // 2 - button_height) // 2)
+            self.move(button, x, y)
+            self.gap_buttons.append(button)
+
+    def __close_gap_clicked_cb(self, unused_button, start, end):
+        self.close_gap(start, end)
+
+    def close_gap(self, start, end):
+        """Moves the clips after the gap of the layer to its start."""
+        pipeline = self.timeline.ges_timeline.get_asset().pipeline
+        with self.app.action_log.started("close gap",
+                                         finalizing_action=CommitTimelineFinalizingAction(pipeline),
+                                         toplevel=True):
+            following = sorted((clip for clip in self.ges_layer.get_clips()
+                                if clip.props.start >= end and
+                                not isinstance(clip, GES.TransitionClip)),
+                               key=lambda clip: clip.props.start)
+            for clip in following:
+                clip.set_start(clip.props.start - (end - start))
+        self.update_gaps()
+
+    def do_draw(self, cr):
+        Layer.do_draw(self, cr)
+        for button in self.gap_buttons:
+            self.propagate_draw(button, cr)
 
     def check_media_types(self):
         Layer._check_media_types(self)
@@ -452,6 +555,9 @@ class FullLayer(Layer, Zoomable):
         widget = ui_type(self, ges_clip)
         self.put(widget, self.ns_to_pixel(ges_clip.props.start), 0)
         Layer._add_clip_ui(self, ges_clip, widget)
+        for signal in ("notify::start", "notify::duration"):
+            ges_clip.connect(signal, self.__clip_moved_cb)
+        self.__clip_moved_cb()
 
     def _remove_clip(self, ges_clip):
         if not ges_clip.ui:
@@ -463,6 +569,8 @@ class FullLayer(Layer, Zoomable):
             return
 
         Layer._remove_clip_ui(self, ges_clip, ges_clip.ui)
+        ges_clip.disconnect_by_func(self.__clip_moved_cb)
+        self.__clip_moved_cb()
 
     def update_position(self):
         for ges_clip in self.ges_layer.get_clips():

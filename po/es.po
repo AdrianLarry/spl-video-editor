@@ -2108,6 +2108,15 @@ msgstr "Capa %d"
 msgid "New layer"
 msgstr "Nueva pista"
 
+#: pitivi/timeline/layer.py
+msgid "Close gap"
+msgstr "Cerrar espacio"
+
+#: pitivi/timeline/layer.py
+#, python-format
+msgid "Join the clips of this layer (%s s). The other layers do not move."
+msgstr "Junta los clips de esta pista (%s s). Las otras pistas no se mueven."
+
 #: pitivi/timeline/ruler.py:242
 #, python-format
 msgid "Frame #%d"
