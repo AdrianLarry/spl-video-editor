@@ -868,6 +868,11 @@ class TimelineElement(Gtk.Layout, Zoomable, Loggable):
 
     def __fades_changed_cb(self, *unused_args):
         self.queue_draw()
+        # The image fades of two clips meeting are a transition.
+        clip = self._ges_elem.get_parent()
+        layer = clip.get_layer() if clip else None
+        if layer and hasattr(layer, "ui") and hasattr(layer.ui, "schedule_update_gaps"):
+            layer.ui.schedule_update_gaps()
 
     def __draw_fades(self, cr):
         """Shades the fade-in and the fade-out of the clip."""

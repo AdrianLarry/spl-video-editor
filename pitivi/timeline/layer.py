@@ -26,9 +26,12 @@ from gi.repository import Gst
 from gi.repository import Gtk
 
 from pitivi.timeline import elements
+from pitivi.timeline.transitions import create_transition_button
+from pitivi.timeline.transitions import TransitionPopover
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.timeline import Zoomable
+from pitivi.utils.transitions import get_contacts
 from pitivi.utils.ui import LAYER_HEIGHT
 from pitivi.utils.ui import MINI_LAYER_HEIGHT
 from pitivi.utils.ui import PADDING
@@ -425,6 +428,8 @@ class FullLayer(Layer, Zoomable):
     Attributes:
         gap_buttons (List[Gtk.Button]): The buttons for closing the gaps
             between the clips.
+        transition_buttons (List[Gtk.Button]): The buttons for the
+            transitions where the clips meet.
     """
 
     __gtype_name__ = "PitiviFullLayer"
@@ -434,6 +439,7 @@ class FullLayer(Layer, Zoomable):
         Zoomable.__init__(self)
 
         self.gap_buttons = []
+        self.transition_buttons = []
         self.__update_gaps_id = 0
         self.ges_layer.ui = self
         for ges_clip in ges_layer.get_clips():
@@ -448,7 +454,11 @@ class FullLayer(Layer, Zoomable):
             self.__update_gaps_id = 0
 
     def __clip_moved_cb(self, *unused_args):
-        # Several clips can be moved at once, the gaps are updated once.
+        self.schedule_update_gaps()
+
+    def schedule_update_gaps(self):
+        """Updates the buttons for the gaps and transitions, soon."""
+        # Several clips can be moved at once, the buttons are updated once.
         if not self.__update_gaps_id:
             self.__update_gaps_id = GLib.idle_add(self.__update_gaps_idle_cb)
 
@@ -475,6 +485,35 @@ class FullLayer(Layer, Zoomable):
         return gaps
 
     def update_gaps(self):
+        """Shows the buttons for the gaps and the transitions."""
+        self.__update_gap_buttons()
+        self.__update_transition_buttons()
+
+    def __update_transition_buttons(self):
+        """Shows a button for the transition where each two clips meet."""
+        for button in self.transition_buttons:
+            self.remove(button)
+        self.transition_buttons = []
+
+        for contact in get_contacts(self.ges_layer):
+            button = create_transition_button(contact)
+            self.put(button, 0, 0)
+            button.show_all()
+            width = button.get_preferred_width()[1]
+            height = button.get_preferred_height()[1]
+            x = self.ns_to_pixel(contact.position) - width // 2
+            # Centered on the clips, which are at the top when the layer
+            # has both audio and video.
+            y = max(0, (LAYER_HEIGHT // 2 - height) // 2)
+            self.move(button, max(0, x), y)
+            button.connect("clicked", self.__transition_clicked_cb, contact)
+            self.transition_buttons.append(button)
+
+    def __transition_clicked_cb(self, button, contact):
+        popover = TransitionPopover(self.app, contact, button)
+        popover.popup()
+
+    def __update_gap_buttons(self):
         """Shows a button for closing each gap between the clips."""
         for button in self.gap_buttons:
             self.remove(button)
@@ -529,7 +568,7 @@ class FullLayer(Layer, Zoomable):
 
     def do_draw(self, cr):
         Layer.do_draw(self, cr)
-        for button in self.gap_buttons:
+        for button in self.gap_buttons + self.transition_buttons:
             self.propagate_draw(button, cr)
 
     def check_media_types(self):

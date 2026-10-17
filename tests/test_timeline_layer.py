@@ -22,8 +22,11 @@ from gi.repository import Gst
 
 from pitivi.timeline.layer import AUDIO_ICONS
 from pitivi.timeline.layer import FullLayer
+from pitivi.timeline.transitions import TransitionPopover
 from pitivi.timeline.layer import VIDEO_ICONS
 from pitivi.utils.timeline import Zoomable
+from pitivi.utils.transitions import DISSOLVE
+from pitivi.utils.transitions import get_contacts
 from pitivi.utils.ui import LAYER_HEIGHT
 from tests import common
 
@@ -254,3 +257,36 @@ class TestLayer(common.TestCase):
             self.assertEqual(self.layer.ui.props.height_request, LAYER_HEIGHT)
         else:
             self.assertEqual(self.layer.ui.props.height_request, LAYER_HEIGHT // 2)
+
+    @common.setup_timeline
+    def test_transition_buttons(self):
+        """Checks adding a transition with the button where clips meet."""
+        self._wait_until_project_loaded()
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
+        clip_a = self.layer.add_asset(asset, 0, 0, 4 * Gst.SECOND, GES.TrackType.UNKNOWN)
+        clip_b = self.layer.add_asset(asset, 4 * Gst.SECOND, 0, 4 * Gst.SECOND, GES.TrackType.UNKNOWN)
+        Zoomable.set_zoom_level(78)
+        layer_ui = self.layer.ui
+        layer_ui.update_gaps()
+
+        button, = layer_ui.transition_buttons
+        self.assertIsNotNone(button.get_image())
+
+        contact, = get_contacts(self.layer)
+        popover = TransitionPopover(self.app, contact, button)
+        self.assertEqual(popover.get_kind(), DISSOLVE)
+        popover.duration_scale.set_value(1.5)
+        popover.apply_button.clicked()
+
+        self.assertEqual(clip_b.props.start, int(2.5 * Gst.SECOND))
+        self.assertEqual(get_contacts(self.layer)[0].kind, DISSOLVE)
+        layer_ui.update_gaps()
+        button, = layer_ui.transition_buttons
+        self.assertEqual(button.get_label(), "Dissolve")
+
+        # Removed with the button of the popover.
+        popover = TransitionPopover(self.app, get_contacts(self.layer)[0], button)
+        popover.remove_button.clicked()
+        self.assertEqual(clip_b.props.start, 4 * Gst.SECOND)
+        self.assertIsNone(get_contacts(self.layer)[0].kind)
+        self.assertEqual(clip_a.props.duration, 4 * Gst.SECOND)

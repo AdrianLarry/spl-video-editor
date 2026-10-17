@@ -2112,6 +2112,56 @@ msgstr "Nueva pista"
 msgid "Close gap"
 msgstr "Cerrar espacio"
 
+#: pitivi/timeline/transitions.py
+msgid "Dissolve"
+msgstr "Disolver"
+
+#: pitivi/timeline/transitions.py
+msgid "Fade to black"
+msgstr "Fundido a negro"
+
+#: pitivi/timeline/transitions.py
+msgid "Fade to white"
+msgstr "Fundido a blanco"
+
+#: pitivi/timeline/transitions.py
+msgid "Slide"
+msgstr "Desplazar"
+
+#: pitivi/timeline/transitions.py
+#, python-format
+msgid "%s, %s. Click to change or remove it."
+msgstr "%s, %s. Hacé clic para cambiarla o quitarla."
+
+#: pitivi/timeline/transitions.py
+msgid "Add a transition"
+msgstr "Agregar una transición"
+
+#: pitivi/timeline/transitions.py
+msgid "Change transition"
+msgstr "Cambiar transición"
+
+#: pitivi/timeline/transitions.py
+msgid "Add transition"
+msgstr "Agregar transición"
+
+#: pitivi/timeline/transitions.py
+#, python-format
+msgid "Between «%s» and «%s»"
+msgstr "Entre «%s» y «%s»"
+
+#: pitivi/timeline/transitions.py
+msgid "Coming soon"
+msgstr "Próximamente"
+
+#: pitivi/timeline/transitions.py
+msgid "Remove transition"
+msgstr "Quitar transición"
+
+#: pitivi/timeline/transitions.py
+msgid "Duration"
+msgstr "Duración"
+
 #: pitivi/timeline/layer.py
 #, python-format
 msgid "Join the clips of this layer (%s s). The other layers do not move."
