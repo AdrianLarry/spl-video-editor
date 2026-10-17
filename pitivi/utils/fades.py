@@ -126,12 +126,14 @@ def set_keyframes(control_source, keyframes: Keyframes) -> None:
     """
     wanted = dict(keyframes)
     current = dict(get_keyframes(control_source))
-    for timestamp in current:
-        if timestamp not in wanted:
-            control_source.unset(timestamp)
+    # The new keyframes are set first, so the control source never gets
+    # empty for whoever reads it meanwhile.
     for timestamp, value in wanted.items():
         if timestamp not in current or abs(current[timestamp] - value) > EPSILON:
             control_source.set(timestamp, value)
+    for timestamp in current:
+        if timestamp not in wanted:
+            control_source.unset(timestamp)
 
 
 def get_source_range(source: GES.TrackElement) -> Tuple[int, int]:

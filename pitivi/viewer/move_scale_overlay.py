@@ -333,8 +333,8 @@ class MoveScaleOverlay(Overlay):
                 # value at the start/end (whichever is closer) of the clip.
                 source_position = max(0, min(position - start, duration - 1)) + in_point
                 value = binding.get_value(source_position)
-                res = value is not None
-                return res, value
+                if value is not None:
+                    return True, value
 
         return self._source.get_child_property(prop)
 
