@@ -56,6 +56,7 @@ from pitivi.utils.timeline import SELECT_ADD
 from pitivi.utils.timeline import Selected
 from pitivi.utils.timeline import UNSELECT
 from pitivi.utils.timeline import Zoomable
+from pitivi.utils.transitions import get_white_fades
 from pitivi.utils.ui import CURSORS
 from pitivi.utils.ui import DRAG_CURSOR
 from pitivi.utils.ui import EFFECT_TARGET_ENTRY
@@ -876,24 +877,36 @@ class TimelineElement(Gtk.Layout, Zoomable, Loggable):
 
     def __draw_fades(self, cr):
         """Shades the fade-in and the fade-out of the clip."""
-        control_source = self.__fades_control_source
         duration = self._ges_elem.props.duration
-        if not control_source or not duration or not self.__width:
+        if not duration or not self.__width:
             return
 
-        keyframes = [(keyframe.timestamp, keyframe.value)
-                     for keyframe in control_source.get_all()]
-        fade_in, fade_out = get_fade_durations(keyframes)
+        control_source = self.__fades_control_source
+        if control_source:
+            keyframes = [(keyframe.timestamp, keyframe.value)
+                         for keyframe in control_source.get_all()]
+            fade_in, fade_out = get_fade_durations(keyframes)
+            if isinstance(self._ges_elem, GES.AudioSource):
+                shade = (0.04, 0.08, 0.07, 0.7)
+            else:
+                shade = (0, 0, 0, 0.65)
+            self.__draw_fade_triangles(cr, fade_in, fade_out, shade, (1, 1, 1, 0.6))
+
+        clip = self._ges_elem.get_parent()
+        if isinstance(self._ges_elem, GES.VideoSource) and clip:
+            # The fades to white of the transitions are light.
+            white_fades = get_white_fades(clip)
+            self.__draw_fade_triangles(cr, white_fades.fade_in, white_fades.fade_out,
+                                       (1, 1, 1, 0.6), (0, 0, 0, 0.5))
+
+    def __draw_fade_triangles(self, cr, fade_in, fade_out, shade, line_color):
         if not fade_in and not fade_out:
             return
 
+        duration = self._ges_elem.props.duration
         top = self.markers.props.height_request
         bottom = self.__height
         width = self.__width
-        if isinstance(self._ges_elem, GES.AudioSource):
-            shade = (0.04, 0.08, 0.07, 0.7)
-        else:
-            shade = (0, 0, 0, 0.65)
 
         # Each fade is a triangle above the line going from silence or
         # transparency to the full volume or opacity.
@@ -916,7 +929,7 @@ class TimelineElement(Gtk.Layout, Zoomable, Loggable):
 
             cr.move_to(*line_start)
             cr.line_to(*line_end)
-            cr.set_source_rgba(1, 1, 1, 0.6)
+            cr.set_source_rgba(*line_color)
             cr.set_line_width(1)
             cr.stroke()
         cr.restore()

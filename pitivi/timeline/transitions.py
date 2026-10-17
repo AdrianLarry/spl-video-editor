@@ -111,6 +111,7 @@ class TransitionPopover(Gtk.Popover):
             button.set_mode(False)
             if kind:
                 self.kind_buttons[kind] = button
+                button.connect("toggled", self.__kind_toggled_cb)
             else:
                 button.set_sensitive(False)
                 button.set_tooltip_text(_("Coming soon"))
@@ -123,12 +124,12 @@ class TransitionPopover(Gtk.Popover):
         self.duration_label = Gtk.Label()
         duration_box.pack_end(self.duration_label, False, False, 0)
         box.pack_start(duration_box, False, False, 0)
-        max_duration = get_max_duration(contact) / Gst.SECOND
-        min_duration = min(MIN_DURATION / Gst.SECOND, max_duration)
         self.duration_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,
-                                                       min_duration, max_duration, 0.1)
+                                                       MIN_DURATION / Gst.SECOND,
+                                                       MIN_DURATION / Gst.SECOND + 0.1, 0.1)
         self.duration_scale.set_draw_value(False)
         self.duration_scale.connect("value-changed", self.__duration_changed_cb)
+        self.__update_duration_range()
         duration = contact.duration if contact.kind else DEFAULT_DURATION
         self.duration_scale.set_value(duration / Gst.SECOND)
         self.__duration_changed_cb(self.duration_scale)
@@ -152,6 +153,16 @@ class TransitionPopover(Gtk.Popover):
 
         self.add(box)
         box.show_all()
+
+    def __update_duration_range(self):
+        """Sets the durations offered, which depend on the kind."""
+        max_duration = get_max_duration(self.contact, self.get_kind()) / Gst.SECOND
+        min_duration = min(MIN_DURATION / Gst.SECOND, max_duration)
+        self.duration_scale.set_range(min_duration, max(max_duration, min_duration))
+
+    def __kind_toggled_cb(self, button):
+        if button.get_active() and hasattr(self, "duration_scale"):
+            self.__update_duration_range()
 
     def __duration_changed_cb(self, scale):
         self.duration_label.set_markup("<b>%s</b>" % GLib.markup_escape_text(

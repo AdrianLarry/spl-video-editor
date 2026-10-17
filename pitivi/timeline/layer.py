@@ -488,6 +488,8 @@ class FullLayer(Layer, Zoomable):
         """Shows the buttons for the gaps and the transitions."""
         self.__update_gap_buttons()
         self.__update_transition_buttons()
+        # The clips show the fades of the transitions.
+        self.queue_draw()
 
     def __update_transition_buttons(self):
         """Shows a button for the transition where each two clips meet."""

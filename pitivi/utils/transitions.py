@@ -46,10 +46,12 @@ DISSOLVE = "dissolve"
 FADE_TO_BLACK = "fade-to-black"
 FADE_TO_WHITE = "fade-to-white"
 
-# The effect turning a clip white, marked with this metadata. With the
-# highest brightness and no saturation the image is white.
+# The effect turning a clip white, marked with this metadata. It mixes the
+# image with white by lowering the contrast and the saturation, and raising
+# the brightness, which videobalance applies to the luma between 16 and 235.
 WHITE_EFFECT_BIN_DESCRIPTION = "videobalance"
 WHITE_EFFECT_META = "spl::fade-to-white"
+WHITE_BRIGHTNESS = 219 / 255
 
 MIN_DURATION = 3 * Gst.SECOND // 10
 MAX_DURATION = 2 * Gst.SECOND
@@ -171,9 +173,12 @@ def set_white_fades(clip: GES.Clip, fade_in: Optional[int] = None,
     # The fades of the image, 1 being the original image and 0 white.
     keyframes = fades_keyframes(fades, *get_source_range(effect))
     # The "direct" bindings map 0 and 1 to the lowest and highest values:
-    # the brightness goes from -1 to 1 and the saturation from 0 to 2.
-    for property_name, value_of in (("brightness", lambda image: 1 - image / 2),
-                                    ("saturation", lambda image: image / 2)):
+    # the brightness goes from -1 to 1, the contrast and the saturation
+    # from 0 to 2.
+    for property_name, value_of in (
+            ("brightness", lambda image: (1 + (1 - image) * WHITE_BRIGHTNESS) / 2),
+            ("contrast", lambda image: image / 2),
+            ("saturation", lambda image: image / 2)):
         binding = effect.get_control_binding(property_name)
         if binding:
             control_source = binding.props.control_source
@@ -214,14 +219,18 @@ def get_contacts(layer: GES.Layer) -> List[Contact]:
     return contacts
 
 
-def get_max_duration(contact: Contact) -> int:
-    """Returns the longest transition the clips allow."""
-    # Half of each clip, so a clip has room for transitions at both ends.
-    longest = min(contact.clip_a.props.duration, contact.clip_b.props.duration)
+def get_max_duration(contact: Contact, kind: str) -> int:
+    """Returns the longest transition of the kind the clips allow."""
+    shortest = min(contact.clip_a.props.duration, contact.clip_b.props.duration)
     if contact.kind == DISSOLVE:
         # The clips overlap, they get back their length without it.
-        longest += contact.duration
-    return min(MAX_DURATION, longest // 2)
+        shortest += contact.duration
+    if kind == DISSOLVE:
+        # The clips overlap at most half of their length, so a clip has
+        # room for transitions at both ends.
+        return min(MAX_DURATION, shortest // 2)
+    # Each clip fades during half of the transition, at most half of it.
+    return min(MAX_DURATION, shortest)
 
 
 def _shift_following(contact: Contact, shift: int) -> None:
@@ -256,7 +265,7 @@ def remove_transition(contact: Contact) -> Contact:
 def set_transition(contact: Contact, kind: str, duration: int) -> Contact:
     """Replaces the transition between the clips, returns the contact."""
     contact = remove_transition(contact)
-    duration = max(MIN_DURATION, min(duration, get_max_duration(contact)))
+    duration = max(MIN_DURATION, min(duration, get_max_duration(contact, kind)))
     if kind == DISSOLVE:
         # GES creates the transition where the clips overlap.
         _shift_following(contact, -duration)

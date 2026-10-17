@@ -25,6 +25,7 @@ from pitivi.utils.transitions import FADE_TO_BLACK
 from pitivi.utils.transitions import FADE_TO_WHITE
 from pitivi.utils.transitions import get_contacts
 from pitivi.utils.transitions import get_image_fades
+from pitivi.utils.transitions import get_max_duration
 from pitivi.utils.transitions import get_white_fades
 from pitivi.utils.transitions import is_white_effect
 from pitivi.utils.transitions import set_transition
@@ -157,8 +158,12 @@ class TransitionsTest(common.TestCase):
         # The keyframes of the effect go from white to the original image.
         effect, = clip_a.get_top_effects()
         brightness = effect.get_control_binding("brightness").props.control_source
+        # At the end the image is white: videobalance applies the brightness
+        # to the luma between 16 and 235.
         self.assertEqual([(timestamp, round(value, 3)) for timestamp, value in get_keyframes(brightness)],
-                         [(0, 0.5), (int(3.5 * SECOND), 0.5), (4 * SECOND, 1.0)])
+                         [(0, 0.5), (int(3.5 * SECOND), 0.5), (4 * SECOND, round((1 + 219 / 255) / 2, 3))])
+        contrast = effect.get_control_binding("contrast").props.control_source
+        self.assertEqual(get_keyframes(contrast)[-1], (4 * SECOND, 0.0))
 
         # Trimming keeps the fade to white at the new end.
         with self.action_log.started("trim"):
@@ -178,3 +183,15 @@ class TransitionsTest(common.TestCase):
 
         self.action_log.undo()
         self.assertEqual(get_contacts(self.layer)[0].kind, FADE_TO_WHITE)
+
+    @common.setup_timeline
+    def test_max_duration(self):
+        self._wait_until_project_loaded()
+        self._add_clip(0, duration=3)
+        self._add_clip(3, duration=1)
+        contact, = get_contacts(self.layer)
+        # A dissolve overlaps at most half of the shortest clip, each clip
+        # fades at most during half of its length.
+        self.assertEqual(get_max_duration(contact, DISSOLVE), SECOND // 2)
+        self.assertEqual(get_max_duration(contact, FADE_TO_WHITE), SECOND)
+        self.assertEqual(get_max_duration(contact, FADE_TO_BLACK), SECOND)
