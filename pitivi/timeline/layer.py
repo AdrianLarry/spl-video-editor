@@ -343,7 +343,8 @@ class Layer(Gtk.Layout, Loggable):
     def get_name(self):
         name = self.__name_if_meaningful()
         if not name:
-            name = _('Layer %d') % self.ges_layer.get_priority()
+            # Counted from one, as in the mockup.
+            name = _('Layer %d') % (self.ges_layer.get_priority() + 1)
         return name
 
     def release(self):

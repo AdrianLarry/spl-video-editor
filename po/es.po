@@ -2081,28 +2081,28 @@ msgstr "Fundido de sonido"
 
 #: pitivi/timeline/layer.py:197
 msgid "Move layer to top"
-msgstr "Subir la capa"
+msgstr "Subir la pista"
 
 #: pitivi/timeline/layer.py:203
 msgid "Move layer up"
-msgstr "Mover capa hacia arriba"
+msgstr "Mover pista hacia arriba"
 
 #: pitivi/timeline/layer.py:209
 msgid "Move layer down"
-msgstr "Mover capa hacia abajo"
+msgstr "Mover pista hacia abajo"
 
 #: pitivi/timeline/layer.py:215
 msgid "Move layer to bottom"
-msgstr "Bajar la capa"
+msgstr "Bajar la pista"
 
 #: pitivi/timeline/layer.py:221
 msgid "Delete layer"
-msgstr "Eliminar capa"
+msgstr "Eliminar pista"
 
 #: pitivi/timeline/layer.py:342
 #, python-format
 msgid "Layer %d"
-msgstr "Capa %d"
+msgstr "Pista %d"
 
 #: pitivi/timeline/timeline.py
 msgid "New layer"
@@ -2169,7 +2169,7 @@ msgstr ""
 
 #: pitivi/timeline/timeline.py:419 pitivi/timeline/timeline.py:1995
 msgid "Add layer"
-msgstr "Añadir capa"
+msgstr "Nueva pista"
 
 #: pitivi/timeline/timeline.py:1924
 msgid "Action Search"

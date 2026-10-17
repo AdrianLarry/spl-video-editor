@@ -34,7 +34,7 @@ class TestLayerControl(common.TestCase):
         timeline = mock.MagicMock()
         ges_layer = GES.Layer()
         layer = FullLayer(ges_layer, timeline)
-        self.assertEqual(layer.get_name(), "Layer 0", "Default name generation failed")
+        self.assertEqual(layer.get_name(), "Layer 1", "Default name generation failed")
 
         ges_layer.set_meta("audio::name", "a")
         self.assertEqual(layer.get_name(), "a", "Cannot use old audio name")
