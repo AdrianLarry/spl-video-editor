@@ -16,10 +16,12 @@
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 """Tests for the pitivi.viewer.title_overlay module."""
 # pylint: disable=protected-access,attribute-defined-outside-init
+import time
 from unittest import mock
 
 from gi.repository import Gdk
 from gi.repository import GES
+from gi.repository import GLib
 
 from pitivi.viewer.title_overlay import TitleOverlay
 from tests import common
@@ -113,8 +115,18 @@ class TitleOverlayTest(common.TestCase):
 
         self.assertEqual(get_alignment(), ("center", "center"))
 
-        # Simulate hover and drag&drop.
+        # Wait until the title is drawn and its overlay shown, its size is
+        # known only then.
         overlay_stack = app.gui.editor.viewer.overlay_stack
+        context = GLib.MainContext.default()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not (
+                source.get_child_property("text-width")[1] and
+                overlay_stack.selected_overlay and overlay_stack.selected_overlay.get_visible()):
+            context.iteration(False)
+        overlay_stack.update(source)
+
+        # Simulate hover and drag&drop.
         w, h = overlay_stack.window_size
         for event_type, x, y in ((Gdk.EventType.MOTION_NOTIFY, w / 2, h / 2),
                                  (Gdk.EventType.BUTTON_PRESS, w / 2, h / 2),
