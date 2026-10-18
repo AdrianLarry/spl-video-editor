@@ -143,13 +143,53 @@ GREETER_PERSPECTIVE_CSS = """
         font-weight: bold;
     }
 
+    /* The colors of the mockup, whatever the theme. */
+    .spl-greeter,
+    .spl-greeter viewport {
+        background-color: rgb(15, 17, 21);
+    }
+
+    headerbar.spl-headerbar:not(.selection-mode) {
+        background-image: none;
+        background-color: rgb(23, 26, 32);
+        border-bottom: 1px solid rgb(42, 47, 57);
+        box-shadow: none;
+    }
+
+    .spl-accent {
+        background-image: none;
+        background-color: rgb(255, 138, 91);
+        color: rgb(29, 15, 8);
+        border: none;
+        box-shadow: none;
+        border-radius: 8px;
+        font-weight: bold;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .spl-accent:hover {
+        background-color: rgb(255, 164, 127);
+    }
+
+    .spl-accent label {
+        color: rgb(29, 15, 8);
+    }
+
     #recent_projects_listbox {
-        border: 1px solid alpha(@borders, 0.6);
+        background-color: rgb(23, 26, 32);
+        border: 1px solid rgb(42, 47, 57);
+        border-radius: 10px;
     }
 
     #recent_projects_listbox row {
         padding: 12px 12px 12px 12px;
-        border-bottom: 1px solid alpha(@borders, 0.2);
+        border-bottom: 1px solid rgb(42, 47, 57);
+        border-radius: 0;
+    }
+
+    #recent_projects_listbox row:hover {
+        background-color: rgb(28, 32, 40);
     }
 
     #recent_projects_listbox row:last-child {
@@ -180,7 +220,7 @@ GREETER_PERSPECTIVE_CSS = """
     }
 
     #project_thumbnail_box {
-        background-color: #181818;
+        background-color: transparent;
     }
 """
 

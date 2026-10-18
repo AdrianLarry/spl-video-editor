@@ -16,10 +16,13 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 """Pitivi's Welcome/Greeter perspective."""
+import math
 import os
 from gettext import gettext as _
 
+import cairo
 from gi.repository import Gdk
+from gi.repository import GdkPixbuf
 from gi.repository import GES
 from gi.repository import Gio
 from gi.repository import GLib
@@ -29,6 +32,7 @@ from pitivi.check import MISSING_SOFT_DEPS
 from pitivi.configure import get_ui_dir
 from pitivi.dialogs.browseprojects import BrowseProjectsDialog
 from pitivi.perspective import Perspective
+from pitivi.project import ORIGINAL_THUMB_DIR
 from pitivi.project import Project
 from pitivi.utils.misc import with_build_label
 from pitivi.utils.ui import beautify_last_updated_timestamp
@@ -65,6 +69,7 @@ class ProjectInfoRow(Gtk.ListBoxRow):
         self.select_button.hide()
 
         self.__thumb = builder.get_object("project_thumbnail")
+        self.__thumb.get_parent().set_size_request(THUMB_WIDTH, THUMB_HEIGHT)
         # Defer loading of thumbnail.
         GLib.idle_add(self.__load_thumb_cb)
 
@@ -75,8 +80,53 @@ class ProjectInfoRow(Gtk.ListBoxRow):
             beautify_last_updated_timestamp(recent_project_item.get_modified()))
 
     def __load_thumb_cb(self):
-        self.__thumb.set_from_pixbuf(Project.get_thumb(self.uri))
+        scale = self.__thumb.get_scale_factor()
+        surface = create_thumb_surface(self.uri, THUMB_WIDTH, THUMB_HEIGHT, scale)
+        if surface:
+            self.__thumb.set_from_surface(surface)
         return False
+
+
+# The size of the thumbnails of the projects, as the cards of the mockup.
+THUMB_WIDTH = 160
+THUMB_HEIGHT = 90
+THUMB_RADIUS = 8
+
+
+def create_thumb_surface(uri, width, height, scale):
+    """Returns the thumbnail of the project with rounded corners.
+
+    The thumbnail covers the card, the default icon is shown whole.
+    """
+    try:
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file(Project.get_thumb_path(uri, ORIGINAL_THUMB_DIR))
+        cover = True
+    except GLib.Error:
+        pixbuf = Project.get_thumb(uri)
+        cover = False
+    if not pixbuf:
+        return None
+
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width * scale, height * scale)
+    surface.set_device_scale(scale, scale)
+    cr = cairo.Context(surface)
+    radius = THUMB_RADIUS
+    cr.new_sub_path()
+    cr.arc(width - radius, radius, radius, -math.pi / 2, 0)
+    cr.arc(width - radius, height - radius, radius, 0, math.pi / 2)
+    cr.arc(radius, height - radius, radius, math.pi / 2, math.pi)
+    cr.arc(radius, radius, radius, math.pi, 3 * math.pi / 2)
+    cr.close_path()
+    cr.clip()
+    cr.set_source_rgb(0.043, 0.047, 0.063)
+    cr.paint()
+
+    ratio = (max if cover else min)(width / pixbuf.get_width(), height / pixbuf.get_height())
+    cr.translate(width / 2, height / 2)
+    cr.scale(ratio, ratio)
+    Gdk.cairo_set_source_pixbuf(cr, pixbuf, -pixbuf.get_width() / 2, -pixbuf.get_height() / 2)
+    cr.paint()
+    return surface
 
 
 class GreeterPerspective(Perspective):
@@ -130,6 +180,7 @@ class GreeterPerspective(Perspective):
         logo.set_from_pixbuf(pixbuf)
 
         self.toplevel_widget = builder.get_object("toplevel_vbox")
+        self.toplevel_widget.get_style_context().add_class("spl-greeter")
         self.toplevel_widget.drag_dest_set(
             Gtk.DestDefaults.ALL, [URI_TARGET_ENTRY], Gdk.DragAction.COPY)
         self.toplevel_widget.connect("drag-data-received", self.__drag_data_received_cb)
@@ -225,8 +276,11 @@ class GreeterPerspective(Perspective):
 
     def __create_headerbar(self):
         headerbar = Gtk.HeaderBar()
+        headerbar.get_style_context().add_class("spl-headerbar")
 
         self.__new_project_button = Gtk.Button.new_with_label(_("New"))
+        # The main action, as in the editor.
+        self.__new_project_button.get_style_context().add_class("spl-accent")
         self.__new_project_button.set_tooltip_text(_("Create a new project"))
         self.__new_project_button.set_action_name("greeter.new-project")
 

@@ -98,6 +98,8 @@ SCALED_THUMB_WIDTH = 96
 SCALED_THUMB_HEIGHT = 54
 SCALED_THUMB_DIR = "96x54"
 ORIGINAL_THUMB_DIR = "original"
+# The width of the frame saved as project thumbnail.
+FRAME_THUMB_WIDTH = 480
 
 
 class ProjectManager(GObject.Object, Loggable):
@@ -480,6 +482,9 @@ class ProjectManager(GObject.Object, Loggable):
             return False
 
         with Previewer.manager.paused(interrupt=True):
+            # The frame shown is a better thumbnail than the ones of the
+            # files, it has to be saved while the pipeline is alive.
+            self.current_project.save_frame_thumb()
             self.current_project.finalize()
 
             project = self.current_project
@@ -727,6 +732,8 @@ class Project(Loggable, GES.Project):
         assert res
         self._has_default_audio_settings = has_default_settings
         self._has_default_video_settings = has_default_settings
+        # Whether the frame shown was saved as thumbnail when closing.
+        self.__frame_thumb_saved = False
 
         # A ((container_profile, muxer) -> containersettings) map.
         self._containersettings_cache = {}
@@ -874,9 +881,32 @@ class Project(Loggable, GES.Project):
                 return thumb
         return None
 
+    def save_frame_thumb(self):
+        """Saves the frame shown in the viewer as the project thumbnail."""
+        self.__frame_thumb_saved = False
+        if not self.uri or not self.list_sources():
+            return
+        thumb_path = self.get_thumb_path(self.uri, ORIGINAL_THUMB_DIR)
+        os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+        # Big enough for the cards of the start screen.
+        width = FRAME_THUMB_WIDTH
+        height = round(width * self.videoheight / self.videowidth)
+        try:
+            saved = self.pipeline.save_thumbnail(width, height, "image/png", thumb_path)
+        except GLib.Error as e:
+            self.warning("Failed to save the frame as thumbnail: %s", e)
+            saved = False
+        if saved:
+            self.__frame_thumb_saved = True
+            self.__create_scaled_thumb()
+
     def create_thumb(self):
         """Creates project thumbnails."""
         if not self.uri:
+            return
+
+        if self.__frame_thumb_saved:
+            # The frame shown was saved when closing.
             return
 
         thumb_path = self.get_thumb_path(self.uri, ORIGINAL_THUMB_DIR)
