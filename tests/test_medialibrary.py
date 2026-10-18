@@ -25,6 +25,9 @@ from gi.repository import Gdk
 from gi.repository import GES
 from gi.repository import Gst
 
+from pitivi.librarycard import AUDIO
+from pitivi.librarycard import IMAGE
+from pitivi.librarycard import VIDEO
 from pitivi.medialibrary import AssetThumbnail
 from pitivi.medialibrary import MediaLibraryWidget
 from pitivi.medialibrary import TagState
@@ -497,6 +500,28 @@ class TestMediaLibrary(BaseTestMediaLibrary):
         with common.cloned_sample(sample):
             self.check_import([sample], check_no_transcoding=True,
                               proxying_strategy=ProxyingStrategy.AUTOMATIC)
+
+    def test_kind_filter(self):
+        """Checks the buttons showing the files of a kind."""
+        samples = ["flat_colour1_640x480.png", "mp3_sample.mp3", "one_fps_numeroted_blue.mkv"]
+        self.check_import(samples, proxying_strategy=ProxyingStrategy.NOTHING)
+
+        def get_visible():
+            return sorted(self.medialibrary.store[child.get_index()].uri.split("/")[-1]
+                          for child in self.medialibrary.flowbox.get_children()
+                          if child.get_visible())
+
+        self.assertEqual(get_visible(), samples)
+        buttons = self.medialibrary.kind_filter_buttons
+        for kind, visible in ((AUDIO, ["mp3_sample.mp3"]),
+                              (IMAGE, ["flat_colour1_640x480.png"]),
+                              (VIDEO, ["one_fps_numeroted_blue.mkv"]),
+                              (None, samples)):
+            buttons[kind].set_active(True)
+            self.assertEqual(get_visible(), visible)
+            # Only one is active.
+            self.assertEqual([other for other, button in buttons.items() if button.get_active()],
+                             [kind])
 
     def test_flowbox_items_order(self):
         samples = ["tears_of_steel.webm", "1sec_simpsons_trailer.mp4"]

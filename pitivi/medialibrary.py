@@ -45,6 +45,13 @@ from pitivi.configure import get_pixmap_dir
 from pitivi.configure import get_ui_dir
 from pitivi.dialogs.clipmediaprops import ClipMediaPropsDialog
 from pitivi.dialogs.filelisterrordialog import FileListErrorDialog
+from pitivi.librarycard import AUDIO
+from pitivi.librarycard import CARD_SPACING
+from pitivi.librarycard import get_kind
+from pitivi.librarycard import IMAGE
+from pitivi.librarycard import LibraryCard
+from pitivi.librarycard import MIN_CARD_WIDTH
+from pitivi.librarycard import VIDEO
 from pitivi.mediafilespreviewer import PreviewWidget
 from pitivi.settings import GlobalSettings
 from pitivi.timeline.previewers import AssetPreviewer
@@ -67,6 +74,9 @@ from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import SMALL_THUMB_WIDTH
 from pitivi.utils.ui import SPACING
 from pitivi.utils.ui import URI_TARGET_ENTRY
+
+# The biggest width of the pictures of the cards.
+CARD_THUMB_SIZE = 480
 
 
 class ViewType(IntEnum):
@@ -299,6 +309,8 @@ class AssetThumbnail(GObject.Object, Loggable):
         self.__previewer = None
         self.small_thumb = None
         self.large_thumb = None
+        # The biggest picture available, for the cards.
+        self.card_thumb = None
         self.refresh()
 
     def refresh(self):
@@ -326,15 +338,23 @@ class AssetThumbnail(GObject.Object, Loggable):
             stream_info
             for stream_info in self.__asset.get_info().get_stream_list()
             if isinstance(stream_info, GstPbutils.DiscovererVideoInfo)]
+        self.card_thumb = None
         if video_streams:
             # Check if the files have thumbnails in the user's cache directory.
             real_uri = get_proxy_target(self.__asset).props.id
             small_thumb, large_thumb = self.get_thumbnails_from_xdg_cache(real_uri)
-            if not small_thumb:
+            if small_thumb:
+                self.card_thumb = self.get_card_thumb_from_xdg_cache(real_uri) or large_thumb
+            else:
                 if self.__asset.is_image():
                     path = Gst.uri_get_location(real_uri)
                     try:
                         pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
+                        self.card_thumb = pixbuf.scale_simple(
+                            CARD_THUMB_SIZE,
+                            CARD_THUMB_SIZE * pixbuf.props.height / pixbuf.props.width,
+                            GdkPixbuf.InterpType.BILINEAR) \
+                            if pixbuf.props.width > CARD_THUMB_SIZE else pixbuf
                         width = pixbuf.props.width
                         height = pixbuf.props.height
                         small_thumb = pixbuf.scale_simple(
@@ -358,6 +378,7 @@ class AssetThumbnail(GObject.Object, Loggable):
                         # We'll be notified when the thumbnail is available.
                         small_thumb, large_thumb = self.__get_icons("video-x-generic")
                     else:
+                        self.card_thumb = small_thumb
                         width = small_thumb.props.width
                         height = small_thumb.props.height
                         large_thumb = small_thumb.scale_simple(
@@ -425,6 +446,15 @@ class AssetThumbnail(GObject.Object, Loggable):
                 return small_thumb, large_thumb
             except GLib.GError:
                 return None, None
+
+    @classmethod
+    def get_card_thumb_from_xdg_cache(cls, real_uri):
+        """Returns the large thumbnail of the user's cache dir, if any."""
+        unused_path_128, path_256 = cls.get_asset_thumbnails_path(real_uri)
+        try:
+            return GdkPixbuf.Pixbuf.new_from_file(path_256)
+        except GLib.GError:
+            return None
 
     @classmethod
     def __get_icons(cls, icon_name):
@@ -592,6 +622,13 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
 
         self.flowbox = Gtk.FlowBox()
         self.flowbox.set_valign(Gtk.Align.START)
+        self.flowbox.set_homogeneous(True)
+        self.flowbox.set_max_children_per_line(30)
+        self.flowbox.set_column_spacing(CARD_SPACING)
+        self.flowbox.set_row_spacing(CARD_SPACING)
+        self.flowbox.props.margin = PADDING * 2
+        self.__card_width = MIN_CARD_WIDTH
+        self.flowbox.connect("size-allocate", self.__flowbox_size_allocate_cb)
         self.flowbox.bind_model(self.store, self.create_iconview_widget_func)
         # Setting up respective adjustments to allow automatic scrolling
         self.flowbox.set_vadjustment(self.scrollwin.get_vadjustment())
@@ -651,8 +688,13 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         self._listview_button.set_active(self.clip_view == ViewType.LIST)
         self.scrollwin.show_all()
 
+        self.__kind_filter = None
+        self.__updating_kind_filter = False
+        self.kind_filter = self.__create_kind_filter()
+
         # Add all the child widgets.
         self.pack_start(toolbar, False, False, 0)
+        self.pack_start(self.kind_filter, False, False, 0)
         self.pack_start(self._welcome_infobar, False, False, 0)
         self.pack_start(self._project_settings_infobar, False, False, 0)
         self.pack_start(self._import_warning_infobar, False, False, 0)
@@ -663,17 +705,13 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         self.filter_store()
 
     def create_iconview_widget_func(self, item):
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        box.set_halign(Gtk.Align.CENTER)
-        box.props.margin = PADDING / 2
+        # As in the mockup, all the files have cards of the same shape.
+        card = LibraryCard(item, self.__is_used)
+        card.set_card_width(self.__card_width)
+        card.set_tooltip_text(_("Drag it to the timeline or use +"))
 
-        icon = Gtk.Image.new_from_pixbuf(item.icon_128)
-
-        box.pack_start(icon, False, False, 0)
-        box.set_tooltip_markup(item.infotext)
-
-        # As in the mockup, a button for adding the file to the timeline
-        # appears when hovering the thumbnail.
+        # A button for adding the file to the timeline appears when
+        # hovering the card.
         add_button = Gtk.Button.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON)
         add_button.get_style_context().add_class("spl-lib-add")
         add_button.set_tooltip_text(_("Add at the end of the selected track"))
@@ -684,10 +722,21 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         add_button.set_no_show_all(True)
 
         overlay = Gtk.Overlay()
-        overlay.add(box)
+        overlay.add(card)
         overlay.add_overlay(add_button)
+
+        name_label = Gtk.Label(label=info_name(item.asset), xalign=0)
+        name_label.set_ellipsize(Pango.EllipsizeMode.END)
+        name_label.set_max_width_chars(1)
+        name_label.get_style_context().add_class("spl-card-name")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
+        box.pack_start(overlay, False, False, 0)
+        box.pack_start(name_label, False, False, 0)
+
         event_box = Gtk.EventBox()
-        event_box.add(overlay)
+        event_box.add(box)
+        event_box.card = card
         event_box.add_button = add_button
         event_box.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         event_box.connect("enter-notify-event", self.__thumbnail_crossing_cb, True)
@@ -695,6 +744,62 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         event_box.show_all()
 
         return event_box
+
+    def __is_used(self, asset):
+        return bool(self._project) and self._source_is_used(asset)
+
+    def __flowbox_size_allocate_cb(self, flowbox, allocation):
+        """Makes the cards fill the rows, as in the mockup."""
+        # The padding of the flowbox children around the cards, see the CSS.
+        extra = 2 * 4
+        available = allocation.width - 2 * flowbox.props.margin_start
+        columns = max(1, (available + CARD_SPACING) // (MIN_CARD_WIDTH + extra + CARD_SPACING))
+        width = max(MIN_CARD_WIDTH, (available - (columns - 1) * CARD_SPACING) // columns - extra)
+        if width != self.__card_width:
+            self.__card_width = width
+            # Changing sizes during an allocation is not reliable.
+            GLib.idle_add(self.__update_card_widths)
+
+    def __update_card_widths(self):
+        for child in self.flowbox.get_children():
+            card = getattr(child.get_child(), "card", None)
+            if card:
+                card.set_card_width(self.__card_width)
+        return False
+
+    def __redraw_cards(self, *unused_args):
+        """Redraws the cards, a file can be in use or not anymore."""
+        self.flowbox.queue_draw()
+
+    def __kind_filter_toggled_cb(self, button, kind):
+        if self.__updating_kind_filter:
+            return
+        self.__updating_kind_filter = True
+        try:
+            for other_kind, other_button in self.kind_filter_buttons.items():
+                other_button.set_active(other_kind == kind)
+        finally:
+            self.__updating_kind_filter = False
+        self.__kind_filter = kind
+        self.filter_store()
+
+    def __create_kind_filter(self):
+        """Creates the buttons for showing the files of a kind, as in the mockup."""
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2, homogeneous=True)
+        box.get_style_context().add_class("spl-formats")
+        box.props.margin = PADDING * 2
+        box.props.margin_top = 0
+        self.kind_filter_buttons = {}
+        for kind, label in ((None, _("Everything")), (VIDEO, _("Videos")),
+                            (IMAGE, _("Photos")), (AUDIO, _("Audio files"))):
+            button = Gtk.ToggleButton(label=label)
+            button.get_style_context().add_class("spl-seg-button")
+            button.set_active(kind is None)
+            button.connect("toggled", self.__kind_filter_toggled_cb, kind)
+            box.pack_start(button, True, True, 0)
+            self.kind_filter_buttons[kind] = button
+        box.show_all()
+        return box
 
     @staticmethod
     def __thumbnail_crossing_cb(event_box, event, entering):
@@ -857,6 +962,8 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
 
         for i, row_widget in enumerate(self.flowbox):
             matches = not tags.difference(self.store[i].tags)
+            if matches and self.__kind_filter:
+                matches = get_kind(self.store[i].asset) == self.__kind_filter
             if matches:
                 row_text = self.store[i].infotext.lower()
                 matches = all(escaped_word in row_text for escaped_word in escaped_words)
@@ -1708,6 +1815,10 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
     def _new_project_loaded_cb(self, project_manager, project):
         # Make sure that the sources added to the project are added
         self._flush_pending_assets()
+        # The cards show whether the files are in use.
+        if self.app.action_log:
+            self.app.action_log.connect("commit", self.__redraw_cards)
+            self.app.action_log.connect("move", self.__redraw_cards)
 
     def _new_project_failed_cb(self, project_manager, uri, reason):
         self.store.remove_all()

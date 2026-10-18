@@ -376,7 +376,7 @@ EDITOR_PERSPECTIVE_CSS = """
     }
 
     /* The buttons of the mockup, raised. */
-    .spl-panel button:not(.spl-lib-add):not(.spl-danger-text),
+    .spl-panel button:not(.spl-lib-add):not(.spl-danger-text):not(.spl-seg-button),
     .spl-toolbar button {
         background-image: none;
         background-color: rgb(37, 42, 52);
@@ -385,12 +385,12 @@ EDITOR_PERSPECTIVE_CSS = """
         border-radius: 8px;
     }
 
-    .spl-panel button:not(.spl-lib-add):not(.spl-danger-text):hover,
+    .spl-panel button:not(.spl-lib-add):not(.spl-danger-text):not(.spl-seg-button):hover,
     .spl-toolbar button:hover {
         background-color: rgb(46, 52, 64);
     }
 
-    .spl-panel button:not(.spl-lib-add):not(.spl-danger-text):disabled,
+    .spl-panel button:not(.spl-lib-add):not(.spl-danger-text):not(.spl-seg-button):disabled,
     .spl-toolbar button:disabled {
         background-color: transparent;
     }
@@ -491,6 +491,24 @@ EDITOR_PERSPECTIVE_CSS = """
 
     .spl-time {
         font-feature-settings: "tnum";
+    }
+
+    .spl-card-name {
+        color: rgb(166, 175, 189);
+        font-size: 12.5px;
+    }
+
+    flowboxchild:selected .spl-card-name {
+        color: rgb(238, 241, 245);
+    }
+
+    .spl-panel flowboxchild {
+        border-radius: 10px;
+        padding: 4px;
+    }
+
+    .spl-panel flowboxchild:selected {
+        background-color: rgba(255, 138, 91, 0.18);
     }
 
     .spl-formats {

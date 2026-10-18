@@ -3011,6 +3011,34 @@ msgstr "Publicaciones en redes"
 msgid "Export video"
 msgstr "Exportar video"
 
+#: pitivi/medialibrary.py
+msgid "Everything"
+msgstr "Todo"
+
+#: pitivi/medialibrary.py
+msgid "Videos"
+msgstr "Videos"
+
+#: pitivi/medialibrary.py
+msgid "Photos"
+msgstr "Fotos"
+
+#: pitivi/medialibrary.py
+msgid "Audio files"
+msgstr "Audio"
+
+#: pitivi/medialibrary.py
+msgid "Drag it to the timeline or use +"
+msgstr "Arrastralo a la línea de tiempo o usá +"
+
+#: pitivi/librarycard.py
+msgid "Photo"
+msgstr "Foto"
+
+#: pitivi/librarycard.py
+msgid "In use"
+msgstr "En uso"
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 
