@@ -1158,7 +1158,8 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
     def _select_last_imported_uris(self):
         if not self._last_imported_uris:
             return
-        self._select_sources(self._last_imported_uris)
+        # The imported files are not selected, nothing is.
+        self.flowbox.unselect_all()
         self._last_imported_uris = set()
 
     # Error Dialog Box callbacks

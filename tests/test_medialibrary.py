@@ -238,7 +238,8 @@ class TestMediaLibrary(BaseTestMediaLibrary):
             target = asset.get_proxy_target()
             self.assertEqual(set(project.list_assets(GES.Extractable)), set([target, asset]))
 
-            # Remove the asset
+            # Remove the asset, the imported files are not selected.
+            self.medialibrary.flowbox.select_all()
             self.medialibrary.remove_assets_action.activate()
 
             # Make sure that the project has not assets anymore
@@ -260,16 +261,16 @@ class TestMediaLibrary(BaseTestMediaLibrary):
                    "30fps_numeroted_frames_blue.webm"]
         with common.cloned_sample(*samples):
             self.check_import(samples, **kwargs)
-        self.assertEqual(len(list(self.medialibrary.get_selected_paths())),
-                         len(self.samples))
+        # The imported files are not selected.
+        self.assertEqual(list(self.medialibrary.get_selected_paths()), [])
 
-    def test_newly_imported_asset_selected_optimize_all(self):
+    def test_newly_imported_asset_not_selected_optimize_all(self):
         self.check_selection_post_import(proxying_strategy=ProxyingStrategy.ALL)
 
-    def test_newly_imported_asset_selected_optimize_automatic(self):
+    def test_newly_imported_asset_not_selected_optimize_automatic(self):
         self.check_selection_post_import(proxying_strategy=ProxyingStrategy.AUTOMATIC)
 
-    def test_newly_imported_asset_selected_optimize_nothing(self):
+    def test_newly_imported_asset_not_selected_optimize_nothing(self):
         self.check_selection_post_import(proxying_strategy=ProxyingStrategy.NOTHING)
 
     def test_stop_using_proxies(self):
@@ -536,6 +537,9 @@ class TestTaggingAssets(BaseTestMediaLibrary):
         with common.cloned_sample(*samples):
             self.check_import(samples, proxying_strategy=ProxyingStrategy.NOTHING)
 
+        # The imported files are not selected.
+        self.assertFalse(self.medialibrary.tags_button.is_sensitive())
+        self.medialibrary.flowbox.select_all()
         self.assertTrue(self.medialibrary.tags_button.is_sensitive())
 
     def add_new_tag(self, tag_name):
