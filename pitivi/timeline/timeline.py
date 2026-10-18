@@ -1785,6 +1785,17 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
 
         self._project.pipeline.commit_timeline()
 
+    def add_assets_to_selected_layer(self, assets):
+        """Adds clips at the end of the layer of the selected clip.
+
+        Without a selected clip, the clips are added to the first layer.
+        """
+        selected = [clip for clip in self.timeline.selection if clip.get_layer()]
+        layer = selected[0].get_layer() if selected else self.ges_timeline.get_layers()[0]
+        layer_end = max((clip.props.start + clip.props.duration for clip in layer.get_clips()),
+                        default=0)
+        self._insert_clips_and_assets(assets, layer_end, layer)
+
     def insert_assets(self, assets, position=None):
         """Creates clips out of the specified assets on the longest layer."""
         layer = self._get_longest_layer()

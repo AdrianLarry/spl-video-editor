@@ -306,6 +306,18 @@ EDITOR_PERSPECTIVE_CSS = """
         background-color: rgba(0, 0, 0, 0.3);
     }
 
+    /* The button adding a file to the timeline, as in the mockup. */
+    .spl-lib-add {
+        background-image: none;
+        background-color: rgb(255, 138, 91);
+        color: rgb(29, 15, 8);
+        border-radius: 7px;
+        border: none;
+        min-width: 26px;
+        min-height: 26px;
+        padding: 0;
+    }
+
     .Marquee {
         background-color: rgba(224, 224, 224, 0.7);
         color: rgba(224, 224, 224, 1);

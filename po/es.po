@@ -2112,6 +2112,10 @@ msgstr "Nueva pista"
 msgid "Close gap"
 msgstr "Cerrar espacio"
 
+#: pitivi/medialibrary.py
+msgid "Add at the end of the selected track"
+msgstr "Agregar al final de la pista seleccionada"
+
 #: pitivi/timeline/transitions.py
 msgid "Dissolve"
 msgstr "Disolver"

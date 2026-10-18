@@ -671,9 +671,40 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
 
         box.pack_start(icon, False, False, 0)
         box.set_tooltip_markup(item.infotext)
-        box.show_all()
 
-        return box
+        # As in the mockup, a button for adding the file to the timeline
+        # appears when hovering the thumbnail.
+        add_button = Gtk.Button.new_from_icon_name("list-add-symbolic", Gtk.IconSize.BUTTON)
+        add_button.get_style_context().add_class("spl-lib-add")
+        add_button.set_tooltip_text(_("Add at the end of the selected track"))
+        add_button.props.halign = Gtk.Align.END
+        add_button.props.valign = Gtk.Align.START
+        add_button.props.margin = PADDING
+        add_button.connect("clicked", self.__add_button_clicked_cb, item)
+        add_button.set_no_show_all(True)
+
+        overlay = Gtk.Overlay()
+        overlay.add(box)
+        overlay.add_overlay(add_button)
+        event_box = Gtk.EventBox()
+        event_box.add(overlay)
+        event_box.add_button = add_button
+        event_box.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        event_box.connect("enter-notify-event", self.__thumbnail_crossing_cb, True)
+        event_box.connect("leave-notify-event", self.__thumbnail_crossing_cb, False)
+        event_box.show_all()
+
+        return event_box
+
+    @staticmethod
+    def __thumbnail_crossing_cb(event_box, event, entering):
+        # Leaving the thumbnail for the button inside it is not leaving it.
+        if event.detail != Gdk.NotifyType.INFERIOR:
+            event_box.add_button.set_visible(entering)
+        return False
+
+    def __add_button_clicked_cb(self, unused_button, item):
+        self.app.gui.editor.timeline_ui.add_assets_to_selected_layer([item.asset])
 
     def create_listview_widget_func(self, item):
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
