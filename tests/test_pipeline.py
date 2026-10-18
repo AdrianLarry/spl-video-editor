@@ -132,6 +132,21 @@ class TestPipeline(common.TestCase):
         self.assertFalse(pipe._busy_async)
         self.assertIsNone(pipe._next_seek)
 
+    def test_commit_empty_timeline(self):
+        """Checks committing an empty timeline does not wait for async-done."""
+        ges_timeline = GES.Timeline.new()
+        self.assertTrue(ges_timeline.add_track(GES.VideoTrack.new()))
+        ges_timeline.append_layer()
+        self.assertTrue(ges_timeline.is_empty())
+
+        pipe = Pipeline(app=common.create_pitivi_mock())
+        pipe.set_timeline(ges_timeline)
+        with mock.patch.object(pipe, "get_simple_state") as get_simple_state:
+            get_simple_state.return_value = Gst.State.PAUSED
+            pipe.commit_timeline()
+        # No ASYNC_DONE is emitted for an empty timeline.
+        self.assertFalse(pipe._busy_async)
+
     def test_commit_timeline_after(self):
         """Checks the recovery mechanism."""
         pipe = Pipeline(common.create_pitivi_mock())

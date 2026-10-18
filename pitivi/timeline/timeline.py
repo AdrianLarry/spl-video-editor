@@ -1856,7 +1856,11 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
 
     def __get_insert_position(self, position):
         if position is None:
-            return self._project.pipeline.get_position()
+            try:
+                return self._project.pipeline.get_position()
+            except PipelineError:
+                # The pipeline is not ready, as when being reset.
+                return self.timeline.layout.playhead_position
         if position < 0:
             return self.ges_timeline.props.duration
         return position

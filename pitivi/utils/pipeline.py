@@ -656,7 +656,10 @@ class Pipeline(GES.Pipeline, SimplePipeline):
             self._was_empty = False
             self.log("commit wanted")
         else:
-            self._add_waiting_for_async_done_timeout("commit_timeline")
+            if not is_empty:
+                # No ASYNC_DONE is emitted on empty timelines, waiting for
+                # it would end in resetting the pipeline again and again.
+                self._add_waiting_for_async_done_timeout("commit_timeline")
             self.props.timeline.commit()
             self.debug("Committing right now")
             self._was_empty = is_empty
