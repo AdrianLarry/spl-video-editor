@@ -549,6 +549,9 @@ class EditorPerspective(Perspective, Loggable):
         if not layers_representation.props.is_focus:
             layers_representation.grab_focus()
 
+    def __home_clicked_cb(self, unused_button):
+        self.app.project_manager.close_running_project()
+
     def __create_headerbar(self):
         headerbar = Gtk.HeaderBar()
         headerbar.set_show_close_button(True)
@@ -578,6 +581,13 @@ class EditorPerspective(Perspective, Loggable):
             _("Export your project as a finished movie"))
         self.render_button.set_sensitive(False)  # The only one we have to set.
         self.render_button.connect("clicked", self._render_cb)
+
+        # Closes the project, asking to save the changes, and shows the
+        # start screen.
+        home_button = Gtk.Button.new_from_icon_name("go-home-symbolic", Gtk.IconSize.SMALL_TOOLBAR)
+        home_button.set_tooltip_text(_("Go to the start screen"))
+        home_button.connect("clicked", self.__home_clicked_cb)
+        headerbar.pack_start(home_button)
 
         undo_redo_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         undo_redo_box.get_style_context().add_class("linked")

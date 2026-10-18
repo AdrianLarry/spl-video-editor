@@ -2116,6 +2116,10 @@ msgstr "Cerrar espacio"
 msgid "Add at the end of the selected track"
 msgstr "Agregar al final de la pista seleccionada"
 
+#: pitivi/editorperspective.py
+msgid "Go to the start screen"
+msgstr "Volver a la pantalla de inicio"
+
 #: pitivi/timeline/transitions.py
 msgid "Dissolve"
 msgstr "Disolver"
