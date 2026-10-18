@@ -327,6 +327,29 @@ class TestLayer(common.TestCase):
         self.assertEqual(len(self.timeline.get_layers()), 1)
 
     @common.setup_timeline
+    def test_new_layers_keep_the_audio_below(self):
+        """Checks where the layers created by dragging go."""
+        image = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
+        music = GES.UriClipAsset.request_sync(common.get_sample_uri("mp3_sample.mp3"))
+        image_clip = self.layer.add_asset(image, 0, 0, 4 * Gst.SECOND, GES.TrackType.UNKNOWN)
+        self.timeline.append_layer().add_asset(music, 0, 0, 4 * Gst.SECOND, GES.TrackType.UNKNOWN)
+        timeline_ui = self.timeline_container.timeline
+        image_formats = image.get_supported_formats()
+        music_formats = music.get_supported_formats()
+
+        # Below the audio, a layer for images goes above it.
+        self.assertEqual(timeline_ui.get_new_layer_priority(2, image_formats), 1)
+        self.assertEqual(timeline_ui.get_new_layer_priority(0, image_formats), 0)
+        # Above the images, a layer for audio goes below them.
+        self.assertEqual(timeline_ui.get_new_layer_priority(0, music_formats), 1)
+        self.assertEqual(timeline_ui.get_new_layer_priority(2, music_formats), 2)
+        # The clip being moved does not count.
+        self.assertEqual(timeline_ui.get_new_layer_priority(0, music_formats, image_clip), 0)
+
+        new_layer = timeline_ui.create_layer_for(2, image_formats)
+        self.assertEqual(self.timeline.get_layers().index(new_layer), 1)
+
+    @common.setup_timeline
     def test_audio_in_layers_of_its_own(self):
         """Checks the audio clips and the others go in separate layers."""
         self._wait_until_project_loaded()

@@ -1172,6 +1172,7 @@ class TestDragDropUndo(common.TestCase):
 
             event = mock.Mock()
             event.x = 0
+            event.x_root, event.y_root = 0, 0
             event.get_button.return_value = True, 1
             timeline_ui._button_press_event_cb(None, event)
 
@@ -1181,6 +1182,7 @@ class TestDragDropUndo(common.TestCase):
             event = mock.Mock()
             event.get_state.return_value = Gdk.ModifierType.BUTTON1_MASK
             event.x = 1
+            event.x_root, event.y_root = 1, 0
             if below:
                 event.y = LAYER_HEIGHT * 2
             else:
@@ -1191,28 +1193,10 @@ class TestDragDropUndo(common.TestCase):
         return clip, event, timeline_ui
 
     @common.setup_timeline
-    def test_clip_dragged_to_create_layer_below_denied(self):
-        """Checks clip dropped onto the separator below without hovering."""
-        clip, event, timeline_ui = self.clip_dragged_to_create_layer(True)
-
-        timeline_ui._button_release_event_cb(None, event)
-
-        layers = self.timeline.get_layers()
-        self.assertEqual(len(layers), 1)
-        self.assertEqual(layers[0], self.layer)
-        self.assert_layers(layers)
-        self.assertEqual(layers[0].get_clips(), [clip])
-
-        stack = self.action_log.undo_stacks[0]
-        # Only the clip creation action should be on the stack.
-        self.assertEqual(len(stack.done_actions), 1, stack.done_actions)
-
-    @common.setup_timeline
     def test_clip_dragged_to_create_layer_below(self):
-        """Checks clip dropped onto the separator below after hovering."""
+        """Checks clip dropped onto the separator below."""
         clip, event, timeline_ui = self.clip_dragged_to_create_layer(True)
 
-        timeline_ui._separator_accepting_drop_timeout_cb()
         timeline_ui._button_release_event_cb(None, event)
 
         layers = self.timeline.get_layers()
@@ -1238,27 +1222,10 @@ class TestDragDropUndo(common.TestCase):
         self.assertEqual(layers[1].get_clips(), [clip])
 
     @common.setup_timeline
-    def test_clip_dragged_to_create_layer_above_denied(self):
-        """Checks clip dropped onto the separator above without hovering."""
-        clip, event, timeline_ui = self.clip_dragged_to_create_layer(False)
-
-        timeline_ui._button_release_event_cb(None, event)
-
-        layers = self.timeline.get_layers()
-        self.assertEqual(len(layers), 1)
-        self.assert_layers(layers)
-        self.assertEqual(layers[0].get_clips(), [clip])
-
-        stack = self.action_log.undo_stacks[0]
-        # Only the clip creation action should be on the stack.
-        self.assertEqual(len(stack.done_actions), 1, stack.done_actions)
-
-    @common.setup_timeline
     def test_clip_dragged_to_create_layer_above(self):
-        """Checks clip dropped onto the separator above after hovering."""
+        """Checks clip dropped onto the separator above."""
         clip, event, timeline_ui = self.clip_dragged_to_create_layer(False)
 
-        timeline_ui._separator_accepting_drop_timeout_cb()
         timeline_ui._button_release_event_cb(None, event)
 
         layers = self.timeline.get_layers()

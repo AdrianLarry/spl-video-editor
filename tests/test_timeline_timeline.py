@@ -442,6 +442,7 @@ class TestGrouping(common.TestCase):
         with mock.patch.object(Gtk, 'get_event_widget') as get_event_widget:
             event = mock.Mock()
             event.x = 100
+            event.x_root, event.y_root = 100, 0
             event.get_button.return_value = True, 1
             get_event_widget.return_value = clip1.ui
             timeline._button_press_event_cb(None, event)
@@ -450,6 +451,7 @@ class TestGrouping(common.TestCase):
             # Move it to the right, on the separator below.
             event = mock.Mock()
             event.x = 101
+            event.x_root, event.y_root = 101, 0
             event.get_state.return_value = Gdk.ModifierType.BUTTON1_MASK
             with mock.patch.object(clip1.ui, "translate_coordinates") as translate_coordinates:
                 translate_coordinates.return_value = (40, 0)
@@ -659,6 +661,7 @@ class TestEditing(common.TestCase):
         with mock.patch.object(Gtk, 'get_event_widget') as get_event_widget:
             event = mock.Mock()
             event.x = 100
+            event.x_root, event.y_root = 100, 0
             event.get_button.return_value = True, 1
             get_event_widget.return_value = clip.ui.right_handle
             timeline._button_press_event_cb(None, event)
@@ -667,6 +670,7 @@ class TestEditing(common.TestCase):
             # Drag it to the left, on the separator below.
             event = mock.Mock()
             event.x = 99
+            event.x_root, event.y_root = 99, 0
             event.get_state.return_value = Gdk.ModifierType.BUTTON1_MASK
             with mock.patch.object(clip.ui.right_handle, "translate_coordinates") as translate_coordinates:
                 translate_coordinates.return_value = (0, 0)

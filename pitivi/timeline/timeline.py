@@ -81,8 +81,6 @@ from pitivi.utils.ui import URI_TARGET_ENTRY
 from pitivi.utils.widgets import ZoomBox
 
 
-# Creates new layer if a clip is held at layers separator after this time interval
-SEPARATOR_ACCEPTING_DROP_INTERVAL_MS = 1000
 # The color showing where a new layer would be created, as in the mockup.
 NEW_LAYER_ZONE_COLOR = (1.0, 0.541, 0.357)
 
@@ -510,7 +508,6 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         self.__moving_layer = None
 
         self._separator_accepting_drop = False
-        self._separator_accepting_drop_id = 0
         self.__last_position = 0
         self.scrubbing = False
         self._scrolling = False
@@ -544,6 +541,8 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         self.__got_dragged = False
         # The x of the event which starts the drag operation.
         self.__drag_start_x = 0
+        # Where the pointer was on the screen when pressing on a clip.
+        self.__drag_start_root = (0, 0)
         # The current layer on which the operation is performed.
         self._on_layer = None
         # The separators immediately above or below _on_layer
@@ -922,6 +921,7 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
 
             if self.dragging_element:
                 self.__drag_start_x = event.x
+                self.__drag_start_root = (event.x_root, event.y_root)
                 self._on_layer = self.dragging_element.ges_clip.props.layer
             else:
                 layer_controls = self._get_parent_of_type(event_widget, LayerControls)
@@ -1113,9 +1113,11 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
                 # the stylus while clicking.
                 threshold = 3
 
-        delta_x = abs(self.__drag_start_x - event.x)
+        # Moving only up or down, to another layer, is also dragging.
+        delta_x = abs(self.__drag_start_root[0] - event.x_root)
+        delta_y = abs(self.__drag_start_root[1] - event.y_root)
 
-        return delta_x > threshold
+        return max(delta_x, delta_y) > threshold
 
     def _seek(self, event, mini=False):
         event_widget = Gtk.get_event_widget(event)
@@ -1296,17 +1298,20 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
                 with self.app.action_log.started("add clip",
                                                  finalizing_action=CommitTimelineFinalizingAction(pipeline),
                                                  toplevel=True):
-                    if self.__on_separators:
-                        priority = self.separator_priority(self.__on_separators[1])
-                        created_layer = self.create_layer(priority)
-                    else:
-                        created_layer = None
-                    for layer, clip in self.__last_clips_on_leave:
-                        if created_layer:
-                            layer = created_layer
+                    created_layers = {}
+                    # The audio clips last, for their layer to go below
+                    # the one created for the others.
+                    for layer, clip in sorted(self.__last_clips_on_leave,
+                                              key=lambda item: is_audio_only(item[1].props.supported_formats)):
+                        if self.__on_separators:
+                            audio = is_audio_only(clip.props.supported_formats)
+                            if audio not in created_layers:
+                                priority = self.separator_priority(self.__on_separators[1])
+                                created_layers[audio] = self.create_layer_for(priority, clip.props.supported_formats)
+                            layer = created_layers[audio]
                         clip.first_placement = False
                         layer.add_clip(clip)
-                    if not created_layer and self.editing_context and \
+                    if not created_layers and self.editing_context and \
                             len(self.__last_clips_on_leave) == 1:
                         # Make room for the clip again.
                         layer, clip = self.__last_clips_on_leave[0]
@@ -1665,31 +1670,25 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
             # them to be dragged between layers to create a new layer.
             self.__on_separators = []
 
-        self._separator_accepting_drop = False
-        if self._separator_accepting_drop_id:
-            GLib.source_remove(self._separator_accepting_drop_id)
-            self._separator_accepting_drop_id = 0
-        if self.__on_separators:
-            self._separator_accepting_drop_id = GLib.timeout_add(SEPARATOR_ACCEPTING_DROP_INTERVAL_MS,
-                                                                 self._separator_accepting_drop_timeout_cb)
+        # As when dropping files, a clip moved between two layers or below
+        # the last one goes to a new layer at once, without waiting.
+        self._separator_accepting_drop = bool(self.__on_separators)
+        self._set_separators_prelight(self._separator_accepting_drop)
         self.__update_new_layer_zone()
 
         self.editing_context.edit_to(position, self._on_layer)
-
-    def _separator_accepting_drop_timeout_cb(self):
-        self._separator_accepting_drop_id = 0
-        self._set_separators_prelight(True)
-        self._separator_accepting_drop = True
-        self.__update_new_layer_zone()
 
     def __update_new_layer_zone(self):
         """Shows where dropping would create a new layer."""
         separator = None
         if self.dragging_element and self.__on_separators:
-            # Dropped files create a layer at once, the clips being moved
-            # only after waiting a moment on the separator.
             if self.dropping_clips or self._separator_accepting_drop:
-                separator = self.__on_separators[1]
+                # Show where the layer will go, the audio layers stay below.
+                ges_clip = self.dragging_element.ges_clip
+                priority = self.get_new_layer_priority(self.separator_priority(self.__on_separators[1]),
+                                                       ges_clip.props.supported_formats,
+                                                       ges_clip)
+                separator = self._separators[priority][1]
         self.layout.set_new_layer_separator(separator)
         if self.editing_context:
             # The clips of the layer below are not pushed by a clip which
@@ -1711,6 +1710,26 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
                 return layer
         priority = len(self.ges_timeline.get_layers()) if kind == AUDIO_LAYER else 0
         return self.create_layer(priority)
+
+    def create_layer_for(self, priority, supported_formats, ignored_clip=None):
+        """Adds a new layer for clips with the formats, as close as possible to priority."""
+        return self.create_layer(self.get_new_layer_priority(priority, supported_formats, ignored_clip))
+
+    def get_new_layer_priority(self, priority, supported_formats, ignored_clip=None):
+        """Returns where a new layer for clips with the formats goes, as close as possible to priority.
+
+        The audio layers stay below the others.
+        """
+        kinds = [get_layer_kind(layer, ignored_clip) for layer in self.ges_timeline.get_layers()]
+        if is_audio_only(supported_formats):
+            visual = [index for index, kind in enumerate(kinds) if kind == VISUAL_LAYER]
+            if visual:
+                priority = max(priority, visual[-1] + 1)
+        else:
+            audio = [index for index, kind in enumerate(kinds) if kind == AUDIO_LAYER]
+            if audio:
+                priority = min(priority, audio[0])
+        return priority
 
     def create_layer(self, priority):
         """Adds a new layer to the GES timeline."""
@@ -1736,7 +1755,8 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
 
             if self._separator_accepting_drop and self.__on_separators and self.__got_dragged and not self.__clicked_handle:
                 priority = self.separator_priority(self.__on_separators[1])
-                ges_layer = self.create_layer(priority)
+                ges_clip = self.dragging_element.ges_clip
+                ges_layer = self.create_layer_for(priority, ges_clip.props.supported_formats, ges_clip)
                 position = self.editing_context.new_position
                 self.editing_context.edit_to(position, ges_layer)
 
