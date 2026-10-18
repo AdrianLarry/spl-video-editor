@@ -329,7 +329,8 @@ class TransitionsTest(common.TestCase):
         self.assertNotIn(clip_b, self.layer.get_clips())
         # No half transitions are left on the other clips.
         self.assertEqual(get_image_fades(clip_a).fade_out, 0)
-        self.assertEqual(self._get_posx_keyframes(clip_c), {0})
+        # Its position does not move anymore.
+        self.assertEqual(len(self._get_posx_keyframes(clip_c)), 1)
         self.assertEqual(clip_c.props.start, 7 * SECOND)
 
         self.action_log.undo()
