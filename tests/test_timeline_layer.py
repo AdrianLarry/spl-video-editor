@@ -300,3 +300,28 @@ class TestLayer(common.TestCase):
         self.assertEqual(clip_b.props.start, 4 * Gst.SECOND)
         self.assertIsNone(get_contacts(self.layer)[0].kind)
         self.assertEqual(clip_a.props.duration, 4 * Gst.SECOND)
+
+    @common.setup_timeline
+    def test_empty_layers_are_removed(self):
+        """Checks there is at most one empty layer."""
+        self._wait_until_project_loaded()
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
+        layers = [self.layer, self.timeline.append_layer(), self.timeline.append_layer()]
+        clips = [layer.add_asset(asset, 0, 0, Gst.SECOND, GES.TrackType.UNKNOWN) for layer in layers]
+        timeline = self.timeline_container.timeline
+
+        # Emptying the layers from the last one.
+        for clip in reversed(clips):
+            timeline.selection.select([clip])
+            self.timeline_container.delete_action.activate(None)
+        self.assertEqual(len(self.timeline.get_layers()), 1)
+
+        # Undone with the removed clip.
+        self.action_log.undo()
+        self.assertEqual(len(self.timeline.get_layers()), 2)
+        self.assertEqual([len(layer.get_clips()) for layer in self.timeline.get_layers()], [1, 0])
+
+        # A new layer can be added, a second one not.
+        self.action_log.redo()
+        self.timeline_container.add_layer_action.activate(None)
+        self.assertEqual(len(self.timeline.get_layers()), 1)

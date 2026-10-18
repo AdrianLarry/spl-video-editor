@@ -135,6 +135,7 @@ class UndoableActionLog(GObject.Object, Loggable):
         "pre-push": (GObject.SignalFlags.RUN_LAST, None, (object,)),
         "push": (GObject.SignalFlags.RUN_LAST, None, (object, object)),
         "rollback": (GObject.SignalFlags.RUN_LAST, None, (object,)),
+        "pre-commit": (GObject.SignalFlags.RUN_LAST, None, (object,)),
         "commit": (GObject.SignalFlags.RUN_LAST, None, (object,)),
         "move": (GObject.SignalFlags.RUN_LAST, None, (object,)),
     }
@@ -319,6 +320,10 @@ class UndoableActionLog(GObject.Object, Loggable):
             return
 
         self.debug("Committing %s", action_group_name)
+        if len(self.stacks) == 1 and self.stacks[0].action_group_name == action_group_name:
+            # The last changes of an operation, made by the handlers, are
+            # part of it.
+            self.emit("pre-commit", self.stacks[0])
         stack = self._get_last_stack(pop=True)
         if action_group_name != stack.action_group_name:
             raise UndoWrongStateError("Unexpected commit", action_group_name, stack, self.stacks)

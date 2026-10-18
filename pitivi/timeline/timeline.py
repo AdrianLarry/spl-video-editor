@@ -2346,6 +2346,19 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
 
             self.timeline.selection.set_selection([], SELECT)
 
+    def remove_empty_layers(self):
+        """Keeps at most one empty layer, the last one, and always a layer."""
+        if not self.ges_timeline:
+            return
+        empty_layers = [layer for layer in self.ges_timeline.get_layers()
+                        if not layer.get_clips()]
+        for layer in empty_layers[:-1]:
+            removed_priority = layer.props.priority
+            self.ges_timeline.remove_layer(layer)
+            for other_layer in self.ges_timeline.get_layers():
+                if other_layer.props.priority > removed_priority:
+                    other_layer.props.priority -= 1
+
     def __remove_clips(self, clips):
         """Removes the clips with their transitions, from their layers."""
         layers = {clip.get_layer() for clip in clips if clip.get_layer()}

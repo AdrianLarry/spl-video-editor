@@ -280,11 +280,18 @@ class Pitivi(Gtk.Application, Loggable):
 
         self.action_log = UndoableActionLog()
         self.action_log.connect("pre-push", self._action_log_pre_push_cb)
+        self.action_log.connect("pre-commit", self._action_log_pre_commit_cb)
         self.action_log.connect("commit", self._action_log_commit)
         self.action_log.connect("move", self._action_log_move_cb)
         self.project_observer = ProjectObserver(project, self.action_log)
 
         self._set_scenario_file(project.get_uri())
+
+    def _action_log_pre_commit_cb(self, unused_action_log, unused_stack):
+        editor = getattr(self.gui, "editor", None) if self.gui else None
+        timeline_container = getattr(editor, "timeline_ui", None) if editor else None
+        if timeline_container:
+            timeline_container.remove_empty_layers()
 
     def __project_saved_cb(self, unused_project_manager, unused_project, uri):
         if uri:

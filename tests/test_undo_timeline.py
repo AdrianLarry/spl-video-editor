@@ -118,6 +118,9 @@ class TestTimelineObserver(common.TestCase):
         layer1 = self.layer
         layer2 = self.timeline.append_layer()
         layer3 = self.timeline.append_layer()
+        # At most one layer can be empty.
+        for layer in (layer1, layer2, layer3):
+            layer.add_clip(GES.TitleClip())
         self.assert_layers([layer1, layer2, layer3])
         self.check_removal(self.timeline.get_layers())
 
@@ -291,6 +294,9 @@ class TestLayerObserver(common.TestCase):
         layer1 = self.layer
         layer2 = self.timeline.append_layer()
         layer3 = self.timeline.append_layer()
+        # At most one layer can be empty.
+        for layer in (layer1, layer2, layer3):
+            layer.add_clip(GES.TitleClip())
         self.assertEqual(self.timeline.get_layers(), [layer1, layer2, layer3])
 
         timeline = self.timeline_container.timeline
