@@ -1616,8 +1616,20 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         path = child.get_index()
         self.emit("play", self.store[path].asset)
 
+    def __get_child_at_event(self, event):
+        """Gets the child under the pointer when the event happened."""
+        # The thumbnails are in event boxes, so the coordinates of the events
+        # coming from them are relative to the thumbnail, not to the flowbox.
+        widget = Gtk.get_event_widget(event)
+        x, y = event.x, event.y
+        if widget and widget != self.flowbox and widget.is_ancestor(self.flowbox):
+            coords = widget.translate_coordinates(self.flowbox, x, y)
+            if coords:
+                x, y = coords
+        return self.flowbox.get_child_at_pos(x, y)
+
     def _flowbox_button_press_event_cb(self, flowbox, event):
-        child = flowbox.get_child_at_pos(event.x, event.y)
+        child = self.__get_child_at_event(event)
         if event.type == Gdk.EventType.DOUBLE_BUTTON_PRESS:
             # It is possible to double-click outside of clips
             pass
@@ -1655,7 +1667,7 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         if not res or button != 3:
             return
 
-        child = self.flowbox.get_child_at_pos(event.x, event.y)
+        child = self.__get_child_at_event(event)
         if child:
             if not child.is_selected():
                 self.flowbox.unselect_all()
