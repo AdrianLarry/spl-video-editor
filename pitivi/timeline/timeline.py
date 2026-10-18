@@ -337,8 +337,9 @@ class LayersLayout(Gtk.Layout, Loggable):
         if xpos < 0:
             return
 
-        # Add 0.5 so the line is sharp, xpos represents the center of the line.
-        xpos += 0.5
+        # Add 0.5 to lines of odd widths so they are sharp, xpos represents
+        # the center of the line.
+        xpos += 0.5 * (width % 2)
         height = self.get_allocated_height()
         cr.set_line_width(width)
         cr.move_to(xpos, 0)
@@ -2090,6 +2091,7 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
             return button
 
         box = Gtk.Box(spacing=SPACING)
+        box.get_style_context().add_class("spl-toolbar")
         box.props.margin_start = SPACING
         box.props.margin_end = SPACING
         box.props.margin_bottom = SPACING

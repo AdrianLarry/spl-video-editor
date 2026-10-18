@@ -14,16 +14,19 @@
 #
 # You should have received a copy of the GNU Lesser General Public
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
+import math
 import os
 from gettext import gettext as _
 from time import time
 from urllib.parse import unquote
 
+import cairo
 from gi.repository import Gdk
 from gi.repository import GES
 from gi.repository import Gio
 from gi.repository import GLib
 from gi.repository import Gtk
+from gi.repository import Pango
 
 from pitivi.clipproperties import ClipProperties
 from pitivi.configure import APPNAME
@@ -282,8 +285,10 @@ class EditorPerspective(Perspective, Loggable):
 
         # Now, the lower part: the timeline, using the full width
         self.timelinepaned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        self.timelinepaned.get_style_context().add_class("spl-timeline")
 
         self.timeline_ui = TimelineContainer(self.app, self.editor_state)
+        self.timeline_ui.get_style_context().add_class("spl-timeline")
         self.mini_timeline_ui = self.timeline_ui.timeline.mini_layout_container
 
         self.timelinepaned.pack1(self.mini_timeline_ui, resize=False, shrink=False)
@@ -329,12 +334,15 @@ class EditorPerspective(Perspective, Loggable):
         """Creates an integrated panel with a header and the specified content."""
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=SPACING)
         header.get_style_context().add_class("spl-panel-header")
+        header.props.margin_start = SPACING
+        header.props.margin_end = SPACING
         image = Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.MENU)
         header.pack_start(image, False, False, 0)
         label = Gtk.Label(label=title)
         label.set_xalign(0)
         label.get_style_context().add_class("spl-panel-title")
         header.pack_start(label, True, True, 0)
+        action_widget.props.valign = Gtk.Align.CENTER
         header.pack_end(action_widget, False, False, 0)
 
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -555,6 +563,8 @@ class EditorPerspective(Perspective, Loggable):
     def __create_headerbar(self):
         headerbar = Gtk.HeaderBar()
         headerbar.set_show_close_button(True)
+        headerbar.get_style_context().add_class("spl-headerbar")
+        headerbar.set_custom_title(self.__create_title())
 
         undo_button = Gtk.Button.new_from_icon_name(
             "edit-undo-symbolic", Gtk.IconSize.SMALL_TOOLBAR)
@@ -574,9 +584,10 @@ class EditorPerspective(Perspective, Loggable):
         self.save_button.set_focus_on_click(False)
 
         self.render_button = Gtk.Button.new_from_icon_name(
-            "system-run-symbolic", Gtk.IconSize.SMALL_TOOLBAR)
+            "document-send-symbolic", Gtk.IconSize.SMALL_TOOLBAR)
         self.render_button.set_always_show_image(True)
-        self.render_button.set_label(_("Render"))
+        self.render_button.set_label(_("Export video"))
+        self.render_button.get_style_context().add_class("spl-accent")
         self.render_button.set_tooltip_text(
             _("Export your project as a finished movie"))
         self.render_button.set_sensitive(False)  # The only one we have to set.
@@ -607,6 +618,54 @@ class EditorPerspective(Perspective, Loggable):
         headerbar.show_all()
 
         return headerbar
+
+    def __create_title(self):
+        """Creates the title with the logo, as in the mockup."""
+        logo = Gtk.DrawingArea()
+        logo.set_size_request(30, 30)
+        logo.props.valign = Gtk.Align.CENTER
+        logo.connect("draw", self.__draw_logo_cb)
+
+        # pylint: disable=attribute-defined-outside-init
+        self.project_name_label = Gtk.Label()
+        self.project_name_label.get_style_context().add_class("spl-project-name")
+        self.project_name_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.build_label = Gtk.Label()
+        self.build_label.get_style_context().add_class("dim-label")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=SPACING * 2)
+        box.pack_start(logo, False, False, 0)
+        box.pack_start(self.project_name_label, False, False, 0)
+        box.pack_start(self.build_label, False, False, 0)
+        box.show_all()
+        return box
+
+    @staticmethod
+    def __draw_logo_cb(widget, cr):
+        """Draws an accent rounded square with a play symbol."""
+        size = min(widget.get_allocated_width(), widget.get_allocated_height())
+        radius = size * 0.3
+        cr.new_sub_path()
+        cr.arc(size - radius, radius, radius, -math.pi / 2, 0)
+        cr.arc(size - radius, size - radius, radius, 0, math.pi / 2)
+        cr.arc(radius, size - radius, radius, math.pi / 2, math.pi)
+        cr.arc(radius, radius, radius, math.pi, 3 * math.pi / 2)
+        cr.close_path()
+        gradient = cairo.LinearGradient(0, 0, size, size)
+        gradient.add_color_stop_rgb(0, 1, 0.616, 0.424)
+        gradient.add_color_stop_rgb(1, 0.941, 0.376, 0.239)
+        cr.set_source(gradient)
+        cr.fill()
+
+        # The play symbol, centered, slightly to the right as it looks better.
+        scale = size / 24
+        cr.move_to(9.5 * scale, 7 * scale)
+        cr.line_to(17.5 * scale, 12 * scale)
+        cr.line_to(9.5 * scale, 17 * scale)
+        cr.close_path()
+        cr.set_source_rgb(1, 1, 1)
+        cr.fill()
+        return False
 
     def _create_actions(self):
         group = Gio.SimpleActionGroup()
@@ -1069,6 +1128,9 @@ class EditorPerspective(Perspective, Loggable):
             unsaved_mark = "*"
         title = "%s%s — %s" % (unsaved_mark, project.name, APPNAME)
         self.headerbar.set_title(with_build_label(title))
+        self.project_name_label.set_text("%s%s" % (unsaved_mark, project.name))
+        # The development build, to tell which code is running.
+        self.build_label.set_text(with_build_label("").lstrip(" —"))
 
 
 class PreviewAssetWindow(Gtk.Window):

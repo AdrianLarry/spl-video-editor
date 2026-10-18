@@ -394,13 +394,13 @@ class ScaleRuler(Gtk.DrawingArea, Loggable):
         """
         height = self.pixbuf.get_height()
 
-        semi_width = 4
+        semi_width = 5
         semi_height = int(semi_width * 1.61803)
         y = int(3 * height / 4)
 
-        # Add 0.5 so that the line center is at the middle of the pixel,
-        # without this the line appears blurry.
-        xpos = self.zoom.ns_to_pixel(self.position) - self.pixbuf_offset + 0.5
+        # The line is two pixels wide, centered between two pixels so that
+        # it is not blurry.
+        xpos = self.zoom.ns_to_pixel(self.position) - self.pixbuf_offset
         set_cairo_color(context, PLAYHEAD_COLOR)
 
         context.set_line_width(PLAYHEAD_WIDTH)
@@ -408,13 +408,12 @@ class ScaleRuler(Gtk.DrawingArea, Loggable):
         context.line_to(xpos, height)
         context.stroke()
 
-        context.set_line_width(PLAYHEAD_WIDTH * 2)
         context.move_to(xpos, y)
         context.line_to(xpos + semi_width, y - semi_height)
         context.line_to(xpos, y - semi_height * 2)
         context.line_to(xpos - semi_width, y - semi_height)
         context.close_path()
-        context.stroke()
+        context.fill()
 
 
 class TimelineScaleRuler(ScaleRuler, Zoomable):
@@ -429,6 +428,9 @@ class TimelineScaleRuler(ScaleRuler, Zoomable):
         Zoomable.__init__(self)
         ScaleRuler.__init__(self, self, self.app.settings, self.app.gui.get_style_context())
         self.log("Creating new TimelineScaleRuler")
+        # The background of the timeline instead of the one of the window.
+        self.style_context = self.get_style_context()
+        self.style_context.add_class("spl-ruler")
 
         self.timeline_container = timeline_container
 

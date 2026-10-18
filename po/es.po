@@ -3007,6 +3007,10 @@ msgstr "Teléfonos, historias y videos cortos"
 msgid "Posts in social networks"
 msgstr "Publicaciones en redes"
 
+#: pitivi/editorperspective.py
+msgid "Export video"
+msgstr "Exportar video"
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 

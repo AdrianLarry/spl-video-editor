@@ -53,8 +53,9 @@ EXPANDED_SIZE = 65
 PADDING = 6
 SPACING = 10
 
-PLAYHEAD_WIDTH = 1
-PLAYHEAD_COLOR = (255, 0, 0)
+# The accent color of the mockup.
+PLAYHEAD_WIDTH = 2
+PLAYHEAD_COLOR = (255, 138, 91)
 SNAPBAR_WIDTH = 5
 SNAPBAR_COLOR = (127, 153, 204)
 LAYER_HEIGHT = 130
@@ -279,12 +280,117 @@ EDITOR_PERSPECTIVE_CSS = """
 
     /* Background inside the timeline */
     .Timeline {
-        background: shade(@theme_bg_color, 0.75);
+        background: rgb(26, 29, 35);
     }
 
     /* Background in the layers list */
     .Timeline viewport {
-        background: @theme_bg_color;
+        background: rgb(28, 32, 40);
+    }
+
+    /* The colors of the mockup, whatever the theme. */
+    headerbar.spl-headerbar {
+        background-image: none;
+        background-color: rgb(23, 26, 32);
+        border-bottom: 1px solid rgb(42, 47, 57);
+        box-shadow: none;
+    }
+
+    .spl-panel,
+    .spl-rail,
+    .spl-timeline {
+        background-color: rgb(23, 26, 32);
+    }
+
+    .spl-ruler {
+        background-color: rgb(23, 26, 32);
+    }
+
+    .spl-panel notebook,
+    .spl-panel notebook > header,
+    .spl-panel notebook > stack {
+        background-image: none;
+        background-color: rgb(23, 26, 32);
+        border-color: rgb(42, 47, 57);
+    }
+
+    .spl-panel-header {
+        min-height: 46px;
+        border-bottom: 1px solid rgb(42, 47, 57);
+    }
+
+    .spl-viewer {
+        background-color: rgb(15, 17, 21);
+    }
+
+    .spl-paned > separator {
+        background-image: none;
+        background-color: rgb(42, 47, 57);
+        min-width: 1px;
+        min-height: 1px;
+    }
+
+    .spl-project-name {
+        font-weight: 600;
+        font-size: 15px;
+    }
+
+    /* The buttons of the mockup, raised. */
+    .spl-panel button:not(.spl-lib-add):not(.spl-danger-text),
+    .spl-toolbar button {
+        background-image: none;
+        background-color: rgb(37, 42, 52);
+        border: 1px solid rgb(59, 66, 80);
+        box-shadow: none;
+        border-radius: 8px;
+    }
+
+    .spl-panel button:not(.spl-lib-add):not(.spl-danger-text):hover,
+    .spl-toolbar button:hover {
+        background-color: rgb(46, 52, 64);
+    }
+
+    .spl-panel button:not(.spl-lib-add):not(.spl-danger-text):disabled,
+    .spl-toolbar button:disabled {
+        background-color: transparent;
+    }
+
+    .spl-panel button.flat:not(.spl-lib-add):not(.spl-danger-text),
+    .spl-toolbar button.flat {
+        background-color: transparent;
+        border-color: transparent;
+    }
+
+    .spl-panel button.flat:not(.spl-lib-add):not(.spl-danger-text):hover,
+    .spl-toolbar button.flat:hover {
+        background-color: rgb(46, 52, 64);
+    }
+
+    /* The main action, as "Export video" in the mockup. */
+    .spl-accent {
+        background-image: none;
+        background-color: rgb(255, 138, 91);
+        color: rgb(29, 15, 8);
+        border: none;
+        box-shadow: none;
+        border-radius: 8px;
+        font-weight: bold;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .spl-accent:hover {
+        background-color: rgb(255, 164, 127);
+    }
+
+    .spl-accent:disabled {
+        background-color: rgb(255, 138, 91);
+        opacity: 0.45;
+    }
+
+    .spl-accent label,
+    .spl-accent image {
+        color: rgb(29, 15, 8);
     }
 
     .Clip {
