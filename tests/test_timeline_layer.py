@@ -303,25 +303,55 @@ class TestLayer(common.TestCase):
 
     @common.setup_timeline
     def test_empty_layers_are_removed(self):
-        """Checks there is at most one empty layer."""
+        """Checks the empty layers are removed, keeping a layer."""
         self._wait_until_project_loaded()
         asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
         layers = [self.layer, self.timeline.append_layer(), self.timeline.append_layer()]
         clips = [layer.add_asset(asset, 0, 0, Gst.SECOND, GES.TrackType.UNKNOWN) for layer in layers]
         timeline = self.timeline_container.timeline
 
-        # Emptying the layers from the last one.
-        for clip in reversed(clips):
+        # Emptying a layer removes it.
+        timeline.selection.select([clips[1]])
+        self.timeline_container.delete_action.activate(None)
+        self.assertEqual(self.timeline.get_layers(), [layers[0], layers[2]])
+
+        # Undone with the removed clip.
+        self.action_log.undo()
+        self.assertEqual(self.timeline.get_layers(), layers)
+        self.assertEqual([len(layer.get_clips()) for layer in layers], [1, 1, 1])
+
+        # The last layer is kept.
+        for clip in clips:
             timeline.selection.select([clip])
             self.timeline_container.delete_action.activate(None)
         self.assertEqual(len(self.timeline.get_layers()), 1)
 
-        # Undone with the removed clip.
-        self.action_log.undo()
-        self.assertEqual(len(self.timeline.get_layers()), 2)
-        self.assertEqual([len(layer.get_clips()) for layer in self.timeline.get_layers()], [1, 0])
+    @common.setup_timeline
+    def test_audio_in_layers_of_its_own(self):
+        """Checks the audio clips and the others go in separate layers."""
+        self._wait_until_project_loaded()
+        image = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
+        music = GES.UriClipAsset.request_sync(common.get_sample_uri("mp3_sample.mp3"))
+        image_clip = self.layer.add_asset(image, 0, 0, 4 * Gst.SECOND, GES.TrackType.UNKNOWN)
+        self.timeline_container.timeline.selection.select([image_clip])
 
-        # A new layer can be added, a second one not.
-        self.action_log.redo()
-        self.timeline_container.add_layer_action.activate(None)
-        self.assertEqual(len(self.timeline.get_layers()), 1)
+        # The music goes to a new layer at the bottom.
+        self.timeline_container.add_assets_to_selected_layer([music])
+        layers = self.timeline.get_layers()
+        self.assertEqual(len(layers), 2)
+        self.assertEqual(layers[0].get_clips(), [image_clip])
+        music_clip, = layers[1].get_clips()
+        self.assertEqual(music_clip.get_asset(), music)
+
+        # Another music goes after it, an image to the layer of images.
+        self.timeline_container.timeline.selection.select([music_clip])
+        self.timeline_container.add_assets_to_selected_layer([music, image])
+        self.assertEqual(len(self.timeline.get_layers()), 2)
+        self.assertEqual([clip.get_asset() for clip in sorted(layers[1].get_clips(), key=lambda c: c.start)],
+                         [music, music])
+        self.assertEqual(len(layers[0].get_clips()), 2)
+
+        # Undone in a single step.
+        self.action_log.undo()
+        self.assertEqual(len(layers[1].get_clips()), 1)
+        self.assertEqual(len(layers[0].get_clips()), 1)

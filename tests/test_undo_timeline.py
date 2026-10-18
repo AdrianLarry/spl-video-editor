@@ -381,6 +381,8 @@ class TestLayerObserver(common.TestCase):
 
     @common.setup_timeline
     def test_layer_added(self):
+        # The empty layers are kept, this test checks adding a layer.
+        self.timeline_container.remove_empty_layers = mock.Mock()
         layers = self.timeline.get_layers()
         self.assertEqual(len(layers), 1)
 
@@ -1155,6 +1157,8 @@ class TestDragDropUndo(common.TestCase):
 
     def clip_dragged_to_create_layer(self, below):
         """Simulates dragging a clip on a separator, without dropping it."""
+        # The empty layers are kept, these tests check creating layers.
+        self.timeline_container.remove_empty_layers = mock.Mock()
         timeline_ui = self.timeline_container.timeline
         layers = self.timeline.get_layers()
         self.assertEqual(len(layers), 1)
@@ -1281,6 +1285,8 @@ class TestDragDropUndo(common.TestCase):
     @common.setup_timeline
     def test_media_library_asset_dragged_on_separator(self):
         """Simulate dragging an asset from the media library to the timeline."""
+        # The empty layers are kept, this test checks creating layers.
+        self.timeline_container.remove_empty_layers = mock.Mock()
         timeline_ui = self.timeline_container.timeline
         project = self.app.project_manager.current_project
         layers = self.timeline.get_layers()

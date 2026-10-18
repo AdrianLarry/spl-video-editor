@@ -256,6 +256,34 @@ class Selection(GObject.Object, Loggable):
                         yield child
 
 
+# The kinds of layers: the audio clips go in layers of their own.
+AUDIO_LAYER = "audio"
+VISUAL_LAYER = "visual"
+
+
+def is_audio_only(supported_formats: GES.TrackType) -> bool:
+    """Whether the formats of a clip or asset are only audio."""
+    return supported_formats == GES.TrackType.AUDIO
+
+
+def get_layer_kind(layer: GES.Layer, ignored_clip=None):
+    """Returns AUDIO_LAYER, VISUAL_LAYER or None for an empty layer."""
+    kinds = set()
+    for clip in layer.get_clips():
+        if clip is ignored_clip or isinstance(clip, GES.TransitionClip):
+            continue
+        kinds.add(AUDIO_LAYER if is_audio_only(clip.props.supported_formats) else VISUAL_LAYER)
+    if VISUAL_LAYER in kinds:
+        return VISUAL_LAYER
+    return AUDIO_LAYER if kinds else None
+
+
+def layer_accepts(layer: GES.Layer, supported_formats: GES.TrackType, ignored_clip=None) -> bool:
+    """Whether a clip with the formats can go in the layer."""
+    kind = get_layer_kind(layer, ignored_clip)
+    return kind is None or kind == (AUDIO_LAYER if is_audio_only(supported_formats) else VISUAL_LAYER)
+
+
 class EditingContext(GObject.Object, Loggable):
     """Encapsulates interactive editing.
 

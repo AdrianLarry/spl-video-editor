@@ -51,7 +51,12 @@ from pitivi.utils.loggable import Loggable
 from pitivi.utils.markers import GES_MARKERS_SNAPPABLE
 from pitivi.utils.misc import asset_get_duration
 from pitivi.utils.pipeline import PipelineError
+from pitivi.utils.timeline import AUDIO_LAYER
 from pitivi.utils.timeline import EditingContext
+from pitivi.utils.timeline import get_layer_kind
+from pitivi.utils.timeline import is_audio_only
+from pitivi.utils.timeline import layer_accepts
+from pitivi.utils.timeline import VISUAL_LAYER
 from pitivi.utils.timeline import SELECT
 from pitivi.utils.timeline import Selection
 from pitivi.utils.timeline import TimelineError
@@ -111,7 +116,7 @@ PreferencesDialog.add_numeric_preference('edgeSnapDeadband',
 GlobalSettings.add_config_option('imageClipLength',
                                  section="user-interface",
                                  key="image-clip-length",
-                                 default=1000,
+                                 default=4000,
                                  notify=True)
 
 PreferencesDialog.add_numeric_preference('imageClipLength',
@@ -477,7 +482,10 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         self.add_layer_button = Gtk.Button.new_with_label(_("Add layer"))
         self.add_layer_button.props.margin = SPACING
         self.add_layer_button.set_halign(Gtk.Align.CENTER)
-        self.add_layer_button.show()
+        # The empty layers are removed: the layers are created by dropping
+        # clips between the layers.
+        self.add_layer_button.set_no_show_all(True)
+        self.add_layer_button.hide()
         self.add_layer_button.set_action_name("timeline.add-layer")
         self._layers_controls_vbox.pack_end(self.add_layer_button, False, False, 0)
 
@@ -1181,6 +1189,7 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         self.app.action_log.begin("Add clips")
         for asset in assets:
             ges_layer, unused_on_sep = self.get_layer_at(y, mini=mini)
+            ges_layer = self.get_layer_for(asset.get_supported_formats(), ges_layer)
             if not placement:
                 ratio = self.calc_best_zoom_ratio() if mini else None
                 placement = max(0, self.pixel_to_ns(x, zoomratio=ratio))
@@ -1646,6 +1655,10 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         self._set_separators_prelight(False)
         res = self.get_layer_at(y, prefer_ges_layer=self._on_layer, mini=mini)
         self._on_layer, self.__on_separators = res
+        ges_clip = self.dragging_element.ges_clip
+        if not layer_accepts(self._on_layer, ges_clip.props.supported_formats, ges_clip):
+            # The audio clips and the others stay in layers of their own.
+            self._on_layer = ges_clip.get_layer()
         if (mode != GES.EditMode.EDIT_NORMAL or
                 self.dragging_group.props.height > 1):
             # When dragging clips from more than one layer, do not allow
@@ -1682,6 +1695,22 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
             # The clips of the layer below are not pushed by a clip which
             # goes to a new layer.
             self.editing_context.set_making_room(separator is None)
+
+    def get_layer_for(self, supported_formats, preferred_layer):
+        """Returns the layer for a new clip with the formats.
+
+        The audio clips go in layers of their own: the preferred layer if
+        possible, otherwise the first layer of the kind, otherwise a new layer,
+        at the bottom for audio, at the top for the others.
+        """
+        if layer_accepts(preferred_layer, supported_formats):
+            return preferred_layer
+        kind = AUDIO_LAYER if is_audio_only(supported_formats) else VISUAL_LAYER
+        for layer in self.ges_timeline.get_layers():
+            if get_layer_kind(layer) == kind:
+                return layer
+        priority = len(self.ges_timeline.get_layers()) if kind == AUDIO_LAYER else 0
+        return self.create_layer(priority)
 
     def create_layer(self, priority):
         """Adds a new layer to the GES timeline."""
@@ -1791,10 +1820,15 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
         Without a selected clip, the clips are added to the first layer.
         """
         selected = [clip for clip in self.timeline.selection if clip.get_layer()]
-        layer = selected[0].get_layer() if selected else self.ges_timeline.get_layers()[0]
-        layer_end = max((clip.props.start + clip.props.duration for clip in layer.get_clips()),
-                        default=0)
-        self._insert_clips_and_assets(assets, layer_end, layer)
+        preferred_layer = selected[0].get_layer() if selected else self.ges_timeline.get_layers()[0]
+        with self.app.action_log.started("add asset",
+                                         finalizing_action=CommitTimelineFinalizingAction(self._project.pipeline),
+                                         toplevel=True):
+            for asset in assets:
+                layer = self.timeline.get_layer_for(asset.get_supported_formats(), preferred_layer)
+                layer_end = max((clip.props.start + clip.props.duration for clip in layer.get_clips()),
+                                default=0)
+                self._insert_clips_and_assets([asset], layer_end, layer)
 
     def insert_assets(self, assets, position=None):
         """Creates clips out of the specified assets on the longest layer."""
@@ -2362,12 +2396,15 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
             self.timeline.selection.set_selection([], SELECT)
 
     def remove_empty_layers(self):
-        """Keeps at most one empty layer, the last one, and always a layer."""
+        """Removes the empty layers, keeping always a layer."""
         if not self.ges_timeline:
             return
-        empty_layers = [layer for layer in self.ges_timeline.get_layers()
-                        if not layer.get_clips()]
-        for layer in empty_layers[:-1]:
+        layers = self.ges_timeline.get_layers()
+        empty_layers = [layer for layer in layers if not layer.get_clips()]
+        if len(empty_layers) == len(layers):
+            # Keep the first one.
+            empty_layers = empty_layers[1:]
+        for layer in empty_layers:
             removed_priority = layer.props.priority
             self.ges_timeline.remove_layer(layer)
             for other_layer in self.ges_timeline.get_layers():
