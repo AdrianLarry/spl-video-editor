@@ -44,6 +44,8 @@ from pitivi.timeline.previewers import Previewer
 from pitivi.timeline.previewers import ThumbnailCache
 from pitivi.undo.project import AssetAddedIntention
 from pitivi.undo.project import AssetProxiedIntention
+from pitivi.utils.formats import get_closest_format
+from pitivi.utils.formats import SIZES
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import disconnect_all_by_func
 from pitivi.utils.misc import fixate_caps_with_default_values
@@ -2130,8 +2132,9 @@ class Project(Loggable, GES.Project):
         if video_streams and self._has_default_video_settings:
             video = video_streams[0]
             if not video.is_image():
-                videowidth = video.get_natural_width()
-                videoheight = video.get_natural_height()
+                # The size of the format closest to the video.
+                videowidth, videoheight = SIZES[get_closest_format(video.get_natural_width(),
+                                                                   video.get_natural_height())]
                 videorate = self.videorate
                 if video.get_framerate_num() > 0:
                     # The asset has a non-variable framerate.

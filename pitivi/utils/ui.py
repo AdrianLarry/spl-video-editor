@@ -318,6 +318,63 @@ EDITOR_PERSPECTIVE_CSS = """
         padding: 0;
     }
 
+    /* The viewer controls, as in the mockup. */
+    .spl-play {
+        background-image: none;
+        background-color: rgb(255, 255, 255);
+        color: rgb(17, 17, 17);
+        border: none;
+        box-shadow: none;
+        border-radius: 50%%;
+        min-width: 42px;
+        min-height: 42px;
+        padding: 0;
+    }
+
+    .spl-play:hover {
+        background-color: rgb(230, 230, 230);
+    }
+
+    .spl-play:disabled {
+        opacity: 0.35;
+    }
+
+    .spl-transport {
+        min-height: 54px;
+    }
+
+    .spl-time {
+        font-feature-settings: "tnum";
+    }
+
+    .spl-formats {
+        background-color: rgb(15, 17, 21);
+        border: 1px solid rgb(42, 47, 57);
+        border-radius: 10px;
+        padding: 3px;
+    }
+
+    .spl-formats button {
+        background-image: none;
+        background-color: transparent;
+        border: none;
+        box-shadow: none;
+        border-radius: 7px;
+        color: rgb(166, 175, 189);
+        min-height: 30px;
+        padding: 0 11px;
+    }
+
+    .spl-formats button:hover {
+        color: rgb(238, 241, 245);
+    }
+
+    .spl-formats button:checked {
+        background-color: rgb(37, 42, 52);
+        color: rgb(238, 241, 245);
+        box-shadow: inset 0 1px rgba(255, 255, 255, 0.06), 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+
     .Marquee {
         background-color: rgba(224, 224, 224, 0.7);
         color: rgba(224, 224, 224, 1);

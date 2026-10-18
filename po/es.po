@@ -2983,6 +2983,30 @@ msgstr "Encuadre"
 msgid "The output file could not be linked to the muxer."
 msgstr "No se pudo preparar el archivo de salida. Intentá exportar de nuevo."
 
+#: pitivi/viewer/viewer.py
+msgid "Horizontal"
+msgstr "Horizontal"
+
+#: pitivi/viewer/viewer.py
+msgid "Vertical"
+msgstr "Vertical"
+
+#: pitivi/viewer/viewer.py
+msgid "Square"
+msgstr "Cuadrado"
+
+#: pitivi/viewer/viewer.py
+msgid "Screens, TV and computers"
+msgstr "Pantallas, TV y computadoras"
+
+#: pitivi/viewer/viewer.py
+msgid "Phones, stories and short videos"
+msgstr "Teléfonos, historias y videos cortos"
+
+#: pitivi/viewer/viewer.py
+msgid "Posts in social networks"
+msgstr "Publicaciones en redes"
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 

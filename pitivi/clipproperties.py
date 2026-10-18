@@ -55,6 +55,7 @@ from pitivi.trackerperspective import CoverObjectPopover
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.custom_effect_widgets import create_custom_prop_widget_cb
 from pitivi.utils.custom_effect_widgets import create_custom_widget_cb
+from pitivi.utils.formats import get_fill_position
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import disconnect_all_by_func
 from pitivi.utils.pipeline import PipelineError
@@ -1139,21 +1140,7 @@ class TransformationProperties(Gtk.Expander, Loggable):
             # Titles and color clips always cover the whole frame.
             return position
 
-        natural_width = stream_info.get_natural_width()
-        natural_height = stream_info.get_natural_height()
-        # The default position takes into account a rotation of the clip.
-        if (position["width"] > position["height"]) != (natural_width > natural_height):
-            natural_width, natural_height = natural_height, natural_width
-
-        project_width = self._project.videowidth
-        project_height = self._project.videoheight
-        scale = max(project_width / natural_width, project_height / natural_height)
-        width = round(natural_width * scale)
-        height = round(natural_height * scale)
-        return {"posx": (project_width - width) // 2,
-                "posy": (project_height - height) // 2,
-                "width": width,
-                "height": height}
+        return get_fill_position(position, self._project.videowidth, self._project.videoheight)
 
     def __framing_button_clicked_cb(self, unused_button, fill):
         position = self.get_framing_position(fill)

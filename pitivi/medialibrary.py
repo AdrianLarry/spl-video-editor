@@ -1149,11 +1149,9 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         self._select_last_imported_uris()
 
     def __project_settings_set_from_imported_asset_cb(self, unused_project, asset):
-        asset_path = path_from_uri(asset.get_id())
-        file_name = os.path.basename(asset_path)
-        message = _("The project settings have been set to match file '%s'") % file_name
-        self._project_settings_label.set_text(message)
-        self._project_settings_infobar.show()
+        # The format closest to the first video is chosen, as shown above
+        # the viewer. The project settings are for experts.
+        pass
 
     def _select_last_imported_uris(self):
         if not self._last_imported_uris:

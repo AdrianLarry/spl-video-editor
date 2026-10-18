@@ -616,9 +616,9 @@ class TestProjectSettings(common.TestCase):
         self.assertEqual(1, project.audiochannels)
         self.assertEqual(44100, project.audiorate)
 
-        # The video settings should match tears_of_steel.webm
-        self.assertEqual(960, project.videowidth)
-        self.assertEqual(400, project.videoheight)
+        # SPL: the video settings have the format closest to tears_of_steel.webm.
+        self.assertEqual(1920, project.videowidth)
+        self.assertEqual(1080, project.videoheight)
         self.assertEqual(Gst.Fraction(24, 1), project.videorate)
 
     def test_load(self):
@@ -732,20 +732,20 @@ class TestExportSettings(common.TestCase):
 
         mainloop.run()
 
-        # The video settings should match tears_of_steel.webm
-        self.assertEqual(project.videowidth, 960)
-        self.assertEqual(project.videoheight, 400)
+        # SPL: the video settings have the format closest to tears_of_steel.webm.
+        self.assertEqual(project.videowidth, 1920)
+        self.assertEqual(project.videoheight, 1080)
 
         project.render_scale = 3
         # Pretend we're rendering.
         project.set_rendering(True)
-        self.assertEqual(project.videowidth, 28)
-        self.assertEqual(project.videoheight, 12)
+        self.assertEqual(project.videowidth, 57)
+        self.assertEqual(project.videoheight, 32)
 
         # Pretend we're not rendering anymore.
         project.set_rendering(False)
-        self.assertEqual(project.videowidth, 960)
-        self.assertEqual(project.videoheight, 400)
+        self.assertEqual(project.videowidth, 1920)
+        self.assertEqual(project.videoheight, 1080)
 
     def test_set_safe_area_sizes(self):
         """Checks to ensure that the safe areas values are set correctly."""

@@ -15,6 +15,7 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 import collections
+import locale
 from gettext import gettext as _
 
 from gi.repository import Gdk
@@ -26,6 +27,11 @@ from gi.repository import Gst
 from gi.repository import Gtk
 
 from pitivi.settings import GlobalSettings
+from pitivi.utils.formats import get_format
+from pitivi.utils.formats import HORIZONTAL
+from pitivi.utils.formats import set_format
+from pitivi.utils.formats import SQUARE
+from pitivi.utils.formats import VERTICAL
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.pipeline import AssetPipeline
 from pitivi.utils.ui import SPACING
@@ -63,6 +69,100 @@ GlobalSettings.add_config_option("clickedPointColor", section="viewer",
 GlobalSettings.add_config_option("pointColor", section="viewer",
                                  key="point-color",
                                  default='49a0e0')
+
+
+# The name, the ratio and the use of each format, as in the mockup.
+FORMAT_NAMES = {
+    HORIZONTAL: (_("Horizontal"), "16:9", _("Screens, TV and computers")),
+    VERTICAL: (_("Vertical"), "9:16", _("Phones, stories and short videos")),
+    SQUARE: (_("Square"), "1:1", _("Posts in social networks")),
+}
+
+# The shape drawn for each format, x, y, width and height in 24 pixels.
+FORMAT_ICONS = {
+    HORIZONTAL: (3, 7, 18, 10),
+    VERTICAL: (7.5, 3, 9, 18),
+    SQUARE: (5, 5, 14, 14),
+}
+
+
+def format_time(position):
+    """Returns the position as minutes, seconds and tenths, as "01:05,3"."""
+    tenths = max(0, position) // (Gst.SECOND // 10)
+    seconds, tenth = divmod(tenths, 10)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    text = "%02d:%02d%s%d" % (minutes, seconds, locale.localeconv()["decimal_point"], tenth)
+    if hours:
+        text = "%d:%s" % (hours, text)
+    return text
+
+
+class FormatButtons(Gtk.Box):
+    """Buttons for choosing the format of the video."""
+
+    def __init__(self, app):
+        Gtk.Box.__init__(self, orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        self.app = app
+        self.project = None
+        self.get_style_context().add_class("spl-formats")
+        self.buttons = {}
+        self.__updating = False
+        for kind in (HORIZONTAL, VERTICAL, SQUARE):
+            name, ratio, use = FORMAT_NAMES[kind]
+            button = Gtk.ToggleButton()
+            button.set_tooltip_text("%s · %s" % (ratio, use))
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=SPACING)
+            icon = Gtk.DrawingArea()
+            icon.set_size_request(16, 16)
+            icon.props.valign = Gtk.Align.CENTER
+            icon.connect("draw", self.__draw_icon_cb, kind)
+            box.pack_start(icon, False, False, 0)
+            box.pack_start(Gtk.Label(label=name), False, False, 0)
+            button.add(box)
+            button.connect("toggled", self.__toggled_cb, kind)
+            self.pack_start(button, False, False, 0)
+            self.buttons[kind] = button
+
+    @staticmethod
+    def __draw_icon_cb(widget, cr, kind):
+        color = widget.get_style_context().get_color(widget.get_state_flags())
+        scale = widget.get_allocated_width() / 24
+        x, y, width, height = (value * scale for value in FORMAT_ICONS[kind])
+        radius = 1.5 * scale
+        cr.new_sub_path()
+        cr.arc(x + width - radius, y + radius, radius, -1.5708, 0)
+        cr.arc(x + width - radius, y + height - radius, radius, 0, 1.5708)
+        cr.arc(x + radius, y + height - radius, radius, 1.5708, 3.1416)
+        cr.arc(x + radius, y + radius, radius, 3.1416, 4.7124)
+        cr.close_path()
+        cr.set_source_rgba(color.red, color.green, color.blue, color.alpha)
+        cr.set_line_width(1.5 * scale)
+        cr.stroke()
+        return False
+
+    def set_project(self, project):
+        self.project = project
+        self.update(project)
+
+    def update(self, project):
+        """Shows the format of the project."""
+        kind = get_format(project.videowidth, project.videoheight)
+        self.__updating = True
+        try:
+            for other_kind, button in self.buttons.items():
+                button.set_active(other_kind == kind)
+        finally:
+            self.__updating = False
+
+    def __toggled_cb(self, button, kind):
+        if self.__updating or not self.project:
+            return
+        if button.get_active():
+            set_format(self.app, self.project, kind)
+        # Clicking the active one leaves it active.
+        self.update(self.project)
+        self.app.gui.editor.focus_timeline()
 
 
 class ViewerContainer(Gtk.Box, Loggable):
@@ -121,6 +221,20 @@ class ViewerContainer(Gtk.Box, Loggable):
     def _project_video_size_changed_cb(self, project):
         """Handles Project metadata changes."""
         self._reset_viewer_aspect_ratio(project)
+        self.__update_format(project)
+
+    def __update_format(self, project):
+        self.format_buttons.update(project)
+        kind = get_format(project.videowidth, project.videoheight)
+        if kind:
+            name, ratio, unused_tooltip = FORMAT_NAMES[kind]
+            self.format_label.set_text("%s · %s" % (name, ratio))
+        else:
+            self.format_label.set_text("%d × %d" % (project.videowidth, project.videoheight))
+
+    def __update_time_label(self):
+        self.time_label.set_markup("<b>%s</b> / %s" % (format_time(self.__position),
+                                                       format_time(self.__duration)))
 
     def _reset_viewer_aspect_ratio(self, project):
         """Resets the viewer aspect ratio."""
@@ -177,6 +291,11 @@ class ViewerContainer(Gtk.Box, Loggable):
 
         project.connect("video-size-changed", self._project_video_size_changed_cb)
         project.connect("audio-channels-changed", self._project_audio_channels_changed_cb)
+        self.format_buttons.set_project(project)
+        self.__update_format(project)
+        self.__position = 0
+        self.__duration = 0
+        self.__update_time_label()
 
     def __create_new_viewer(self):
 
@@ -237,6 +356,12 @@ class ViewerContainer(Gtk.Box, Loggable):
         """Creates the Viewer GUI."""
         self.set_orientation(Gtk.Orientation.VERTICAL)
 
+        # As in the mockup, the format of the video above the viewer.
+        self.format_buttons = FormatButtons(self.app)
+        self.format_buttons.props.halign = Gtk.Align.CENTER
+        self.format_buttons.props.margin = SPACING
+        self.pack_start(self.format_buttons, False, False, 0)
+
         self.external_window = Gtk.Window()
         vbox = Gtk.Box()
         vbox.set_orientation(Gtk.Orientation.VERTICAL)
@@ -275,6 +400,8 @@ class ViewerContainer(Gtk.Box, Loggable):
         corner.connect("button-release-event", self.__corner_button_release_cb)
         corner.connect("motion-notify-event", self.__corner_motion_notify_cb, hpane, vpane)
         self.pack_end(corner, False, False, 0)
+        # The panels are resized with their separators.
+        corner.set_no_show_all(True)
 
         # Peak Meters
         self.peak_meter_box = Gtk.Box()
@@ -293,6 +420,8 @@ class ViewerContainer(Gtk.Box, Loggable):
         self.peak_meter_scale.set_margin_start(SPACING)
         self.peak_meter_box.pack_end(self.peak_meter_scale, False, False, 0)
         self.viewer_row_box.pack_end(self.peak_meter_box, False, False, 0)
+        # Not in the mockup, for experts.
+        self.peak_meter_box.set_no_show_all(True)
         self.peak_meter_scale.connect("configure-event", self.__peak_meter_scale_configure_event_cb)
 
         # Buttons/Controls
@@ -300,9 +429,24 @@ class ViewerContainer(Gtk.Box, Loggable):
         bbox.set_orientation(Gtk.Orientation.HORIZONTAL)
         bbox.set_property("valign", Gtk.Align.CENTER)
         bbox.set_property("halign", Gtk.Align.CENTER)
-        bbox.set_margin_start(SPACING)
-        bbox.set_margin_end(SPACING)
-        self.pack_end(bbox, False, False, 0)
+        bbox.set_spacing(SPACING)
+
+        # As in the mockup, the time and the format at the sides.
+        transport = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        transport.get_style_context().add_class("spl-transport")
+        transport.set_margin_start(SPACING * 2)
+        transport.set_margin_end(SPACING * 2)
+        transport.set_center_widget(bbox)
+        self.time_label = Gtk.Label()
+        self.time_label.get_style_context().add_class("spl-time")
+        transport.pack_start(self.time_label, False, False, 0)
+        self.format_label = Gtk.Label()
+        self.format_label.get_style_context().add_class("dim-label")
+        transport.pack_end(self.format_label, False, False, 0)
+        self.pack_end(transport, False, False, 0)
+        self.__position = 0
+        self.__duration = 0
+        self.__update_time_label()
 
         self.guidelines_button = Gtk.MenuButton.new()
         self.guidelines_button.props.image = Gtk.Image.new_from_icon_name("view-grid-symbolic", Gtk.IconSize.BUTTON)
@@ -385,6 +529,14 @@ class ViewerContainer(Gtk.Box, Loggable):
         self.end_button.get_accessible().set_name("end_button")
         self.timecode_entry.get_accessible().set_name("timecode_entry")
         self.undock_button.get_accessible().set_name("undock_button")
+
+        # Not in the mockup: the guidelines, moving by a second, the
+        # timecode and detaching the viewer.
+        for widget in (self.guidelines_button, self.back_button, self.forward_button,
+                       self.timecode_entry, self.undock_button):
+            widget.hide()
+            widget.set_no_show_all(True)
+        self.playpause_button.get_style_context().add_class("spl-play")
 
         self.buttons_container = bbox
         self.external_vbox.show_all()
@@ -488,6 +640,8 @@ class ViewerContainer(Gtk.Box, Loggable):
     # Active Timeline calllbacks
     def _duration_changed_cb(self, unused_pipeline, duration):
         self._set_ui_active(duration > 0)
+        self.__duration = duration
+        self.__update_time_label()
 
     def _play_button_cb(self, unused_button, unused_playing):
         self.app.project_manager.current_project.pipeline.toggle_playback()
@@ -571,7 +725,9 @@ class ViewerContainer(Gtk.Box, Loggable):
             self.project.pipeline.simple_seek(position)
 
     def __viewer_realization_done_cb(self, unused_data):
-        self.overlay_stack.enable_resize_status(True)
+        # The percent of the size shown when resizing the viewer is not
+        # useful for the users, also when changing the format.
+        self.overlay_stack.enable_resize_status(False)
         return False
 
     def dock(self):
@@ -625,6 +781,8 @@ class ViewerContainer(Gtk.Box, Loggable):
         or by mainwindow's _timelineSeekCb when the timer is disabled.
         """
         self.timecode_entry.set_widget_value(position, False)
+        self.__position = position
+        self.__update_time_label()
 
     def clip_trim_preview(self, clip, position):
         """Shows a live preview of a clip being trimmed."""

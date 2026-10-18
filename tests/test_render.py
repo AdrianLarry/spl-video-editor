@@ -377,6 +377,9 @@ class TestRender(BaseTestMediaLibrary):
             assets = project.list_assets(GES.UriClip)
             asset, = [a for a in assets if "proxy" in a.props.id]
             layer, = project.ges_timeline.get_layers()
+            # SPL: the project gets the format closest to the first video, here it
+            # has the size of the video, as in Pitivi.
+            project.set_video_properties(320, 240, project.videorate)
             clip = asset.extract()
             layer.add_clip(clip)
             video_source = clip.find_track_element(None, GES.VideoUriSource)
