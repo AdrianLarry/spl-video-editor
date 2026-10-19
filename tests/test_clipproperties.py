@@ -67,6 +67,19 @@ class TransformationPropertiesTest(common.TestCase):
 
     @common.setup_timeline
     @common.setup_clipproperties
+    def test_zoom_only_for_videos(self):
+        """Checks the automatic zoom is offered for the videos only."""
+        zoom_box = self.clipproperties.zoom_expander
+        layer = self.timeline_container.timeline.ges_timeline.get_layers()[0]
+        for sample, offered in (("flat_colour1_640x480.png", False),
+                                ("one_fps_numeroted_blue.mkv", True)):
+            asset = GES.UriClipAsset.request_sync(common.get_sample_uri(sample))
+            clip = layer.add_asset(asset, layer.get_duration(), 0, Gst.SECOND, GES.TrackType.UNKNOWN)
+            self.timeline_container.timeline.selection.select([clip])
+            self.assertEqual(zoom_box.get_visible(), offered, sample)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
     def test_framing(self):
         """Checks fitting and filling the frame with the clip."""
         clip = self.add_clips_simple(self.timeline_container.timeline, 1)[0]

@@ -280,8 +280,11 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
                     color_clip_source = child
 
         self.transformation_expander.set_source(video_source)
-        # The zoom is for the videos and the images.
-        self.zoom_expander.set_source(video_source if isinstance(video_source, GES.VideoUriSource) else None)
+        # The zoom is for the videos. The images are placed on whole
+        # pixels, so a slow zoom shakes, unlike the videos which move.
+        is_video = isinstance(video_source, GES.VideoUriSource) and \
+            not ges_clip.get_asset().is_image()
+        self.zoom_expander.set_source(video_source if is_video else None)
         self.speed_expander.set_clip(ges_clip if (not title_source and not color_clip_source) else None)
         self.title_expander.set_source(title_source)
         self.color_expander.set_source(color_clip_source)
