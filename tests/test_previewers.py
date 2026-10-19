@@ -29,6 +29,7 @@ from gi.repository import Gst
 
 from pitivi.timeline.previewers import delete_all_files_in_dir
 from pitivi.timeline.previewers import get_wavefile_location_for_uri
+from pitivi.timeline.previewers import is_image_source
 from pitivi.timeline.previewers import Previewer
 from pitivi.timeline.previewers import THUMB_HEIGHT
 from pitivi.timeline.previewers import THUMB_PERIOD
@@ -327,3 +328,20 @@ class TestFunctions(BaseTestMediaLibrary):
             delete_all_files_in_dir(dir_a)
             self.assertEqual(os.listdir(dir_a), [os.path.basename(dir_a_b)])
             self.assertEqual(os.listdir(dir_a_b), [os.path.basename(file_a_b1.name)])
+
+
+class TestImageSource(common.TestCase):
+    """Tests for recognizing the image sources."""
+
+    def test_is_image_source(self):
+        timeline = common.create_timeline_container().timeline
+        layer = timeline.ges_timeline.append_layer()
+        for sample, expected in (("flat_colour1_640x480.png", True),
+                                 ("one_fps_numeroted_blue.mkv", False)):
+            asset = GES.UriClipAsset.request_sync(common.get_sample_uri(sample))
+            clip = layer.add_asset(asset, layer.get_duration(), 0, Gst.SECOND, GES.TrackType.UNKNOWN)
+            source = clip.find_track_element(None, GES.VideoSource)
+            self.assertEqual(is_image_source(source), expected, sample)
+            # The images repeat the same picture along the clip.
+            self.assertEqual(type(source.ui.previewer).__name__,
+                             "ImagePreviewer" if expected else "VideoPreviewer")

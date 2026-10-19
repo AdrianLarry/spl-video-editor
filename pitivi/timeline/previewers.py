@@ -66,6 +66,8 @@ SAMPLE_DURATION = Gst.SECOND // 50
 
 # Horizontal space between thumbs.
 THUMB_MARGIN_PX = 3
+# The space between the pictures of an image clip.
+IMAGE_THUMB_MARGIN_PX = 1
 THUMB_HEIGHT = EXPANDED_SIZE - 2 * CLIP_BORDER_WIDTH
 THUMB_PERIOD = int(Gst.SECOND / 2)
 assert Gst.SECOND % THUMB_PERIOD == 0
@@ -410,6 +412,21 @@ class Previewer(GObject.Object):
         return max(THUMB_PERIOD, quantized)
 
 
+def is_image_source(source: GES.TrackElement) -> bool:
+    """Returns whether the source shows an image file.
+
+    The images used to be GES.ImageSources, GES now uses
+    GES.VideoUriSources for them.
+    """
+    if isinstance(source, GES.ImageSource):
+        return True
+    if not isinstance(source, GES.VideoUriSource):
+        return False
+    asset = source.get_asset()
+    stream_info = asset.get_stream_info() if asset else None
+    return bool(stream_info) and stream_info.is_image()
+
+
 class ImagePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
     """A previewer widget drawing the same thumbnail repeatedly.
 
@@ -466,7 +483,7 @@ class ImagePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
         return False
 
     def _generate_thumbnail(self):
-        if isinstance(self.ges_elem, GES.ImageSource):
+        if is_image_source(self.ges_elem):
             self.debug("Generating thumbnail for image: %s", path_from_uri(self.uri))
             return GdkPixbuf.Pixbuf.new_from_file_at_scale(
                 Gst.uri_get_location(self.uri), -1, self.thumb_height, True)
@@ -489,8 +506,10 @@ class ImagePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
             return
 
         thumbs = {}
-        interval = self.thumb_interval(self.thumb_width)
-        element_left = quantize(self.ges_elem.props.in_point, interval)
+        # The same picture all along, one after the other as in the mockup,
+        # instead of at the times of the video frames.
+        interval = max(1, Zoomable.pixel_to_ns(self.thumb_width + IMAGE_THUMB_MARGIN_PX))
+        element_left = self.ges_elem.props.in_point // interval * interval
         element_right = self.ges_elem.props.in_point + self.ges_elem.props.duration
         y = (self.props.height_request - self.thumb_height) / 2
         for position in range(element_left, element_right, interval):

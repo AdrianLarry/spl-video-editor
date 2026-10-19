@@ -42,6 +42,7 @@ from pitivi.timeline.markers import ClipMarkersBox
 from pitivi.timeline.markers import Marker
 from pitivi.timeline.previewers import AudioPreviewer
 from pitivi.timeline.previewers import ImagePreviewer
+from pitivi.timeline.previewers import is_image_source
 from pitivi.timeline.previewers import MiniPreview
 from pitivi.timeline.previewers import TitlePreviewer
 from pitivi.timeline.previewers import VideoPreviewer
@@ -1215,7 +1216,7 @@ class VideoUriSource(VideoSource):
         self.get_style_context().add_class("VideoUriSource")
 
     def _get_previewer(self):
-        if isinstance(self._ges_elem, GES.ImageSource):
+        if is_image_source(self._ges_elem):
             previewer = ImagePreviewer(self._ges_elem, self.timeline.app.settings.previewers_max_cpu)
         else:
             previewer = VideoPreviewer(self._ges_elem, self.timeline.app.settings.previewers_max_cpu)
