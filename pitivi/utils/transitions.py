@@ -39,6 +39,9 @@ from gi.repository import GES
 from gi.repository import Gst
 from gi.repository import GstController
 
+from pitivi.utils.blurfill import get_blur_fill
+from pitivi.utils.blurfill import link_alpha
+from pitivi.utils.blurfill import sync_shift
 from pitivi.utils.fades import Fades
 from pitivi.utils.fades import fades_keyframes
 from pitivi.utils.fades import get_keyframes
@@ -215,6 +218,10 @@ def _get_alpha_control_source(clip: GES.Clip, create: bool = False):
     control_source = GstController.InterpolationControlSource()
     control_source.props.mode = GstController.InterpolationMode.LINEAR
     source.set_control_source(control_source, "alpha", "direct")
+    effect = get_blur_fill(clip)
+    if effect:
+        # The effect making the blurred fill loses the alpha of the source.
+        link_alpha(effect, source)
     return source, control_source
 
 
@@ -421,7 +428,29 @@ def sync_pushes(layer: GES.Layer) -> None:
             if contact.clip_b == clip:
                 segments.setdefault(property_name, []).append(
                     (start, factor_b * size, start + contact.duration, 0))
+        effect = get_blur_fill(clip)
+        if effect:
+            # The effect makes the whole frame, it slides it.
+            offsets = {}
+            for property_name, prop_segments in segments.items():
+                timestamps = {start, end}
+                for segment_start, unused, segment_end, unused in prop_segments:
+                    timestamps.update((segment_start, segment_end))
+                offsets[property_name] = [
+                    (timestamp, sum(_segment_offset(segment, timestamp) for segment in prop_segments))
+                    for timestamp in sorted(timestamps)]
+            sync_shift(effect, offsets, start, end)
+            segments = {}
         sync_motion(source, segments)
+
+
+def _segment_offset(segment, timestamp: int) -> float:
+    segment_start, start_value, segment_end, end_value = segment
+    if timestamp < segment_start or timestamp > segment_end:
+        return 0
+    if segment_end == segment_start:
+        return end_value
+    return start_value + (end_value - start_value) * (timestamp - segment_start) / (segment_end - segment_start)
 
 
 def remove_transition(contact: Contact) -> Contact:

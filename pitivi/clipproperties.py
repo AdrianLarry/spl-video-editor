@@ -54,6 +54,10 @@ from pitivi.effects import EffectsPropertiesManager
 from pitivi.effects import HIDDEN_EFFECTS
 from pitivi.trackerperspective import CoverObjectPopover
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.utils.blurfill import get_blur_fill
+from pitivi.utils.blurfill import is_blur_fill_effect
+from pitivi.utils.blurfill import set_blur_fill
+from pitivi.utils.blurfill import update_blur_fill
 from pitivi.utils.custom_effect_widgets import create_custom_prop_widget_cb
 from pitivi.utils.custom_effect_widgets import create_custom_widget_cb
 from pitivi.utils.formats import get_fill_position
@@ -62,6 +66,7 @@ from pitivi.utils.misc import disconnect_all_by_func
 from pitivi.utils.motion import get_base_position
 from pitivi.utils.motion import has_motion
 from pitivi.utils.motion import set_base_position
+from pitivi.utils.motion import set_zoom
 from pitivi.utils.pipeline import PipelineError
 from pitivi.utils.timeline import SELECT
 from pitivi.utils.transitions import is_white_effect
@@ -284,6 +289,9 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         # pixels, so a slow zoom shakes, unlike the videos which move.
         is_video = isinstance(video_source, GES.VideoUriSource) and \
             not ges_clip.get_asset().is_image()
+        # The blurred fill covers the source, which zooms.
+        if is_video and get_blur_fill(ges_clip):
+            is_video = False
         self.zoom_expander.set_source(video_source if is_video else None)
         self.speed_expander.set_clip(ges_clip if (not title_source and not color_clip_source) else None)
         self.title_expander.set_source(title_source)
@@ -692,7 +700,7 @@ class EffectProperties(Gtk.Expander, Loggable):
 
     def _create_effect_row(self, effect):
         if is_time_effect(effect) or effect.props.bin_description in HIDDEN_EFFECTS or \
-                is_white_effect(effect):
+                is_white_effect(effect) or is_blur_fill_effect(effect):
             # The fade to white of a transition is not an effect for the user.
             return None
 
@@ -1080,13 +1088,37 @@ class TransformationProperties(Gtk.Expander, Loggable):
             _("Cover the whole frame. Part of the image can be left out."))
         fill_button.connect("clicked", self.__framing_button_clicked_cb, True)
 
+        self.blur_fill_button = Gtk.Button(label=_("Blurred fill"))
+        self.blur_fill_button.set_tooltip_text(
+            _("Show the whole image, over a blurred copy filling the frame."))
+        self.blur_fill_button.connect("clicked", self.__blur_fill_button_clicked_cb)
+
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         box.get_style_context().add_class("linked")
         box.props.halign = Gtk.Align.START
         box.props.margin_start = SPACING
         box.pack_start(fit_button, False, False, 0)
         box.pack_start(fill_button, False, False, 0)
+        box.pack_start(self.blur_fill_button, False, False, 0)
         return box
+
+    def __blur_fill_button_clicked_cb(self, unused_button):
+        clip = self.source.get_parent()
+        with self.app.action_log.started("Blurred fill",
+                                         finalizing_action=CommitTimelineFinalizingAction(
+                                             self._project.pipeline),
+                                         toplevel=True):
+            # The zoom moves the source, which the blurred fill covers.
+            set_zoom(self.source, None)
+            set_blur_fill(clip, True)
+            layer = clip.get_layer()
+            if layer:
+                sync_pushes(layer)
+        self.__update_keyframes_ui()
+        zoom_expander = getattr(self.app.gui.editor.clipconfig, "zoom_expander", None) \
+            if hasattr(self.app.gui, "editor") else None
+        if isinstance(zoom_expander, Gtk.Widget):
+            zoom_expander.set_source(None)
 
     def __create_orientation_buttons(self):
         """Creates the buttons to rotate and mirror the clip."""
@@ -1133,7 +1165,10 @@ class TransformationProperties(Gtk.Expander, Loggable):
                                              self._project.pipeline),
                                          toplevel=True):
             set_orientation(clip, new_orientation)
-            if new_orientation.swaps_dimensions != orientation.swaps_dimensions:
+            if get_blur_fill(clip):
+                # The blurred fill is made again for the turned image.
+                update_blur_fill(clip)
+            elif new_orientation.swaps_dimensions != orientation.swaps_dimensions:
                 # The image keeps its aspect ratio, so it has to be framed again.
                 self.__set_framing(self.get_framing_position(fill))
 
@@ -1180,6 +1215,9 @@ class TransformationProperties(Gtk.Expander, Loggable):
                                          finalizing_action=CommitTimelineFinalizingAction(
                                              self._project.pipeline),
                                          toplevel=True):
+            clip = self.source.get_parent()
+            if get_blur_fill(clip):
+                set_blur_fill(clip, False)
             self.__set_framing(position)
 
         self.__update_keyframes_ui()

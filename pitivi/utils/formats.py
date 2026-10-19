@@ -29,6 +29,8 @@ from gi.repository import GES
 
 from pitivi.undo.base import UndoableAction
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.utils.blurfill import get_blur_fill
+from pitivi.utils.blurfill import update_blur_fill
 from pitivi.utils.transitions import PUSH_BASE_META
 from pitivi.utils.transitions import sync_pushes
 
@@ -182,9 +184,14 @@ def set_format(app, project, kind: str) -> None:
         return
 
     sources = []
+    blur_fill_clips = []
     for layer in project.ges_timeline.get_layers():
         for clip in layer.get_clips():
             if isinstance(clip, GES.TransitionClip):
+                continue
+            if get_blur_fill(clip):
+                # The blurred fill covers the new frame.
+                blur_fill_clips.append(clip)
                 continue
             for source in clip.find_track_elements(None, GES.TrackType.VIDEO, GES.VideoSource):
                 ui = getattr(source, "ui", None)
@@ -204,5 +211,7 @@ def set_format(app, project, kind: str) -> None:
             new_position = get_framed_position(framing, position, old_size,
                                                source.ui.default_position, *new_size)
             _set_position(source, new_position)
+        for clip in blur_fill_clips:
+            update_blur_fill(clip)
         for layer in project.ges_timeline.get_layers():
             sync_pushes(layer)

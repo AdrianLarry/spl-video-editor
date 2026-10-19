@@ -3235,6 +3235,14 @@ msgstr "Intensidad:"
 msgid "The position of this clip has been animated by hand."
 msgstr "La posición de este clip se animó a mano."
 
+#: pitivi/clipproperties.py
+msgid "Blurred fill"
+msgstr "Fondo desenfocado"
+
+#: pitivi/clipproperties.py
+msgid "Show the whole image, over a blurred copy filling the frame."
+msgstr "Muestra la imagen entera sobre una copia desenfocada que llena el cuadro."
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 

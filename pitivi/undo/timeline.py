@@ -30,6 +30,7 @@ from pitivi.undo.base import PropertyChangedAction
 from pitivi.undo.base import UndoableAction
 from pitivi.undo.base import UndoableAutomaticObjectAction
 from pitivi.undo.markers import MetaContainerObserver
+from pitivi.utils.blurfill import is_blur_fill_effect
 from pitivi.utils.fades import get_keyframes
 from pitivi.utils.fades import Keyframes
 from pitivi.utils.fades import set_keyframes
@@ -210,6 +211,10 @@ class TrackElementAction(UndoableAction):
         self.clip = clip
         self.track_element = track_element
         self.track_element_props = []
+        if is_blur_fill_effect(track_element):
+            # Its description has its settings. Setting the properties of
+            # its tee, queues and compositor again crashes.
+            return
         for prop in self.track_element.list_children_properties():
             if not prop.flags & GObject.ParamFlags.WRITABLE or \
                     prop.name in PROPS_TO_IGNORE:

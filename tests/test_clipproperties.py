@@ -94,7 +94,7 @@ class TransformationPropertiesTest(common.TestCase):
                     for prop in ("posx", "posy", "width", "height")}
 
         initial_position = get_position()
-        fit_button, fill_button = self.transformation_box._framing_box.get_children()
+        fit_button, fill_button, unused_blur_fill_button = self.transformation_box._framing_box.get_children()
 
         fill_button.clicked()
         position = get_position()
@@ -174,7 +174,7 @@ class TransformationPropertiesTest(common.TestCase):
         self.project.videowidth = 1000
         self.project.videoheight = 1000
 
-        unused_fit_button, fill_button = box._framing_box.get_children()
+        unused_fit_button, fill_button, unused_blur_fill_button = box._framing_box.get_children()
         fill_button.clicked()
         box.rotate_left_button.clicked()
         self.assertEqual(get_orientation(clip), Orientation(270, False))
