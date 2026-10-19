@@ -20,6 +20,7 @@ from gi.repository import Gst
 
 from pitivi.utils.fades import get_keyframes
 from pitivi.utils.timeline import EditingContext
+from pitivi.utils.transitions import BOTTOM
 from pitivi.utils.transitions import DISSOLVE
 from pitivi.utils.transitions import FADE_TO_BLACK
 from pitivi.utils.transitions import FADE_TO_WHITE
@@ -27,6 +28,7 @@ from pitivi.utils.transitions import get_contacts
 from pitivi.utils.transitions import get_image_fades
 from pitivi.utils.transitions import get_max_duration
 from pitivi.utils.transitions import get_video_transition
+from pitivi.utils.transitions import LEFT
 from pitivi.utils.transitions import PUSH
 from pitivi.utils.transitions import RIGHT
 from pitivi.utils.transitions import SOFT_WIPE
@@ -34,6 +36,7 @@ from pitivi.utils.transitions import TOP
 from pitivi.utils.transitions import get_white_fades
 from pitivi.utils.transitions import is_white_effect
 from pitivi.utils.transitions import set_transition
+from pitivi.utils.transitions import wipes_work
 from tests import common
 
 SECOND = Gst.SECOND
@@ -377,3 +380,48 @@ class TransitionsTest(common.TestCase):
             context.finish()
         self.assertEqual(get_image_fades(clip_a).fade_out, 0)
         self.assertEqual(get_image_fades(clip_b).fade_in, 0)
+
+
+class ImageTransitionsTest(common.TestCase):
+    """Tests for the transitions with images, GES draws the wipes wrong."""
+
+    def _add_image(self, start):
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
+        return self.layer.add_asset(asset, start * SECOND, 0, 4 * SECOND, GES.TrackType.UNKNOWN)
+
+    @common.setup_timeline
+    def test_push_with_images(self):
+        self._wait_until_project_loaded()
+        image_a = self._add_image(0)
+        image_b = self._add_image(4)
+        contact, = get_contacts(self.layer)
+        self.assertFalse(wipes_work(image_a, image_b))
+
+        for direction in (LEFT, TOP, BOTTOM, RIGHT):
+            with self.action_log.started("transition"):
+                contact = set_transition(get_contacts(self.layer)[0], PUSH, SECOND, direction)
+            # No wipe, the second image appears while coming in.
+            self.assertEqual(get_video_transition(image_b).get_transition_type(),
+                             GES.VideoStandardTransitionType.FADE_IN)
+            contact, = get_contacts(self.layer)
+            self.assertEqual((contact.kind, contact.direction), (PUSH, direction))
+
+        # Undoing gives back the previous direction.
+        self.action_log.undo()
+        contact, = get_contacts(self.layer)
+        self.assertEqual((contact.kind, contact.direction), (PUSH, BOTTOM))
+
+    @common.setup_timeline
+    def test_videos_keep_the_wipe(self):
+        self._wait_until_project_loaded()
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
+        clip_a = self.layer.add_asset(asset, 0, 0, 4 * SECOND, GES.TrackType.UNKNOWN)
+        clip_b = self.layer.add_asset(asset, 4 * SECOND, 0, 4 * SECOND, GES.TrackType.UNKNOWN)
+        self.assertTrue(wipes_work(clip_a, clip_b))
+        contact, = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            set_transition(contact, PUSH, SECOND, LEFT)
+        self.assertNotEqual(get_video_transition(clip_b).get_transition_type(),
+                            GES.VideoStandardTransitionType.FADE_IN)
+        contact, = get_contacts(self.layer)
+        self.assertEqual((contact.kind, contact.direction), (PUSH, LEFT))

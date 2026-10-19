@@ -3207,6 +3207,10 @@ msgstr "No se pudo exportar el video"
 msgid "The output file could not be created."
 msgstr "No se pudo crear el archivo."
 
+#: pitivi/timeline/transitions.py
+msgid "Only between two videos, with photos it is not drawn right."
+msgstr "Solo entre dos videos: con fotos no se dibuja bien."
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 

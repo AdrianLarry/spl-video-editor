@@ -68,6 +68,8 @@ PUSH_WIPES = {LEFT: WIPES[RIGHT],
               RIGHT: WIPES[LEFT],
               TOP: WIPES[BOTTOM],
               BOTTOM: WIPES[TOP]}
+# The transition of a push with an image, the wipes are drawn wrong.
+PUSH_FADE = GES.VideoStandardTransitionType.FADE_IN
 # How soft the edge of a soft wipe is.
 SOFT_WIPE_BORDER = 20000
 
@@ -80,6 +82,9 @@ PUSHES = {LEFT: ("posx", 1, -1),
 # The position of a source when not pushed, kept while its position is
 # animated.
 PUSH_BASE_META = "spl::push-base-%s"
+# Where the second clip of a push comes from, when the push has no wipe
+# telling it.
+PUSH_DIRECTION_META = "spl::push-direction"
 
 # The effect turning a clip white, marked with this metadata. It mixes the
 # image with white by lowering the contrast and the saturation, and raising
@@ -135,10 +140,49 @@ def get_video_transition(clip_b: GES.Clip) -> Optional[GES.VideoTransition]:
     return None
 
 
+def wipes_work(clip_a: GES.Clip, clip_b: GES.Clip) -> bool:
+    """Whether the wipes of GES are drawn right between the clips.
+
+    The wipes are drawn wrong when a clip is an image: parts of the frame
+    are black and the edge is misplaced.
+    """
+    for clip in (clip_a, clip_b):
+        asset = clip.get_asset()
+        if asset and asset.is_image():
+            return False
+    return True
+
+
+def _get_push_direction(clip_b: GES.Clip) -> Optional[str]:
+    """Returns where the second clip of a push comes from.
+
+    It is kept in the source of the clip, or else found from its animation.
+    """
+    source = clip_b.find_track_element(None, GES.VideoSource)
+    if not source:
+        return None
+    direction = source.get_string(PUSH_DIRECTION_META)
+    if direction in PUSHES:
+        return direction
+    start, unused_end = get_source_range(source)
+    for direction, (property_name, unused_factor_a, factor_b) in PUSHES.items():
+        control_source = _get_push_control_source(source, property_name)
+        if not control_source:
+            continue
+        unused_res, base = source.get_int(PUSH_BASE_META % property_name)
+        values = [value for timestamp, value in get_keyframes(control_source) if timestamp == start]
+        if values and (values[0] - base) * factor_b > 0:
+            return direction
+    return None
+
+
 def get_overlap_kind(clip_b: GES.Clip):
     """Returns the kind and direction of the transition where the clip starts."""
     element = get_video_transition(clip_b)
     if element:
+        if element.get_transition_type() == PUSH_FADE:
+            # A push where the second clip appears while coming in.
+            return PUSH, _get_push_direction(clip_b) or RIGHT
         transition_type = element.get_transition_type()
         inverted = element.is_inverted()
         # A push has a hard edge.
@@ -318,7 +362,7 @@ def _shift_following(contact: Contact, shift: int) -> None:
         clip.set_start(clip.props.start + shift)
 
 
-def apply_wipe(clip_b: GES.Clip, kind: str, direction: str) -> None:
+def apply_wipe(clip_a: GES.Clip, clip_b: GES.Clip, kind: str, direction: str) -> None:
     """Makes the transition where the clip starts a soft wipe or a push.
 
     GES creates the transition as a dissolve when the clips start
@@ -327,7 +371,11 @@ def apply_wipe(clip_b: GES.Clip, kind: str, direction: str) -> None:
     element = get_video_transition(clip_b)
     if not element:
         return
-    transition_type, inverted = (WIPES if kind == SOFT_WIPE else PUSH_WIPES)[direction]
+    if kind == PUSH and not wipes_work(clip_a, clip_b):
+        # Without the wipe, the second clip appears while coming in.
+        transition_type, inverted = PUSH_FADE, False
+    else:
+        transition_type, inverted = (WIPES if kind == SOFT_WIPE else PUSH_WIPES)[direction]
     border = SOFT_WIPE_BORDER if kind == SOFT_WIPE else 0
     if element.get_transition_type() != transition_type:
         element.set_transition_type(transition_type)
@@ -433,7 +481,11 @@ def set_transition(contact: Contact, kind: str, duration: int,
         _shift_following(contact, -duration)
         if kind in (SOFT_WIPE, PUSH):
             direction = direction or RIGHT
-            apply_wipe(contact.clip_b, kind, direction)
+            if kind == PUSH:
+                source = contact.clip_b.find_track_element(None, GES.VideoSource)
+                if source and source.get_string(PUSH_DIRECTION_META) != direction:
+                    source.set_string(PUSH_DIRECTION_META, direction)
+            apply_wipe(contact.clip_a, contact.clip_b, kind, direction)
             if kind == PUSH:
                 sync_pushes(contact.clip_b.get_layer())
         else:

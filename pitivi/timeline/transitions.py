@@ -40,6 +40,7 @@ from pitivi.utils.transitions import get_max_duration
 from pitivi.utils.transitions import MIN_DURATION
 from pitivi.utils.transitions import remove_transition
 from pitivi.utils.transitions import set_transition
+from pitivi.utils.transitions import wipes_work
 from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import SPACING
 
@@ -132,6 +133,11 @@ class TransitionPopover(Gtk.Popover):
                 button.set_tooltip_text(_("Coming soon"))
             grid.attach(button, index % 2, index // 2, 1, 1)
         self.kind_buttons[contact.kind or DISSOLVE].set_active(True)
+        if not wipes_work(contact.clip_a, contact.clip_b) and contact.kind != SOFT_WIPE:
+            # GES draws the wipes wrong with images.
+            soft_wipe_button = self.kind_buttons[SOFT_WIPE]
+            soft_wipe_button.set_sensitive(False)
+            soft_wipe_button.set_tooltip_text(_("Only between two videos, with photos it is not drawn right."))
         box.pack_start(grid, False, False, 0)
 
         self.direction_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
