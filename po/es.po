@@ -3039,6 +3039,70 @@ msgstr "Foto"
 msgid "In use"
 msgstr "En uso"
 
+#: pitivi/effects.py
+msgid "Warm"
+msgstr "Cálido"
+
+#: pitivi/effects.py
+msgid "Cold"
+msgstr "Frío"
+
+#: pitivi/effects.py
+msgid "Black and white"
+msgstr "Blanco y negro"
+
+#: pitivi/effects.py
+msgid "More brightness"
+msgstr "Más brillo"
+
+#: pitivi/effects.py
+msgid "More contrast"
+msgstr "Más contraste"
+
+#: pitivi/effects.py
+msgid "Soft blur"
+msgstr "Desenfoque suave"
+
+#: pitivi/effects.py
+msgid "Applied"
+msgstr "Aplicado"
+
+#: pitivi/effects.py
+msgid "Add it"
+msgstr "Agregar"
+
+#: pitivi/effects.py
+msgid "Click an effect to apply it to this clip."
+msgstr "Hacé clic en un efecto para aplicarlo a este clip."
+
+#: pitivi/editorperspective.py
+msgid "This clip has no effects. Choose one from the catalog."
+msgstr "Este clip no tiene efectos. Elegí uno del catálogo."
+
+#: pitivi/effects.py
+msgid "Warmer and livelier colors"
+msgstr "Colores más cálidos y vivos"
+
+#: pitivi/effects.py
+msgid "Colder, bluish colors"
+msgstr "Colores más fríos, azulados"
+
+#: pitivi/effects.py
+msgid "Without colors"
+msgstr "Sin colores"
+
+#: pitivi/effects.py
+msgid "A brighter image"
+msgstr "Una imagen más luminosa"
+
+#: pitivi/effects.py
+msgid "Darker darks and lighter lights"
+msgstr "Oscuros más oscuros y claros más claros"
+
+#: pitivi/effects.py
+msgid "A slightly blurred image"
+msgstr "Una imagen apenas desenfocada"
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 

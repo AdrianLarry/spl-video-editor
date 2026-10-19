@@ -27,6 +27,8 @@ from pitivi.effects import AUDIO_EFFECT
 from pitivi.effects import EffectInfo
 from pitivi.effects import EffectsPropertiesManager
 from pitivi.effects import PROPS_TO_IGNORE
+from pitivi.effects import SIMPLE_EFFECTS
+from pitivi.effects import SimpleEffectsCatalog
 from pitivi.effects import VIDEO_EFFECT
 from pitivi.utils.widgets import DynamicWidget
 from pitivi.utils.widgets import GstElementSettingsWidget
@@ -207,3 +209,34 @@ class EffectsPropertiesManagerTest(common.TestCase):
         mainloop.run(until_empty=True)
 
         self.assertTrue(called)
+
+
+class SimpleEffectsTest(common.TestCase):
+    """Tests for the effects offered, as in the mockup."""
+
+    @common.setup_timeline
+    def test_catalog(self):
+        self._wait_until_project_loaded()
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
+        clip = self.layer.add_asset(asset, 0, 0, Gst.SECOND, GES.TrackType.UNKNOWN)
+        catalog = SimpleEffectsCatalog(self.app)
+
+        # Without a clip, nothing can be applied.
+        self.assertFalse(any(button.get_sensitive() for button in catalog.buttons.values()))
+
+        catalog.update(clip)
+        for bin_description, human_name, unused_description in SIMPLE_EFFECTS:
+            button = catalog.buttons[bin_description]
+            self.assertTrue(button.get_sensitive(), human_name)
+            button.clicked()
+            effect, = [effect for effect in clip.get_top_effects()
+                       if effect.props.bin_description == bin_description]
+            # The applied effect is shown with its name.
+            self.assertEqual(self.app.effects.get_info(effect).human_name, human_name)
+            catalog.update(clip)
+            self.assertFalse(button.get_sensitive(), human_name)
+
+        self.assertEqual(len(clip.get_top_effects()), len(SIMPLE_EFFECTS))
+        # Undone one by one.
+        self.action_log.undo()
+        self.assertEqual(len(clip.get_top_effects()), len(SIMPLE_EFFECTS) - 1)

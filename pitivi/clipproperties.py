@@ -594,6 +594,11 @@ class EffectProperties(Gtk.Expander, Loggable):
         clip (GES.Clip): The clip being configured.
     """
 
+    __gsignals__ = {
+        # Emitted when the clip or its effects change.
+        "effects-changed": (GObject.SignalFlags.RUN_LAST, None, ()),
+    }
+
     def __init__(self, app):
         Gtk.Expander.__init__(self)
         Loggable.__init__(self)
@@ -773,6 +778,7 @@ class EffectProperties(Gtk.Expander, Loggable):
 
     def __update_hint(self):
         self.hint_label.set_visible(bool(self.effects_listbox.get_children()))
+        self.emit("effects-changed")
 
     def _toggle_expander_cb(self, expander, unused_prop, revealer):
         revealer.props.reveal_child = expander.props.expanded
@@ -851,6 +857,7 @@ class EffectProperties(Gtk.Expander, Loggable):
             self._update_listbox()
 
         self.props.visible = bool(self.clip)
+        self.emit("effects-changed")
 
     def _track_element_added_cb(self, unused_clip, track_element):
         if isinstance(track_element, GES.BaseEffect):

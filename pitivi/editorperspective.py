@@ -35,6 +35,7 @@ from pitivi.dialogs.missingasset import MissingAssetDialog
 from pitivi.dialogs.projectsettings import ProjectSettingsDialog
 from pitivi.editorstate import EditorState
 from pitivi.effects import EffectListWidget
+from pitivi.effects import SimpleEffectsCatalog
 from pitivi.interactiveintro import InteractiveIntro
 from pitivi.mediafilespreviewer import PreviewWidget
 from pitivi.medialibrary import MediaLibraryWidget
@@ -363,8 +364,7 @@ class EditorPerspective(Perspective, Loggable):
         effect_expander.add_effect_button.set_no_show_all(True)
         effect_expander.add_effect_button.hide()
         effect_expander.placeholder_label.set_text(
-            _("To apply an effect to the clip, drag it from the catalog below "
-              "or double-click it."))
+            _("This clip has no effects. Choose one from the catalog."))
 
         catalog_label = Gtk.Label()
         catalog_label.set_markup("<b>%s</b>" % GLib.markup_escape_text(_("Effect catalog")))
@@ -374,18 +374,26 @@ class EditorPerspective(Perspective, Loggable):
         catalog_label.props.margin_top = SPACING
         separator = Gtk.Separator()
 
+        # As in the mockup, a few simple effects which work with any video,
+        # instead of the long catalog of GStreamer, where some crash the app.
+        self.effects_catalog = SimpleEffectsCatalog(self.app)
+        self.effects_catalog.props.margin = SPACING
+        self.effects_catalog.props.margin_top = 0
+        effect_expander.connect("effects-changed",
+                                lambda expander: self.effects_catalog.update(expander.clip))
+
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
         box.pack_start(effect_expander, False, False, 0)
         box.pack_start(separator, False, False, 0)
         box.pack_start(catalog_label, False, False, 0)
-        box.pack_start(self.effectlist, True, True, 0)
+        box.pack_start(self.effects_catalog, False, False, 0)
 
         # The settings of the applied effects can be taller than the panel.
         page = Gtk.ScrolledWindow()
         page.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         page.add(box)
         # The visibility of the effect expander depends on the selection.
-        for widget in (separator, catalog_label, self.effectlist, box, page.get_child(), page):
+        for widget in (separator, catalog_label, box, page.get_child(), page):
             widget.show()
         return page
 

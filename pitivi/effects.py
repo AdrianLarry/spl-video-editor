@@ -160,6 +160,20 @@ HIDDEN_EFFECTS = [
     # Rotating and mirroring are done with the buttons of the framing.
     "videoflip"]
 
+# The effects offered, as in the mockup: simple, and made with elements
+# which work with any video. Some others of the catalog crash the app.
+# Their bin description identifies them, with the values of the effect.
+SIMPLE_EFFECTS = (
+    # The hue turns the oranges towards red, or towards yellow. Only
+    # slightly, it changes the other colors too.
+    ("videobalance saturation=1.2 hue=0.02 brightness=0.03", _("Warm"), _("Warmer and livelier colors")),
+    ("videobalance saturation=0.8 hue=-0.03 brightness=0.02", _("Cold"), _("Colder, bluish colors")),
+    ("videobalance saturation=0", _("Black and white"), _("Without colors")),
+    ("videobalance brightness=0.12", _("More brightness"), _("A brighter image")),
+    ("videobalance contrast=1.4", _("More contrast"), _("Darker darks and lighter lights")),
+    ("gaussianblur sigma=4", _("Soft blur"), _("A slightly blurred image")),
+)
+
 GlobalSettings.add_config_section('effect-library')
 GlobalSettings.add_config_option('favourite_effects',
                                  section='effect-library',
@@ -292,6 +306,13 @@ class EffectsManager(Loggable):
                                 human_name=human_name,
                                 description=factory.get_description())
             self._effects[name] = effect
+
+        for bin_description, human_name, description in SIMPLE_EFFECTS:
+            self._effects[bin_description] = EffectInfo(bin_description,
+                                                        VIDEO_EFFECT,
+                                                        categories=[],
+                                                        human_name=human_name,
+                                                        description=description)
 
         gl_element_factories = registry.get_feature_list_by_plugin("opengl")
         self.gl_effects = [element_factory.get_name()
@@ -654,6 +675,72 @@ class EffectListWidget(Gtk.Box, Loggable):
 
         for child_view in self.main_view.get_children():
             child_view.props.visible = child_view == next_view
+
+
+class SimpleEffectsCatalog(Gtk.Box):
+    """The effects which can be applied to the selected clip, as in the mockup.
+
+    Attributes:
+        app (Pitivi): The app.
+        buttons (dict): The button of each effect, by bin description.
+    """
+
+    def __init__(self, app):
+        Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
+        self.app = app
+        self.clip = None
+
+        hint = Gtk.Label(label=_("Click an effect to apply it to this clip."), xalign=0)
+        hint.set_line_wrap(True)
+        hint.get_style_context().add_class("dim-label")
+        self.pack_start(hint, False, False, 0)
+
+        grid = Gtk.FlowBox(homogeneous=True, min_children_per_line=2, max_children_per_line=3,
+                           selection_mode=Gtk.SelectionMode.NONE,
+                           column_spacing=PADDING, row_spacing=PADDING)
+        self.buttons = {}
+        for bin_description, human_name, description in SIMPLE_EFFECTS:
+            button = Gtk.Button()
+            button.set_tooltip_text(description)
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            name_label = Gtk.Label(label=human_name, xalign=0)
+            name_label.set_ellipsize(Pango.EllipsizeMode.END)
+            box.pack_start(name_label, False, False, 0)
+            button.state_label = Gtk.Label(xalign=0)
+            button.state_label.get_style_context().add_class("dim-label")
+            box.pack_start(button.state_label, False, False, 0)
+            button.add(box)
+            button.connect("clicked", self.__clicked_cb, bin_description)
+            grid.add(button)
+            self.buttons[bin_description] = button
+        self.pack_start(grid, False, False, 0)
+        self.show_all()
+        self.update(None)
+
+    def update(self, clip):
+        """Shows which effects the clip has, and allows adding the others."""
+        self.clip = clip
+        applied = set()
+        visual = False
+        if clip:
+            applied = {effect.props.bin_description for effect in clip.get_top_effects()
+                       if isinstance(effect, GES.Effect)}
+            visual = bool(clip.find_track_element(None, GES.VideoSource))
+        for bin_description, button in self.buttons.items():
+            is_applied = bin_description in applied
+            button.set_sensitive(visual and not is_applied)
+            button.state_label.set_text("✓ " + _("Applied") if is_applied else _("Add it"))
+
+    def __clicked_cb(self, unused_button, bin_description):
+        if not self.clip:
+            return
+        effect_info = self.app.effects.get_info(bin_description)
+        pipeline = self.app.project_manager.current_project.pipeline
+        from pitivi.undo.timeline import CommitTimelineFinalizingAction
+        with self.app.action_log.started("add effect",
+                                         finalizing_action=CommitTimelineFinalizingAction(pipeline),
+                                         toplevel=True):
+            self.clip.ui.add_effect(effect_info)
 
 
 class EffectsPopover(Gtk.Popover, Loggable):
