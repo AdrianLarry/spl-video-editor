@@ -43,6 +43,7 @@ from pitivi.clip_properties.orientation import get_orientation
 from pitivi.clip_properties.orientation import Orientation
 from pitivi.clip_properties.orientation import set_orientation
 from pitivi.clip_properties.sound import SoundProperties
+from pitivi.clip_properties.zoom import ZoomProperties
 from pitivi.clip_properties.summary import ClipSummary
 from pitivi.clip_properties.title import get_default_font_description
 from pitivi.clip_properties.title import TitleProperties
@@ -58,9 +59,13 @@ from pitivi.utils.custom_effect_widgets import create_custom_widget_cb
 from pitivi.utils.formats import get_fill_position
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import disconnect_all_by_func
+from pitivi.utils.motion import get_base_position
+from pitivi.utils.motion import has_motion
+from pitivi.utils.motion import set_base_position
 from pitivi.utils.pipeline import PipelineError
 from pitivi.utils.timeline import SELECT
 from pitivi.utils.transitions import is_white_effect
+from pitivi.utils.transitions import sync_pushes
 from pitivi.utils.ui import disable_scroll
 from pitivi.utils.ui import EFFECT_TARGET_ENTRY
 from pitivi.utils.ui import PADDING
@@ -130,6 +135,10 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.transformation_expander.set_vexpand(False)
         vbox.pack_start(self.transformation_expander, False, False, 0)
 
+        self.zoom_expander = ZoomProperties(app)
+        self.zoom_expander.set_vexpand(False)
+        vbox.pack_start(self.zoom_expander, False, False, 0)
+
         self.speed_expander = TimeProperties(app)
         self.speed_expander.set_vexpand(False)
         if in_devel():
@@ -168,6 +177,7 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         disable_scroll(vbox)
 
         self.transformation_expander.set_source(None)
+        self.zoom_expander.set_source(None)
         self.speed_expander.set_clip(None)
         self.title_expander.set_source(None)
         self.color_expander.set_source(None)
@@ -270,6 +280,8 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
                     color_clip_source = child
 
         self.transformation_expander.set_source(video_source)
+        # The zoom is for the videos and the images.
+        self.zoom_expander.set_source(video_source if isinstance(video_source, GES.VideoUriSource) else None)
         self.speed_expander.set_clip(ges_clip if (not title_source and not color_clip_source) else None)
         self.title_expander.set_source(title_source)
         self.color_expander.set_source(color_clip_source)
@@ -1120,16 +1132,12 @@ class TransformationProperties(Gtk.Expander, Loggable):
             set_orientation(clip, new_orientation)
             if new_orientation.swaps_dimensions != orientation.swaps_dimensions:
                 # The image keeps its aspect ratio, so it has to be framed again.
-                if self.__source_uses_keyframes():
-                    self.__remove_control_bindings()
-                for prop, value in self.get_framing_position(fill).items():
-                    self.source.set_child_property(prop, value)
+                self.__set_framing(self.get_framing_position(fill))
 
         self.__update_keyframes_ui()
 
     def __get_position(self):
-        return {prop: self.source.get_child_property(prop)[1]
-                for prop in ("posx", "posy", "width", "height")}
+        return get_base_position(self.source)
 
     def get_framing_position(self, fill):
         """Returns the position for fitting or filling the frame with the clip.
@@ -1149,17 +1157,27 @@ class TransformationProperties(Gtk.Expander, Loggable):
 
         return get_fill_position(position, self._project.videowidth, self._project.videoheight)
 
+    def __set_framing(self, position):
+        """Places the source, keeping its zoom and its pushes, if any."""
+        if has_motion(self.source):
+            set_base_position(self.source, position)
+            layer = self.source.get_parent().get_layer()
+            if layer:
+                sync_pushes(layer)
+            return
+
+        if self.__source_uses_keyframes():
+            self.__remove_control_bindings()
+        for prop, value in position.items():
+            self.source.set_child_property(prop, value)
+
     def __framing_button_clicked_cb(self, unused_button, fill):
         position = self.get_framing_position(fill)
         with self.app.action_log.started("Transformation framing",
                                          finalizing_action=CommitTimelineFinalizingAction(
                                              self._project.pipeline),
                                          toplevel=True):
-            if self.__source_uses_keyframes():
-                self.__remove_control_bindings()
-
-            for prop, value in position.items():
-                self.source.set_child_property(prop, value)
+            self.__set_framing(position)
 
         self.__update_keyframes_ui()
 

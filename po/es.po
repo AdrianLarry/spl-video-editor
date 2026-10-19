@@ -3211,6 +3211,30 @@ msgstr "No se pudo crear el archivo."
 msgid "Only between two videos, with photos it is not drawn right."
 msgstr "Solo entre dos videos: con fotos no se dibuja bien."
 
+#: pitivi/clip_properties/zoom.py
+msgid "Automatic zoom"
+msgstr "Zoom automático"
+
+#: pitivi/clip_properties/zoom.py
+msgid "The image moves slowly from the start to the end of the clip."
+msgstr "La imagen se acerca o se aleja despacio, del principio al final del clip."
+
+#: pitivi/clip_properties/zoom.py
+msgid "No"
+msgstr "No"
+
+#: pitivi/clip_properties/zoom.py
+msgid "Towards"
+msgstr "Hacia"
+
+#: pitivi/clip_properties/zoom.py
+msgid "Intensity:"
+msgstr "Intensidad:"
+
+#: pitivi/clip_properties/zoom.py
+msgid "The position of this clip has been animated by hand."
+msgstr "La posición de este clip se animó a mano."
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 

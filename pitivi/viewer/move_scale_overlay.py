@@ -21,7 +21,11 @@ import numpy
 
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.misc import disconnect_all_by_func
+from pitivi.utils.motion import get_base_position
+from pitivi.utils.motion import is_moving
+from pitivi.utils.motion import set_base_position
 from pitivi.utils.pipeline import PipelineError
+from pitivi.utils.transitions import sync_pushes
 from pitivi.viewer.overlay import Overlay
 
 
@@ -339,6 +343,22 @@ class MoveScaleOverlay(Overlay):
         return self._source.get_child_property(prop)
 
     def __set_source_property(self, prop, value):
+        if is_moving(self._source, prop):
+            # The zoom or a push animate the property: the whole motion
+            # moves, from where the source is when not moving.
+            res, current = self.__get_source_property(prop)
+            if not res or current == value:
+                return
+            base = get_base_position(self._source)[prop]
+            if prop in ("width", "height") and current:
+                base = round(base * value / current)
+            else:
+                base += round(value - current)
+            set_base_position(self._source, {prop: base})
+            layer = self._source.get_parent().get_layer() if self._source.get_parent() else None
+            if layer:
+                sync_pushes(layer)
+            return
         if self.__source_property_keyframed(prop):
             control_source = self._source.get_control_binding(prop).props.control_source
             res, timestamp = self.__get_pipeline_position()

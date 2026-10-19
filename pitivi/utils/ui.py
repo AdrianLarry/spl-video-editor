@@ -390,6 +390,12 @@ EDITOR_PERSPECTIVE_CSS = """
         background-color: rgb(46, 52, 64);
     }
 
+    .spl-panel button:not(.spl-lib-add):not(.spl-danger-text):not(.spl-seg-button):checked {
+        background-color: rgba(255, 138, 91, 0.2);
+        border-color: rgb(255, 138, 91);
+        color: rgb(238, 241, 245);
+    }
+
     .spl-panel button:not(.spl-lib-add):not(.spl-danger-text):not(.spl-seg-button):disabled,
     .spl-toolbar button:disabled {
         background-color: transparent;

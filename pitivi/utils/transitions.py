@@ -45,6 +45,9 @@ from pitivi.utils.fades import get_keyframes
 from pitivi.utils.fades import get_source_range
 from pitivi.utils.fades import read_fades
 from pitivi.utils.fades import set_keyframes
+from pitivi.utils.motion import BASE_META
+from pitivi.utils.motion import get_frame_size
+from pitivi.utils.motion import sync_motion
 
 DISSOLVE = "dissolve"
 FADE_TO_BLACK = "fade-to-black"
@@ -81,7 +84,7 @@ PUSHES = {LEFT: ("posx", 1, -1),
           BOTTOM: ("posy", -1, 1)}
 # The position of a source when not pushed, kept while its position is
 # animated.
-PUSH_BASE_META = "spl::push-base-%s"
+PUSH_BASE_META = BASE_META
 # Where the second clip of a push comes from, when the push has no wipe
 # telling it.
 PUSH_DIRECTION_META = "spl::push-direction"
@@ -385,12 +388,6 @@ def apply_wipe(clip_a: GES.Clip, clip_b: GES.Clip, kind: str, direction: str) ->
         element.set_border(border)
 
 
-def _get_frame_size(source: GES.VideoSource):
-    caps = source.get_track().get_restriction_caps()
-    structure = caps.get_structure(0)
-    return structure.get_int("width")[1], structure.get_int("height")[1]
-
-
 def _get_push_control_source(source: GES.VideoSource, property_name: str):
     """Returns the control source animating the position for pushes, if any."""
     res, unused_base = source.get_int(PUSH_BASE_META % property_name)
@@ -401,58 +398,30 @@ def _get_push_control_source(source: GES.VideoSource, property_name: str):
 
 
 def sync_pushes(layer: GES.Layer) -> None:
-    """Animates the positions of the clips of the layer for their pushes.
+    """Animates the positions of the clips of the layer for their motion.
 
-    Called after the pushes or the clips change, so that the clips move
-    during the pushes where they are, and only there.
+    Called after the pushes, the zooms or the clips change, so that the
+    clips move during the pushes where they are, and only there, and zoom
+    over their whole duration.
     """
     pushes = [contact for contact in get_contacts(layer) if contact.kind == PUSH]
     for clip in layer.get_clips():
         source = clip.find_track_element(None, GES.VideoSource) if is_visual(clip) else None
         if not source or not source.get_track():
             continue
-        width, height = _get_frame_size(source)
+        width, height = get_frame_size(source)
         start, end = get_source_range(source)
-        for property_name in ("posx", "posy"):
-            control_source = _get_push_control_source(source, property_name)
-            if control_source:
-                unused_res, base = source.get_int(PUSH_BASE_META % property_name)
-            else:
-                if source.get_control_binding(property_name):
-                    # Animated by the user.
-                    continue
-                unused_res, base = source.get_child_property(property_name)
+        segments = {}
+        for contact in pushes:
+            property_name, factor_a, factor_b = PUSHES[contact.direction]
             size = width if property_name == "posx" else height
-            keyframes = []
-            for contact in pushes:
-                push_property, factor_a, factor_b = PUSHES[contact.direction]
-                if push_property != property_name:
-                    continue
-                if contact.clip_a == clip:
-                    keyframes += [(end - contact.duration, base), (end, base + factor_a * size)]
-                if contact.clip_b == clip:
-                    keyframes += [(start, base + factor_b * size), (start + contact.duration, base)]
-
-            if keyframes:
-                # The value is defined for the whole clip, a control source
-                # has none before its first keyframe.
-                timestamps = [timestamp for timestamp, unused_value in keyframes]
-                if start not in timestamps:
-                    keyframes.append((start, base))
-                if end not in timestamps:
-                    keyframes.append((end, base))
-                if not control_source:
-                    source.set_int(PUSH_BASE_META % property_name, base)
-                    control_source = GstController.InterpolationControlSource()
-                    control_source.props.mode = GstController.InterpolationMode.LINEAR
-                    # Never empty, for whoever reads it.
-                    control_source.set(start, base)
-                    source.set_control_source(control_source, property_name, "direct-absolute")
-                set_keyframes(control_source, sorted(keyframes))
-            elif control_source:
-                # The animation is kept, still: GES changes the keyframes of
-                # a control source when added again, as when undoing.
-                set_keyframes(control_source, [(start, base), (end, base)])
+            if contact.clip_a == clip:
+                segments.setdefault(property_name, []).append(
+                    (end - contact.duration, 0, end, factor_a * size))
+            if contact.clip_b == clip:
+                segments.setdefault(property_name, []).append(
+                    (start, factor_b * size, start + contact.duration, 0))
+        sync_motion(source, segments)
 
 
 def remove_transition(contact: Contact) -> Contact:
