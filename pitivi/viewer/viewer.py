@@ -34,6 +34,7 @@ from pitivi.utils.formats import SQUARE
 from pitivi.utils.formats import VERTICAL
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.pipeline import AssetPipeline
+from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import SPACING
 from pitivi.utils.widgets import TimeWidget
 from pitivi.viewer.guidelines import GuidelinesPopover
@@ -293,6 +294,8 @@ class ViewerContainer(Gtk.Box, Loggable):
         project.connect("audio-channels-changed", self._project_audio_channels_changed_cb)
         self.format_buttons.set_project(project)
         self.__update_format(project)
+        # The guidelines of the new viewer are hidden.
+        self.__update_guides_button()
         self.__position = 0
         self.__duration = 0
         self.__update_time_label()
@@ -443,6 +446,21 @@ class ViewerContainer(Gtk.Box, Loggable):
         self.format_label = Gtk.Label()
         self.format_label.get_style_context().add_class("dim-label")
         transport.pack_end(self.format_label, False, False, 0)
+
+        # Guides for placing things, and seeing the video bigger.
+        self.guides_button = Gtk.ToggleButton()
+        self.guides_button.set_image(Gtk.Image.new_from_icon_name("view-grid-symbolic", Gtk.IconSize.BUTTON))
+        self.guides_button.set_relief(Gtk.ReliefStyle.NONE)
+        self.guides_button.set_tooltip_text(_("Show guides dividing the image in thirds"))
+        self.guides_button.connect("toggled", self.__guides_toggled_cb)
+        self.fullscreen_view_button = Gtk.Button()
+        self.fullscreen_view_button.set_relief(Gtk.ReliefStyle.NONE)
+        self.fullscreen_view_button.connect("clicked", self.__fullscreen_clicked_cb)
+        self.set_fullscreen_state(False)
+        for button in (self.guides_button, self.fullscreen_view_button):
+            button.props.valign = Gtk.Align.CENTER
+        transport.pack_end(self.fullscreen_view_button, False, False, 0)
+        transport.pack_end(self.guides_button, False, False, PADDING)
         self.pack_end(transport, False, False, 0)
         self.__position = 0
         self.__duration = 0
@@ -564,6 +582,29 @@ class ViewerContainer(Gtk.Box, Loggable):
 
     def __toggle_guidelines_cb(self, unused_action, unused_parameter):
         self.guidelines_popover.toggle()
+        self.__update_guides_button()
+
+    def __guides_toggled_cb(self, button):
+        if not self.guidelines_popover:
+            return
+        if button.get_active() != bool(self.guidelines_popover.overlay.active_guidelines):
+            self.guidelines_popover.toggle()
+
+    def __update_guides_button(self):
+        active = bool(self.guidelines_popover and self.guidelines_popover.overlay.active_guidelines)
+        if self.guides_button.get_active() != active:
+            self.guides_button.set_active(active)
+
+    def __fullscreen_clicked_cb(self, unused_button):
+        self.app.gui.editor.toggle_viewer_fullscreen()
+
+    def set_fullscreen_state(self, fullscreen):
+        """Shows the button for leaving the fullscreen, or for entering it."""
+        icon_name = "view-restore-symbolic" if fullscreen else "view-fullscreen-symbolic"
+        self.fullscreen_view_button.set_image(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.BUTTON))
+        self.fullscreen_view_button.set_tooltip_text(
+            _("Leave the fullscreen (Esc)") if fullscreen else _("See the video in fullscreen (F11)"))
+        self.format_buttons.set_visible(not fullscreen)
 
     def __toggle_safe_areas_cb(self, unused_action, unused_parameter):
         overlay = self.overlay_stack.safe_areas_overlay

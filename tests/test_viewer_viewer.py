@@ -79,3 +79,21 @@ class TestViewerContainer(common.TestCase):
         self.assertEqual(format_time(0), "00:00%s0" % point)
         self.assertEqual(format_time(-Gst.SECOND), "00:00%s0" % point)
         self.assertEqual(format_time(3725 * Gst.SECOND + 99 * Gst.MSECOND), "1:02:05%s0" % point)
+
+    def test_guides_button(self):
+        """Checks the button showing the guides in thirds."""
+        app = common.create_pitivi_mock()
+        app.project_manager = ProjectManager(app)
+        viewer_container = ViewerContainer(app)
+        project = app.project_manager.new_blank_project()
+        viewer_container.set_project(project)
+        overlay = viewer_container.guidelines_popover.overlay
+        self.assertFalse(overlay.active_guidelines)
+
+        viewer_container.guides_button.set_active(True)
+        self.assertEqual([guideline.name for guideline in overlay.active_guidelines], ["THREE_BY_THREE"])
+
+        # The shortcut updates the button.
+        viewer_container.toggle_guidelines_action.activate()
+        self.assertFalse(overlay.active_guidelines)
+        self.assertFalse(viewer_container.guides_button.get_active())

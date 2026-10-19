@@ -325,11 +325,37 @@ class EditorPerspective(Perspective, Loggable):
         self.__panel_sizes = None
         self.__allocated_size = None
         self.__applying_sizes = False
+        # The visibility of the widgets hidden while the viewer is fullscreen.
+        self.__fullscreen_hidden = None
         self.toplevel_widget.connect("size-allocate", self.__toplevel_size_allocate_cb)
         self.__propshpaned_width = None
         self.propshpaned.connect("size-allocate", self.__propshpaned_size_allocate_cb)
         for paned in (self.toplevel_widget, self.mainhpaned, self.propshpaned):
             paned.connect("notify::position", self.__paned_position_changed_cb)
+
+    def toggle_viewer_fullscreen(self):
+        """Shows only the viewer and its controls in fullscreen, or everything back."""
+        fullscreen = self.__fullscreen_hidden is None
+        if fullscreen:
+            widgets = (self.files_panel, self.props_panel, self.props_rail, self.timelinepaned)
+            self.__fullscreen_hidden = {widget: widget.get_visible() for widget in widgets}
+            for widget in widgets:
+                widget.hide()
+            self.app.gui.connect("key-press-event", self.__fullscreen_key_press_cb)
+            self.app.gui.fullscreen()
+        else:
+            for widget, visible in self.__fullscreen_hidden.items():
+                widget.set_visible(visible)
+            self.__fullscreen_hidden = None
+            self.app.gui.disconnect_by_func(self.__fullscreen_key_press_cb)
+            self.app.gui.unfullscreen()
+        self.viewer.set_fullscreen_state(fullscreen)
+
+    def __fullscreen_key_press_cb(self, unused_window, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self.toggle_viewer_fullscreen()
+            return True
+        return False
 
     def __create_side_panel(self, title, icon_name, action_widget, content):
         """Creates an integrated panel with a header and the specified content."""
@@ -710,6 +736,13 @@ class EditorPerspective(Perspective, Loggable):
         self.project_settings_action = Gio.SimpleAction.new("project-settings", None)
         self.project_settings_action.connect("activate", self.__project_settings_cb)
         group.add_action(self.project_settings_action)
+
+        self.viewer_fullscreen_action = Gio.SimpleAction.new("toggle-viewer-fullscreen", None)
+        self.viewer_fullscreen_action.connect("activate", lambda *unused: self.toggle_viewer_fullscreen())
+        group.add_action(self.viewer_fullscreen_action)
+        self.app.shortcuts.add("editor.toggle-viewer-fullscreen", ["F11"],
+                               self.viewer_fullscreen_action,
+                               _("See the video in fullscreen"), group="win")
 
         group.add_action(self.intro.intro_action)
         self.app.shortcuts.add("editor.interactive-intro", [], self.intro.intro_action,

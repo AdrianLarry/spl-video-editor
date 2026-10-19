@@ -3103,6 +3103,22 @@ msgstr "Oscuros más oscuros y claros más claros"
 msgid "A slightly blurred image"
 msgstr "Una imagen apenas desenfocada"
 
+#: pitivi/viewer/viewer.py
+msgid "Show guides dividing the image in thirds"
+msgstr "Mostrar guías que dividen la imagen en tercios"
+
+#: pitivi/viewer/viewer.py
+msgid "Leave the fullscreen (Esc)"
+msgstr "Salir de la pantalla completa (Esc)"
+
+#: pitivi/viewer/viewer.py
+msgid "See the video in fullscreen (F11)"
+msgstr "Ver el video en pantalla completa (F11)"
+
+#: pitivi/editorperspective.py
+msgid "See the video in fullscreen"
+msgstr "Ver el video en pantalla completa"
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 
