@@ -16,6 +16,7 @@
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 """Tests for the timeline.elements module."""
 # pylint: disable=protected-access
+import locale
 from unittest import mock
 
 from gi.overrides import GObject
@@ -521,6 +522,18 @@ class TestClip(common.TestCase):
         clip.move_to_layer_full(layer2)
         clip2, = layer2.get_clips()
         self.assert_clip_selected(clip2, expect_selected=True)
+
+    def test_name_and_duration(self):
+        """Checks the name and the duration shown on the file clips."""
+        timeline_container = common.create_timeline_container()
+        layer = timeline_container.timeline.ges_timeline.append_layer()
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
+        clip = layer.add_asset(asset, 0, 0, 4 * Gst.SECOND, GES.TrackType.UNKNOWN)
+        point = locale.localeconv()["decimal_point"]
+        self.assertEqual(clip.ui.name_label.get_text(), "flat_colour1_640x480.png  4%s0 s" % point)
+
+        clip.set_duration(Gst.SECOND * 3 // 2)
+        self.assertEqual(clip.ui.name_label.get_text(), "flat_colour1_640x480.png  1%s5 s" % point)
 
     def test_clip_subclasses(self):
         """Checks the constructors of the Clip class."""

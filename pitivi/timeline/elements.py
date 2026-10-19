@@ -15,6 +15,7 @@
 #
 # You should have received a copy of the GNU Lesser General Public
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
+import locale
 import os
 from gettext import gettext as _
 from typing import Optional
@@ -23,10 +24,12 @@ import numpy
 from gi.repository import Gdk
 from gi.repository import GdkPixbuf
 from gi.repository import GES
+from gi.repository import GLib
 from gi.repository import GObject
 from gi.repository import Gst
 from gi.repository import GstController
 from gi.repository import Gtk
+from gi.repository import Pango
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import MouseButton
 from matplotlib.backends.backend_gtk3cairo import FigureCanvasGTK3Cairo
@@ -1848,7 +1851,37 @@ class UriClip(FullSourceClip):
         asset = ges_clip.get_asset()
         if asset and asset.is_image():
             self.get_style_context().add_class("ImageClip")
+            icon_name = "image-x-generic-symbolic"
+        elif asset and not asset.get_info().get_video_streams():
+            icon_name = "audio-x-generic-symbolic"
+        else:
+            icon_name = "video-x-generic-symbolic"
         self.props.has_tooltip = True
+
+        # As in the mockup, the name and the duration at the top, to tell
+        # the clips apart. The clicks go through, to the clip.
+        self.name_label = Gtk.Label(xalign=0)
+        self.name_label.set_ellipsize(Pango.EllipsizeMode.END)
+        label_box = Gtk.Box(spacing=PADDING)
+        label_box.get_style_context().add_class("spl-clip-label")
+        label_box.props.valign = Gtk.Align.START
+        label_box.pack_start(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.MENU), False, False, 0)
+        label_box.pack_start(self.name_label, True, True, 0)
+        label_box.show_all()
+        self._overlay.add_overlay(label_box)
+        self._overlay.set_overlay_pass_through(label_box, True)
+        self.__update_name_label()
+        ges_clip.connect("notify::duration", self.__duration_changed_cb)
+
+    def __duration_changed_cb(self, unused_clip, unused_pspec):
+        self.__update_name_label()
+
+    def __update_name_label(self):
+        asset = self.ges_clip.get_asset()
+        name = filename_from_uri(asset.props.id) if asset else ""
+        duration = locale.format_string("%.1f s", self.ges_clip.props.duration / Gst.SECOND)
+        self.name_label.set_markup("<b>%s</b>  <span alpha=\"75%%\">%s</span>" % (
+            GLib.markup_escape_text(name), GLib.markup_escape_text(duration)))
 
     def do_query_tooltip(self, x, y, keyboard_mode, tooltip):
         tooltip.set_markup(filename_from_uri(

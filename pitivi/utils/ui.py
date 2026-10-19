@@ -464,6 +464,14 @@ EDITOR_PERSPECTIVE_CSS = """
         padding: 0;
     }
 
+    /* The name and the duration on the clips, as in the mockup. */
+    .spl-clip-label {
+        background-image: linear-gradient(rgba(0, 0, 0, 0.55), transparent);
+        padding: 2px 8px 6px 6px;
+        color: rgb(255, 255, 255);
+        font-size: 11.5px;
+    }
+
     /* The viewer controls, as in the mockup. */
     .spl-play {
         background-image: none;
