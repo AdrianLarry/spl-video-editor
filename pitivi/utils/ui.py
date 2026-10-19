@@ -406,6 +406,38 @@ EDITOR_PERSPECTIVE_CSS = """
         background-color: rgb(46, 52, 64);
     }
 
+    /* The export dialog, as in the mockup. */
+    .spl-export,
+    .spl-export > box {
+        background-color: rgb(23, 26, 32);
+    }
+
+    .spl-export button:not(.spl-accent) {
+        background-image: none;
+        background-color: rgb(37, 42, 52);
+        border: 1px solid rgb(59, 66, 80);
+        box-shadow: none;
+        border-radius: 8px;
+    }
+
+    .spl-export entry {
+        background-color: rgb(15, 17, 21);
+        border: 1px solid rgb(59, 66, 80);
+        border-radius: 8px;
+    }
+
+    .spl-progress progress {
+        background-image: none;
+        background-color: rgb(255, 138, 91);
+        border: none;
+    }
+
+    .spl-progress trough {
+        background-image: none;
+        background-color: rgb(37, 42, 52);
+        border: none;
+    }
+
     /* The main action, as "Export video" in the mockup. */
     .spl-accent {
         background-image: none;

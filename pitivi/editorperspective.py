@@ -173,12 +173,12 @@ class EditorPerspective(Perspective, Loggable):
         self.timeline_ui.destroy()
 
     def _render_cb(self, unused_button):
-        """Shows the RenderDialog for the current project."""
-        from pitivi.render import RenderDialog
+        """Shows the dialog for exporting the video, as in the mockup."""
+        from pitivi.export import ExportDialog
 
         project = self.app.project_manager.current_project
-        dialog = RenderDialog(self.app, project)
-        dialog.window.show()
+        dialog = ExportDialog(self.app, project)
+        dialog.show()
 
     def _create_ui(self):
         """Creates the graphical interface.

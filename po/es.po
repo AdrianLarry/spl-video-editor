@@ -3119,6 +3119,94 @@ msgstr "Ver el video en pantalla completa (F11)"
 msgid "See the video in fullscreen"
 msgstr "Ver el video en pantalla completa"
 
+#: pitivi/export.py
+msgid "Creates the final file for watching and sharing. Your project does not change: to keep editing it later, use Save."
+msgstr "Crea el archivo final para mirar y compartir. Tu proyecto no cambia: para seguir editándolo después, usá Guardar."
+
+#: pitivi/export.py
+msgid "Name of the video"
+msgstr "Nombre del video"
+
+#: pitivi/export.py
+msgid "My video"
+msgstr "Mi video"
+
+#: pitivi/export.py
+msgid "Save in"
+msgstr "Guardar en"
+
+#: pitivi/export.py
+msgid "Choose the folder"
+msgstr "Elegí la carpeta"
+
+#: pitivi/export.py
+msgid "Quality"
+msgstr "Calidad"
+
+#: pitivi/export.py
+msgid "Standard"
+msgstr "Estándar"
+
+#: pitivi/export.py
+msgid "Ideal for social networks and messages. A lighter file."
+msgstr "Ideal para redes y mensajes. Archivo más liviano."
+
+#: pitivi/export.py
+msgid "High"
+msgstr "Alta"
+
+#: pitivi/export.py
+msgid "The sharpest. A bigger file, and it takes a bit longer."
+msgstr "Máxima nitidez. Archivo más grande y tarda un poco más."
+
+#: pitivi/export.py
+msgid "Format: <b>%s</b> · Duration: <b>%s</b> · Approx. size: <b>%s</b>"
+msgstr "Formato: <b>%s</b> · Duración: <b>%s</b> · Tamaño aprox.: <b>%s</b>"
+
+#: pitivi/export.py
+msgid "less than 1 MB"
+msgstr "menos de 1 MB"
+
+#: pitivi/export.py
+msgid "This computer can't create MP4 files, the video will be a WebM file."
+msgstr "Este equipo no puede crear archivos MP4: el video se va a guardar como WebM."
+
+#: pitivi/export.py
+msgid "Creating <b>%s</b> in %s. Your project does not change."
+msgstr "Creando <b>%s</b> en %s. Tu proyecto no cambia."
+
+#: pitivi/export.py
+msgid "Calculating…"
+msgstr "Calculando…"
+
+#: pitivi/export.py
+msgid "Exporting your video…"
+msgstr "Exportando tu video…"
+
+#: pitivi/export.py
+msgid "Almost done"
+msgstr "Casi listo"
+
+#: pitivi/export.py
+msgid "Open folder"
+msgstr "Abrir carpeta"
+
+#: pitivi/export.py
+msgid "Done"
+msgstr "Listo"
+
+#: pitivi/export.py
+msgid "Your video is ready"
+msgstr "Tu video está listo"
+
+#: pitivi/export.py
+msgid "The video could not be exported"
+msgstr "No se pudo exportar el video"
+
+#: pitivi/export.py
+msgid "The output file could not be created."
+msgstr "No se pudo crear el archivo."
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 
