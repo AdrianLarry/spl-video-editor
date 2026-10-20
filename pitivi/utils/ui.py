@@ -393,6 +393,7 @@ EDITOR_PERSPECTIVE_CSS = """
     .spl-panel button:not(.spl-lib-add):not(.spl-danger-text):not(.spl-seg-button):checked {
         background-color: rgba(255, 138, 91, 0.2);
         border-color: rgb(255, 138, 91);
+        box-shadow: 0 0 6px rgba(255, 138, 91, 0.45);
         color: rgb(238, 241, 245);
     }
 
@@ -480,6 +481,39 @@ EDITOR_PERSPECTIVE_CSS = """
 
     .TransitionClip:selected {
         background-color: rgba(127, 200, 204, 0.7);
+    }
+
+    /* The transition cards in the popover, as in the mockup. */
+    .spl-trans-card {
+        background-image: none;
+        background-color: rgb(26, 30, 38);
+        border: 1.5px solid rgb(59, 66, 80);
+        border-radius: 10px;
+        padding: 6px;
+        box-shadow: none;
+        outline: none;
+    }
+
+    .spl-trans-card:hover {
+        background-color: rgb(37, 43, 54);
+        border-color: rgb(100, 110, 130);
+    }
+
+    .spl-trans-card:checked,
+    .spl-trans-card:active {
+        background-color: rgba(255, 138, 91, 0.2);
+        border-color: rgb(255, 138, 91);
+        box-shadow: 0 0 8px rgba(255, 138, 91, 0.45);
+    }
+
+    .spl-trans-card:checked label,
+    .spl-trans-card:active label {
+        color: rgb(255, 255, 255);
+    }
+
+    .spl-trans-card:disabled {
+        background-color: transparent;
+        opacity: 0.4;
     }
 
     .SpacedSeparator:hover {

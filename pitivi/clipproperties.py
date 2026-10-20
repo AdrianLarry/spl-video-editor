@@ -54,9 +54,12 @@ from pitivi.effects import EffectsPropertiesManager
 from pitivi.effects import HIDDEN_EFFECTS
 from pitivi.trackerperspective import CoverObjectPopover
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.utils.blurfill import BLUR_SIGMA_META
 from pitivi.utils.blurfill import get_blur_fill
+from pitivi.utils.blurfill import get_blur_sigma
 from pitivi.utils.blurfill import is_blur_fill_effect
 from pitivi.utils.blurfill import set_blur_fill
+from pitivi.utils.blurfill import set_blur_sigma
 from pitivi.utils.blurfill import update_blur_fill
 from pitivi.utils.custom_effect_widgets import create_custom_prop_widget_cb
 from pitivi.utils.custom_effect_widgets import create_custom_widget_cb
@@ -285,14 +288,14 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
                     color_clip_source = child
 
         self.transformation_expander.set_source(video_source)
-        # The zoom is for the videos. The images are placed on whole
-        # pixels, so a slow zoom shakes, unlike the videos which move.
-        is_video = isinstance(video_source, GES.VideoUriSource) and \
-            not ges_clip.get_asset().is_image()
+        # The zoom is offered for the videos only. The slow zoom on a photo
+        # shakes, see section 5 of TRASPASO-SPL.md.
+        is_visual = (isinstance(video_source, GES.VideoUriSource) and
+                     not ges_clip.get_asset().is_image())
         # The blurred fill covers the source, which zooms.
-        if is_video and get_blur_fill(ges_clip):
-            is_video = False
-        self.zoom_expander.set_source(video_source if is_video else None)
+        if is_visual and get_blur_fill(ges_clip):
+            is_visual = False
+        self.zoom_expander.set_source(video_source if is_visual else None)
         self.speed_expander.set_clip(ges_clip if (not title_source and not color_clip_source) else None)
         self.title_expander.set_source(title_source)
         self.color_expander.set_source(color_clip_source)
@@ -1052,10 +1055,14 @@ class TransformationProperties(Gtk.Expander, Loggable):
         # Used to make sure self.__control_bindings_changed doesn't get called
         # when bindings are changed from this class
         self.__own_bindings_change = False
+        self._updating_framing_ui = False
+        self._notify_meta_id = 0
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=SPACING)
         self._framing_box = self.__create_framing_buttons()
         box.pack_start(self._framing_box, False, False, 0)
+        self.blur_box = self.__create_blur_box()
+        box.pack_start(self.blur_box, False, False, 0)
         self._orientation_box = self.__create_orientation_buttons()
         box.pack_start(self._orientation_box, False, False, 0)
         # The position and size fields are not for beginners: the clip can
@@ -1078,17 +1085,17 @@ class TransformationProperties(Gtk.Expander, Loggable):
 
     def __create_framing_buttons(self):
         """Creates the buttons to fit or fill the frame with the clip."""
-        fit_button = Gtk.Button(label=_("Fit"))
-        fit_button.set_tooltip_text(
+        self.fit_button = Gtk.ToggleButton(label=_("Fit"))
+        self.fit_button.set_tooltip_text(
             _("Show the whole image. There can be bars on the sides."))
-        fit_button.connect("clicked", self.__framing_button_clicked_cb, False)
+        self.fit_button.connect("clicked", self.__framing_button_clicked_cb, False)
 
-        fill_button = Gtk.Button(label=_("Fill"))
-        fill_button.set_tooltip_text(
+        self.fill_button = Gtk.ToggleButton(label=_("Fill"))
+        self.fill_button.set_tooltip_text(
             _("Cover the whole frame. Part of the image can be left out."))
-        fill_button.connect("clicked", self.__framing_button_clicked_cb, True)
+        self.fill_button.connect("clicked", self.__framing_button_clicked_cb, True)
 
-        self.blur_fill_button = Gtk.Button(label=_("Blurred fill"))
+        self.blur_fill_button = Gtk.ToggleButton(label=_("Blurred fill"))
         self.blur_fill_button.set_tooltip_text(
             _("Show the whole image, over a blurred copy filling the frame."))
         self.blur_fill_button.connect("clicked", self.__blur_fill_button_clicked_cb)
@@ -1097,13 +1104,117 @@ class TransformationProperties(Gtk.Expander, Loggable):
         box.get_style_context().add_class("linked")
         box.props.halign = Gtk.Align.START
         box.props.margin_start = SPACING
-        box.pack_start(fit_button, False, False, 0)
-        box.pack_start(fill_button, False, False, 0)
+        box.pack_start(self.fit_button, False, False, 0)
+        box.pack_start(self.fill_button, False, False, 0)
         box.pack_start(self.blur_fill_button, False, False, 0)
         return box
 
-    def __blur_fill_button_clicked_cb(self, unused_button):
+    def __create_blur_box(self):
+        """Creates the slider to regulate the blur of the blurred fill."""
+        blur_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        blur_box.props.margin_start = SPACING
+        blur_box.props.margin_end = SPACING
+        blur_box.props.margin_top = 2
+        blur_box.props.margin_bottom = 2
+
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        header.pack_start(Gtk.Label(label=_("Blur:"), xalign=0), True, True, 0)
+        self.blur_value_label = Gtk.Label(halign=Gtk.Align.END)
+        header.pack_end(self.blur_value_label, False, False, 0)
+        blur_box.pack_start(header, False, False, 0)
+
+        self.blur_adjustment = Gtk.Adjustment(
+            value=30, lower=5, upper=100, step_increment=1, page_increment=5, page_size=0)
+        self.blur_value_label.set_markup("<b>%d %%</b>" % round(self.blur_adjustment.props.value))
+        self.blur_scale = Gtk.Scale(
+            orientation=Gtk.Orientation.HORIZONTAL, adjustment=self.blur_adjustment)
+        self.blur_scale.set_draw_value(False)
+        self.blur_scale.set_hexpand(True)
+        self.blur_scale.connect("value-changed", self.__blur_scale_value_changed_cb)
+        blur_box.pack_start(self.blur_scale, False, False, 0)
+
+        blur_box.show_all()
+        blur_box.set_no_show_all(True)
+        blur_box.hide()
+        return blur_box
+
+    def __blur_scale_value_changed_cb(self, scale):
+        val = scale.get_value()
+        self.blur_value_label.set_markup("<b>%d %%</b>" % round(val))
+        if self._updating_framing_ui or not self.source:
+            return
+        sigma = val * 0.2
+        pipeline = self._project.pipeline if self._project else None
+        finalizing_action = CommitTimelineFinalizingAction(pipeline) if pipeline else None
+        with self.app.action_log.started("Blurred fill",
+                                         finalizing_action=finalizing_action,
+                                         mergeable=True,
+                                         toplevel=True):
+            set_blur_sigma(self.source, sigma)
+
+    def __notify_meta_cb(self, unused_source, key, unused_value):
+        if key == BLUR_SIGMA_META and not self._updating_framing_ui and self.source:
+            self._updating_framing_ui = True
+            try:
+                sigma = get_blur_sigma(self.source)
+                self.blur_adjustment.props.value = round(sigma / 0.2)
+                self.blur_value_label.set_markup("<b>%d %%</b>" % round(self.blur_adjustment.props.value))
+                clip = self.source.get_parent()
+                if clip:
+                    effect = get_blur_fill(clip)
+                    if effect:
+                        effect.set_child_property("sigma", float(sigma))
+            finally:
+                self._updating_framing_ui = False
+
+    def __update_framing_buttons(self):
+        if not self.source:
+            self._updating_framing_ui = True
+            try:
+                self.fit_button.set_active(False)
+                self.fill_button.set_active(False)
+                self.blur_fill_button.set_active(False)
+                self.blur_box.hide()
+            finally:
+                self._updating_framing_ui = False
+            return
+
         clip = self.source.get_parent()
+        has_blur = bool(clip and get_blur_fill(clip))
+
+        self._updating_framing_ui = True
+        try:
+            if has_blur:
+                self.fit_button.set_active(False)
+                self.fill_button.set_active(False)
+                self.blur_fill_button.set_active(True)
+                self.blur_box.show()
+                sigma = get_blur_sigma(self.source)
+                self.blur_adjustment.props.value = round(sigma / 0.2)
+                self.blur_value_label.set_markup("<b>%d %%</b>" % round(self.blur_adjustment.props.value))
+            else:
+                self.blur_fill_button.set_active(False)
+                self.blur_box.hide()
+                pos = self.__get_position()
+                fit_pos = self.get_framing_position(False)
+                fill_pos = self.get_framing_position(True)
+                if fit_pos and fill_pos:
+                    is_fill = (pos == fill_pos and fill_pos != fit_pos)
+                    is_fit = (pos == fit_pos)
+                else:
+                    is_fill = False
+                    is_fit = False
+                self.fit_button.set_active(is_fit)
+                self.fill_button.set_active(is_fill)
+        finally:
+            self._updating_framing_ui = False
+
+    def __blur_fill_button_clicked_cb(self, unused_button):
+        if self._updating_framing_ui or not self.source:
+            return
+        clip = self.source.get_parent()
+        if not clip:
+            return
         with self.app.action_log.started("Blurred fill",
                                          finalizing_action=CommitTimelineFinalizingAction(
                                              self._project.pipeline),
@@ -1115,6 +1226,7 @@ class TransformationProperties(Gtk.Expander, Loggable):
             if layer:
                 sync_pushes(layer)
         self.__update_keyframes_ui()
+        self.__update_framing_buttons()
         zoom_expander = getattr(self.app.gui.editor.clipconfig, "zoom_expander", None) \
             if hasattr(self.app.gui, "editor") else None
         if isinstance(zoom_expander, Gtk.Widget):
@@ -1154,7 +1266,11 @@ class TransformationProperties(Gtk.Expander, Loggable):
         return box
 
     def __orientation_button_clicked_cb(self, unused_button, turn):
+        if not self.source:
+            return
         clip = self.source.get_parent()
+        if not clip:
+            return
         orientation = get_orientation(clip)
         new_orientation = turn(orientation)
         # Keep filling the frame if it was filled, otherwise fit the clip.
@@ -1173,6 +1289,7 @@ class TransformationProperties(Gtk.Expander, Loggable):
                 self.__set_framing(self.get_framing_position(fill))
 
         self.__update_keyframes_ui()
+        self.__update_framing_buttons()
 
     def __get_position(self):
         return get_base_position(self.source)
@@ -1185,7 +1302,10 @@ class TransformationProperties(Gtk.Expander, Loggable):
                 otherwise the whole clip is shown.
         """
         # The default position fits the clip, keeping its aspect ratio.
-        position = dict(self.source.ui.default_position)
+        ui = getattr(self.source, "ui", None)
+        if not ui or not hasattr(ui, "default_position"):
+            return None
+        position = dict(ui.default_position)
         asset = self.source.get_asset()
         stream_info = asset.get_stream_info() \
             if isinstance(asset, GES.UriSourceAsset) else None
@@ -1199,7 +1319,8 @@ class TransformationProperties(Gtk.Expander, Loggable):
         """Places the source, keeping its zoom and its pushes, if any."""
         if has_motion(self.source):
             set_base_position(self.source, position)
-            layer = self.source.get_parent().get_layer()
+            clip = self.source.get_parent()
+            layer = clip.get_layer() if clip else None
             if layer:
                 sync_pushes(layer)
             return
@@ -1210,17 +1331,26 @@ class TransformationProperties(Gtk.Expander, Loggable):
             self.source.set_child_property(prop, value)
 
     def __framing_button_clicked_cb(self, unused_button, fill):
+        if self._updating_framing_ui or not self.source:
+            return
         position = self.get_framing_position(fill)
+        if not position:
+            return
         with self.app.action_log.started("Transformation framing",
                                          finalizing_action=CommitTimelineFinalizingAction(
                                              self._project.pipeline),
                                          toplevel=True):
             clip = self.source.get_parent()
-            if get_blur_fill(clip):
+            if clip and get_blur_fill(clip):
                 set_blur_fill(clip, False)
+                zoom_expander = getattr(self.app.gui.editor.clipconfig, "zoom_expander", None) \
+                    if hasattr(self.app.gui, "editor") else None
+                if isinstance(zoom_expander, Gtk.Widget):
+                    zoom_expander.set_source(self.source)
             self.__set_framing(position)
 
         self.__update_keyframes_ui()
+        self.__update_framing_buttons()
 
     def _new_project_loaded_cb(self, unused_project_manager, project):
         if self._project:
@@ -1413,6 +1543,7 @@ class TransformationProperties(Gtk.Expander, Loggable):
                     prop, self.source.ui.default_position[prop])
 
         self.__update_keyframes_ui()
+        self.__update_framing_buttons()
 
     def __get_source_property(self, prop):
         if self.__source_uses_keyframes():
@@ -1446,6 +1577,8 @@ class TransformationProperties(Gtk.Expander, Loggable):
 
     def __source_property_changed_cb(self, unused_source, unused_element, param):
         self.__update_spin_btn(param.name)
+        if param.name in ("posx", "posy", "width", "height"):
+            self.__update_framing_buttons()
 
     def __update_spin_btn(self, prop):
         assert self.source
@@ -1542,6 +1675,9 @@ class TransformationProperties(Gtk.Expander, Loggable):
 
         if self.source:
             self.source.disconnect_by_func(self.__source_property_changed_cb)
+            if self._notify_meta_id:
+                self.source.disconnect(self._notify_meta_id)
+                self._notify_meta_id = 0
             disconnect_all_by_func(self.source, self._control_bindings_changed)
 
         self.source = source
@@ -1552,8 +1688,11 @@ class TransformationProperties(Gtk.Expander, Loggable):
                 self.__update_spin_btn(prop)
             self.__update_keyframes_ui()
             self.source.connect("deep-notify", self.__source_property_changed_cb)
+            self._notify_meta_id = self.source.connect("notify-meta", self.__notify_meta_cb)
             self.source.connect("control-binding-added", self._control_bindings_changed)
             self.source.connect("control-binding-removed", self._control_bindings_changed)
+
+        self.__update_framing_buttons()
 
         # Titles and color clips always cover the whole frame, so there is
         # nothing to choose for them.

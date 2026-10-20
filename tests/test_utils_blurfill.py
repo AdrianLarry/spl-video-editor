@@ -21,7 +21,9 @@ from gi.repository import Gst
 from pitivi.utils.blurfill import ALPHA_PROPERTY
 from pitivi.utils.blurfill import blur_fill_description
 from pitivi.utils.blurfill import get_blur_fill
+from pitivi.utils.blurfill import get_blur_sigma
 from pitivi.utils.blurfill import set_blur_fill
+from pitivi.utils.blurfill import set_blur_sigma
 from pitivi.utils.fades import get_keyframes
 from pitivi.utils.formats import set_format
 from pitivi.utils.formats import VERTICAL
@@ -50,6 +52,10 @@ class BlurFillTest(common.TestCase):
         self.assertTrue(description.endswith("format=AYUV,width=1080,height=1920"))
         self.assertIsNotNone(GES.Effect.new(description))
 
+        # Custom sigma in description
+        custom_desc = blur_fill_description((800, 800), (1080, 1920), sigma=15.0)
+        self.assertIn("gaussianblur sigma=15", custom_desc)
+
     def _add_image(self, start):
         asset = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
         return self.layer.add_asset(asset, start * SECOND, 0, 3 * SECOND, GES.TrackType.UNKNOWN)
@@ -70,10 +76,19 @@ class BlurFillTest(common.TestCase):
         # The source covers the frame, the effect makes it.
         self.assertEqual(get_base_position(source), {"posx": 0, "posy": 0, "width": 1920, "height": 1080})
 
-        # Another format makes the blurred fill again.
+        # Custom blur sigma
+        set_blur_sigma(source, 12.0)
+        self.assertEqual(get_blur_sigma(source), 12.0)
+        self.assertEqual(get_blur_sigma(clip), 12.0)
+        res, sigma_val = effect.get_child_property("sigma")
+        self.assertTrue(res)
+        self.assertEqual(sigma_val, 12.0)
+
+        # Another format makes the blurred fill again, preserving sigma.
         set_format(self.app, self.project, VERTICAL)
         effect = get_blur_fill(clip)
         self.assertIn("format=AYUV,width=1080,height=1920", effect.props.bin_description)
+        self.assertIn("sigma=12", effect.props.bin_description)
         self.assertEqual(get_base_position(source)["height"], 1920)
         self.action_log.undo()
         self.assertIn("format=AYUV,width=1920,height=1080", get_blur_fill(clip).props.bin_description)

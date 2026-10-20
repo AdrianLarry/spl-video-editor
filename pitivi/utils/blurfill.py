@@ -35,11 +35,14 @@ from gi.repository import GstController
 from pitivi.clip_properties.orientation import get_orientation
 
 BLUR_FILL_META = "spl::blur-fill"
+BLUR_SIGMA_META = "spl::blur-sigma"
 
 # The size of the blurred background before it is made big, the bigger
 # side. Blurring a small image is fast, and it is blurred anyway.
 BACKGROUND_SIZE = 480
-BLUR_SIGMA = 6
+DEFAULT_BLUR_SIGMA = 6.0
+MIN_BLUR_SIGMA = 1.0
+MAX_BLUR_SIGMA = 20.0
 
 # The properties of the last element, sliding the frame.
 SHIFT_PROPERTIES = {"posx": ("GstVideoBox::left", "GstVideoBox::right"),
@@ -63,6 +66,36 @@ def get_blur_fill(clip: GES.Clip) -> Optional[GES.BaseEffect]:
     return None
 
 
+def get_blur_sigma(container: GES.MetaContainer) -> float:
+    """Returns the sigma of the blurred fill, or DEFAULT_BLUR_SIGMA."""
+    res, sigma = container.get_double(BLUR_SIGMA_META)
+    if res and sigma > 0:
+        return min(MAX_BLUR_SIGMA, max(MIN_BLUR_SIGMA, sigma))
+    if isinstance(container, GES.Clip):
+        source = container.find_track_element(None, GES.VideoSource)
+        if source:
+            return get_blur_sigma(source)
+    elif isinstance(container, GES.VideoSource):
+        clip = container.get_parent()
+        if clip:
+            res, sigma = clip.get_double(BLUR_SIGMA_META)
+            if res and sigma > 0:
+                return min(MAX_BLUR_SIGMA, max(MIN_BLUR_SIGMA, sigma))
+    return DEFAULT_BLUR_SIGMA
+
+
+def set_blur_sigma(source: GES.VideoSource, sigma: float) -> None:
+    """Sets the blur amount for the blurred fill."""
+    sigma = min(MAX_BLUR_SIGMA, max(MIN_BLUR_SIGMA, float(sigma)))
+    source.set_double(BLUR_SIGMA_META, sigma)
+    clip = source.get_parent()
+    if clip:
+        clip.set_double(BLUR_SIGMA_META, sigma)
+        effect = get_blur_fill(clip)
+        if effect:
+            effect.set_child_property("sigma", float(sigma))
+
+
 def _even(value: float) -> int:
     return max(2, round(value / 2) * 2)
 
@@ -81,7 +114,8 @@ def get_image_size(clip: GES.Clip) -> Optional[Tuple[int, int]]:
     return width, height
 
 
-def blur_fill_description(image_size: Tuple[int, int], frame_size: Tuple[int, int]) -> str:
+def blur_fill_description(image_size: Tuple[int, int], frame_size: Tuple[int, int],
+                          sigma: float = DEFAULT_BLUR_SIGMA) -> str:
     """Returns the bin description of the effect making the blurred fill."""
     image_width, image_height = image_size
     frame_width, frame_height = frame_size
@@ -107,7 +141,7 @@ def blur_fill_description(image_size: Tuple[int, int], frame_size: Tuple[int, in
             "videobox border-alpha=0 ! alpha name=spl-alpha ! "
             "capsfilter caps=video/x-raw,format=AYUV,width=%d,height=%d"
             % (cover_width, cover_height,
-               crop_x // 2, crop_x - crop_x // 2, crop_y // 2, crop_y - crop_y // 2, BLUR_SIGMA,
+               crop_x // 2, crop_x - crop_x // 2, crop_y // 2, crop_y - crop_y // 2, round(sigma),
                frame_width, frame_height,
                fit_width, fit_height,
                (frame_width - fit_width) // 2, (frame_height - fit_height) // 2,
@@ -136,7 +170,7 @@ def link_alpha(effect: GES.BaseEffect, source: GES.VideoSource) -> None:
     effect.set_control_source(control_source, ALPHA_PROPERTY, "direct")
 
 
-def set_blur_fill(clip: GES.Clip, enabled: bool) -> Optional[GES.BaseEffect]:
+def set_blur_fill(clip: GES.Clip, enabled: bool, sigma: Optional[float] = None) -> Optional[GES.BaseEffect]:
     """Adds or removes the blurred fill of the clip, returns the effect.
 
     Call `sync_pushes` on the layer after it, for the pushes.
@@ -152,14 +186,22 @@ def set_blur_fill(clip: GES.Clip, enabled: bool) -> Optional[GES.BaseEffect]:
     if not source or not source.get_track():
         return None
 
+    if sigma is None:
+        sigma = get_blur_sigma(source)
+    sigma = min(MAX_BLUR_SIGMA, max(MIN_BLUR_SIGMA, float(sigma)))
+
     frame_size = _frame_size(source)
-    description = blur_fill_description(get_image_size(clip), frame_size)
+    description = blur_fill_description(get_image_size(clip), frame_size, sigma)
     if effect and effect.props.bin_description == description:
+        effect.set_child_property("sigma", float(sigma))
         return effect
     if effect:
         clip.remove(effect)
     effect = GES.Effect.new(description)
     effect.set_boolean(BLUR_FILL_META, True)
+    effect.set_child_property("sigma", float(sigma))
+    clip.set_double(BLUR_SIGMA_META, float(sigma))
+    source.set_double(BLUR_SIGMA_META, float(sigma))
     clip.add(effect)
     # After the other effects, rotating the image or changing its colors.
     clip.set_top_effect_index(effect, 0)

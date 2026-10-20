@@ -16,8 +16,11 @@
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 """Widgets for the transitions where two clips of a layer meet."""
 import locale
+import math
 from gettext import gettext as _
 
+import cairo
+from gi.repository import Gdk
 from gi.repository import GLib
 from gi.repository import Gst
 from gi.repository import Gtk
@@ -89,6 +92,251 @@ def create_transition_button(contact: Contact) -> Gtk.Button:
     return button
 
 
+class TransitionPreview(Gtk.DrawingArea):
+    """Draws an animated or static preview of a transition between Clip A and Clip B."""
+
+    def __init__(self, kind: str, direction: str = RIGHT):
+        super().__init__()
+        self.kind = kind
+        self.direction = direction
+        self.is_hovered = False
+        self.is_selected = False
+        self.tick_id = 0
+        self.start_time = 0
+        self.connect("draw", self._draw_cb)
+
+    def set_hovered(self, hovered: bool):
+        if self.is_hovered != hovered:
+            self.is_hovered = hovered
+            self._update_animation()
+
+    def set_selected(self, selected: bool):
+        if self.is_selected != selected:
+            self.is_selected = selected
+            self._update_animation()
+
+    def set_direction(self, direction: str):
+        if self.direction != direction:
+            self.direction = direction
+            self.queue_draw()
+
+    def _update_animation(self):
+        should_animate = self.is_hovered or self.is_selected
+        if should_animate and not self.tick_id:
+            self.start_time = GLib.get_monotonic_time()
+            self.tick_id = self.add_tick_callback(self._on_tick)
+        elif not should_animate and self.tick_id:
+            self.remove_tick_callback(self.tick_id)
+            self.tick_id = 0
+            self.queue_draw()
+
+    def stop_animation(self):
+        if self.tick_id:
+            self.remove_tick_callback(self.tick_id)
+            self.tick_id = 0
+
+    def _on_tick(self, widget, frame_clock):
+        self.queue_draw()
+        return GLib.SOURCE_CONTINUE
+
+    @staticmethod
+    def _rounded_rectangle(cr, x, y, w, h, r):
+        cr.new_sub_path()
+        cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+        cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+        cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+        cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+        cr.close_path()
+
+    @staticmethod
+    def _draw_clip_a(cr, x, y, width, height, alpha=1.0):
+        if alpha <= 0 or width <= 0 or height <= 0:
+            return
+        cr.save()
+        cr.rectangle(x, y, width, height)
+        cr.clip()
+        pat = cairo.LinearGradient(x, y, x + width, y + height)
+        pat.add_color_stop_rgba(0.0, 0.298, 0.525, 0.769, alpha)
+        pat.add_color_stop_rgba(1.0, 0.165, 0.310, 0.502, alpha)
+        cr.set_source(pat)
+        cr.paint()
+        cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        cr.set_font_size(11.0)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.85 * alpha)
+        cr.move_to(x + 7, y + 15)
+        cr.show_text("A")
+        cr.restore()
+
+    @staticmethod
+    def _draw_clip_b(cr, x, y, width, height, alpha=1.0):
+        if alpha <= 0 or width <= 0 or height <= 0:
+            return
+        cr.save()
+        cr.rectangle(x, y, width, height)
+        cr.clip()
+        pat = cairo.LinearGradient(x, y, x + width, y + height)
+        pat.add_color_stop_rgba(0.0, 1.000, 0.639, 0.416, alpha)
+        pat.add_color_stop_rgba(1.0, 0.831, 0.345, 0.235, alpha)
+        cr.set_source(pat)
+        cr.paint()
+        cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        cr.set_font_size(11.0)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.85 * alpha)
+        cr.move_to(x + width - 16, y + 15)
+        cr.show_text("B")
+        cr.restore()
+
+    def _draw_cb(self, widget, cr):
+        w = widget.get_allocated_width()
+        h = widget.get_allocated_height()
+        if w <= 0 or h <= 0:
+            return False
+
+        # Outer clipping to rounded corners
+        self._rounded_rectangle(cr, 0, 0, w, h, 6.0)
+        cr.clip()
+
+        # If not animating, draw static split view (A | B)
+        if not (self.is_hovered or self.is_selected):
+            half = w / 2.0
+            self._draw_clip_a(cr, 0, 0, half, h)
+            self._draw_clip_b(cr, half, 0, w - half, h)
+            cr.set_source_rgba(0.0, 0.0, 0.0, 0.4)
+            cr.set_line_width(2.0)
+            cr.move_to(half, 0)
+            cr.line_to(half, h)
+            cr.stroke()
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.35)
+            cr.set_line_width(1.0)
+            cr.move_to(half, 0)
+            cr.line_to(half, h)
+            cr.stroke()
+            return False
+
+        # Compute animation progress (0.0 to 1.0) over a 2.4s cycle
+        now = GLib.get_monotonic_time()
+        cycle_us = 2400000.0
+        phase = ((now - self.start_time) % cycle_us) / cycle_us
+
+        if phase < 0.20:
+            t = 0.0
+        elif phase > 0.70:
+            t = 1.0
+        else:
+            p = (phase - 0.20) / 0.50
+            t = 0.5 * (1.0 - math.cos(math.pi * p))
+
+        direction = self.direction or RIGHT
+
+        if self.kind == DISSOLVE:
+            self._draw_clip_a(cr, 0, 0, w, h)
+            self._draw_clip_b(cr, 0, 0, w, h, alpha=t)
+
+        elif self.kind == FADE_TO_BLACK:
+            cr.set_source_rgb(0, 0, 0)
+            cr.paint()
+            if t < 0.5:
+                p = t / 0.5
+                self._draw_clip_a(cr, 0, 0, w, h, alpha=1.0 - p)
+            else:
+                p = (t - 0.5) / 0.5
+                self._draw_clip_b(cr, 0, 0, w, h, alpha=p)
+
+        elif self.kind == FADE_TO_WHITE:
+            if t < 0.5:
+                p = t / 0.5
+                self._draw_clip_a(cr, 0, 0, w, h)
+                cr.set_source_rgba(1.0, 1.0, 1.0, p)
+                cr.paint()
+            else:
+                p = (t - 0.5) / 0.5
+                self._draw_clip_b(cr, 0, 0, w, h)
+                cr.set_source_rgba(1.0, 1.0, 1.0, 1.0 - p)
+                cr.paint()
+
+        elif self.kind == PUSH:
+            if direction == RIGHT:
+                xa = -t * w
+                xb = (1.0 - t) * w
+                self._draw_clip_a(cr, xa, 0, w, h)
+                self._draw_clip_b(cr, xb, 0, w, h)
+                seam_x = xb
+                cr.set_source_rgba(0, 0, 0, 0.35)
+                cr.set_line_width(1.0)
+                cr.move_to(seam_x, 0)
+                cr.line_to(seam_x, h)
+                cr.stroke()
+            elif direction == LEFT:
+                xa = t * w
+                xb = -(1.0 - t) * w
+                self._draw_clip_a(cr, xa, 0, w, h)
+                self._draw_clip_b(cr, xb, 0, w, h)
+                seam_x = xb + w
+                cr.set_source_rgba(0, 0, 0, 0.35)
+                cr.set_line_width(1.0)
+                cr.move_to(seam_x, 0)
+                cr.line_to(seam_x, h)
+                cr.stroke()
+            elif direction == TOP:
+                ya = t * h
+                yb = -(1.0 - t) * h
+                self._draw_clip_a(cr, 0, ya, w, h)
+                self._draw_clip_b(cr, 0, yb, w, h)
+                seam_y = yb + h
+                cr.set_source_rgba(0, 0, 0, 0.35)
+                cr.set_line_width(1.0)
+                cr.move_to(0, seam_y)
+                cr.line_to(w, seam_y)
+                cr.stroke()
+            else:  # BOTTOM
+                ya = -t * h
+                yb = (1.0 - t) * h
+                self._draw_clip_a(cr, 0, ya, w, h)
+                self._draw_clip_b(cr, 0, yb, w, h)
+                seam_y = yb
+                cr.set_source_rgba(0, 0, 0, 0.35)
+                cr.set_line_width(1.0)
+                cr.move_to(0, seam_y)
+                cr.line_to(w, seam_y)
+                cr.stroke()
+
+        elif self.kind == SOFT_WIPE:
+            self._draw_clip_a(cr, 0, 0, w, h)
+            cr.push_group()
+            self._draw_clip_b(cr, 0, 0, w, h)
+            group = cr.pop_group()
+
+            f = 24.0  # feather width in pixels
+            if direction == RIGHT:
+                pos = (w + f) - t * (w + 2 * f)
+                mask = cairo.LinearGradient(pos, 0, pos + f, 0)
+                mask.add_color_stop_rgba(0.0, 1, 1, 1, 0.0)
+                mask.add_color_stop_rgba(1.0, 1, 1, 1, 1.0)
+            elif direction == LEFT:
+                pos = -f + t * (w + 2 * f)
+                mask = cairo.LinearGradient(pos - f, 0, pos, 0)
+                mask.add_color_stop_rgba(0.0, 1, 1, 1, 1.0)
+                mask.add_color_stop_rgba(1.0, 1, 1, 1, 0.0)
+            elif direction == TOP:
+                pos = -f + t * (h + 2 * f)
+                mask = cairo.LinearGradient(0, pos - f, 0, pos)
+                mask.add_color_stop_rgba(0.0, 1, 1, 1, 1.0)
+                mask.add_color_stop_rgba(1.0, 1, 1, 1, 0.0)
+            else:  # BOTTOM
+                pos = (h + f) - t * (h + 2 * f)
+                mask = cairo.LinearGradient(0, pos, 0, pos + f)
+                mask.add_color_stop_rgba(0.0, 1, 1, 1, 0.0)
+                mask.add_color_stop_rgba(1.0, 1, 1, 1, 1.0)
+
+            cr.set_source(group)
+            cr.mask(mask)
+
+        else:
+            self._draw_clip_a(cr, 0, 0, w, h)
+
+        return False
+
+
 class TransitionPopover(Gtk.Popover):
     """Popover for choosing the transition where two clips meet.
 
@@ -105,6 +353,7 @@ class TransitionPopover(Gtk.Popover):
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=SPACING)
         box.props.margin = SPACING
+        box.set_size_request(340, -1)
 
         title = Gtk.Label(xalign=0)
         title.set_markup("<b>%s</b>" % GLib.markup_escape_text(
@@ -118,21 +367,45 @@ class TransitionPopover(Gtk.Popover):
         subtitle.get_style_context().add_class("dim-label")
         box.pack_start(subtitle, False, False, 0)
 
-        grid = Gtk.Grid(row_spacing=PADDING, column_spacing=PADDING, column_homogeneous=True)
+        grid = Gtk.Grid(row_spacing=8, column_spacing=8, column_homogeneous=True)
         self.kind_buttons = {}
+        self.previews = {}
         group = None
         for index, (kind, name) in enumerate(KINDS):
-            button = Gtk.RadioButton.new_with_label_from_widget(group, name)
+            button = Gtk.RadioButton.new_from_widget(group)
             group = group or button
             button.set_mode(False)
+            button.get_style_context().add_class("spl-trans-card")
+            button.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+
+            card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            preview = TransitionPreview(kind, contact.direction or RIGHT)
+            preview.set_size_request(-1, 48)
+            self.previews[kind] = preview
+            card_box.pack_start(preview, True, True, 0)
+
+            label = Gtk.Label(xalign=0)
+            label.set_markup("<b>%s</b>" % GLib.markup_escape_text(name))
+            label.set_margin_start(2)
+            label.set_margin_bottom(2)
+            card_box.pack_start(label, False, False, 0)
+
+            button.add(card_box)
+
             if kind:
                 self.kind_buttons[kind] = button
                 button.connect("toggled", self.__kind_toggled_cb)
+                button.connect("enter-notify-event", self.__card_enter_cb, preview)
+                button.connect("leave-notify-event", self.__card_leave_cb, preview)
             else:
                 button.set_sensitive(False)
                 button.set_tooltip_text(_("Coming soon"))
             grid.attach(button, index % 2, index // 2, 1, 1)
-        self.kind_buttons[contact.kind or DISSOLVE].set_active(True)
+
+        active_kind = contact.kind or DISSOLVE
+        self.kind_buttons[active_kind].set_active(True)
+        self.previews[active_kind].set_selected(True)
+
         if not wipes_work(contact.clip_a, contact.clip_b) and contact.kind != SOFT_WIPE:
             # GES draws the wipes wrong with images.
             soft_wipe_button = self.kind_buttons[SOFT_WIPE]
@@ -151,6 +424,7 @@ class TransitionPopover(Gtk.Popover):
             button.set_mode(False)
             button.set_image(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.MENU))
             button.set_always_show_image(True)
+            button.connect("toggled", self.__direction_toggled_cb)
             directions_grid.attach(button, index, 0, 1, 1)
             self.direction_buttons[direction] = button
         self.direction_buttons[contact.direction or RIGHT].set_active(True)
@@ -182,6 +456,7 @@ class TransitionPopover(Gtk.Popover):
             buttons_box.pack_start(self.remove_button, False, False, 0)
         self.apply_button = Gtk.Button(label=_("Save") if contact.kind else _("Apply"))
         self.apply_button.get_style_context().add_class("suggested-action")
+        self.apply_button.get_style_context().add_class("spl-accent")
         self.apply_button.connect("clicked", self.__apply_clicked_cb)
         buttons_box.pack_end(self.apply_button, False, False, 0)
         cancel_button = Gtk.Button(label=_("Cancel"))
@@ -192,6 +467,25 @@ class TransitionPopover(Gtk.Popover):
         self.add(box)
         box.show_all()
         self.__update_direction_visibility()
+        self.connect("closed", self.__closed_cb)
+
+    def __closed_cb(self, popover):
+        for preview in self.previews.values():
+            preview.stop_animation()
+
+    def __card_enter_cb(self, button, event, preview):
+        preview.set_hovered(True)
+        return False
+
+    def __card_leave_cb(self, button, event, preview):
+        preview.set_hovered(False)
+        return False
+
+    def __direction_toggled_cb(self, button):
+        if button.get_active():
+            direction = self.get_direction()
+            for preview in self.previews.values():
+                preview.set_direction(direction)
 
     def __update_direction_visibility(self):
         self.direction_box.set_visible(self.get_kind() in DIRECTED_KINDS)
@@ -209,6 +503,10 @@ class TransitionPopover(Gtk.Popover):
         self.duration_scale.set_range(min_duration, max(max_duration, min_duration))
 
     def __kind_toggled_cb(self, button):
+        for kind, btn in self.kind_buttons.items():
+            preview = self.previews.get(kind)
+            if preview:
+                preview.set_selected(btn.get_active())
         if button.get_active() and hasattr(self, "duration_scale"):
             self.__update_duration_range()
         if button.get_active() and hasattr(self, "direction_box"):

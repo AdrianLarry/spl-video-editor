@@ -3243,6 +3243,10 @@ msgstr "Fondo desenfocado"
 msgid "Show the whole image, over a blurred copy filling the frame."
 msgstr "Muestra la imagen entera sobre una copia desenfocada que llena el cuadro."
 
+#: pitivi/clipproperties.py
+msgid "Blur:"
+msgstr "Desenfoque:"
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 

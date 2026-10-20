@@ -94,7 +94,13 @@ class TransformationPropertiesTest(common.TestCase):
                     for prop in ("posx", "posy", "width", "height")}
 
         initial_position = get_position()
-        fit_button, fill_button, unused_blur_fill_button = self.transformation_box._framing_box.get_children()
+        fit_button, fill_button, blur_fill_button = self.transformation_box._framing_box.get_children()
+        blur_box = self.transformation_box.blur_box
+
+        self.assertTrue(fit_button.get_active())
+        self.assertFalse(fill_button.get_active())
+        self.assertFalse(blur_fill_button.get_active())
+        self.assertFalse(blur_box.props.visible)
 
         fill_button.clicked()
         position = get_position()
@@ -104,12 +110,31 @@ class TransformationPropertiesTest(common.TestCase):
         self.assertTrue(position["width"] == width or position["height"] == height, position)
         self.assertEqual(position["posx"], (width - position["width"]) // 2)
         self.assertEqual(position["posy"], (height - position["height"]) // 2)
+        self.assertFalse(fit_button.get_active())
+        self.assertTrue(fill_button.get_active())
+        self.assertFalse(blur_fill_button.get_active())
+        self.assertFalse(blur_box.props.visible)
 
         self.action_log.undo()
         self.assertDictEqual(get_position(), initial_position)
 
+        blur_fill_button.clicked()
+        self.assertFalse(fit_button.get_active())
+        self.assertFalse(fill_button.get_active())
+        self.assertTrue(blur_fill_button.get_active())
+        self.assertTrue(blur_box.props.visible)
+
+        # Regulate blur slider
+        self.transformation_box.blur_scale.set_value(50)
+        from pitivi.utils.blurfill import get_blur_sigma
+        self.assertEqual(get_blur_sigma(source), 10.0)
+
         fit_button.clicked()
         self.assertDictEqual(get_position(), source.ui.default_position)
+        self.assertTrue(fit_button.get_active())
+        self.assertFalse(fill_button.get_active())
+        self.assertFalse(blur_fill_button.get_active())
+        self.assertFalse(blur_box.props.visible)
 
     @common.setup_timeline
     @common.setup_clipproperties
