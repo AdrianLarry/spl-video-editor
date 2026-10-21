@@ -149,8 +149,7 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
 
         self.speed_expander = TimeProperties(app)
         self.speed_expander.set_vexpand(False)
-        if in_devel():
-            vbox.pack_start(self.speed_expander, False, False, 0)
+        vbox.pack_start(self.speed_expander, False, False, 0)
 
         self.title_expander = TitleProperties(app)
         self.title_expander.set_vexpand(False)
@@ -296,7 +295,9 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         if is_visual and get_blur_fill(ges_clip):
             is_visual = False
         self.zoom_expander.set_source(video_source if is_visual else None)
-        self.speed_expander.set_clip(ges_clip if (not title_source and not color_clip_source) else None)
+        is_video = (isinstance(video_source, GES.VideoUriSource) and
+                    not ges_clip.get_asset().is_image())
+        self.speed_expander.set_clip(ges_clip if is_video else None)
         self.title_expander.set_source(title_source)
         self.color_expander.set_source(color_clip_source)
         self.compositing_expander.set_source(video_source)
@@ -308,7 +309,7 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
 
 
 def is_time_effect(effect):
-    return bool(effect.get_meta(TimeProperties.TIME_EFFECT_META)) and in_devel()
+    return bool(effect.get_meta(TimeProperties.TIME_EFFECT_META))
 
 
 class TimeProperties(Gtk.Expander, Loggable):
@@ -329,7 +330,7 @@ class TimeProperties(Gtk.Expander, Loggable):
         Loggable.__init__(self)
 
         self.set_expanded(True)
-        self.set_label(_("Time"))
+        self.set_label(_("Speed"))
 
         self.app = app
 

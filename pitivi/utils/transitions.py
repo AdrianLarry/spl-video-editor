@@ -34,6 +34,7 @@ record of it:
 from typing import List
 from typing import NamedTuple
 from typing import Optional
+from typing import Tuple
 
 from gi.repository import GES
 from gi.repository import Gst
@@ -42,6 +43,7 @@ from gi.repository import GstController
 from pitivi.utils.blurfill import get_blur_fill
 from pitivi.utils.blurfill import link_alpha
 from pitivi.utils.blurfill import sync_shift
+from pitivi.utils.fades import EPSILON
 from pitivi.utils.fades import Fades
 from pitivi.utils.fades import fades_keyframes
 from pitivi.utils.fades import get_keyframes
@@ -55,6 +57,7 @@ from pitivi.utils.motion import sync_motion
 DISSOLVE = "dissolve"
 FADE_TO_BLACK = "fade-to-black"
 FADE_TO_WHITE = "fade-to-white"
+BLUR = "blur"
 SOFT_WIPE = "soft-wipe"
 PUSH = "push"
 
@@ -313,6 +316,141 @@ def set_white_fades(clip: GES.Clip, fade_in: Optional[int] = None,
                                        for timestamp, image in keyframes])
 
 
+BLUR_BACKGROUND_SIZE = 640
+BLUR_MAX_SIGMA = 6.0
+BLUR_EFFECT_META = "spl::fade-blur"
+
+
+def _get_clip_media_size(clip: GES.Clip) -> Optional[Tuple[int, int]]:
+    """Returns the natural dimensions of the clip media, if available."""
+    asset = clip.get_asset()
+    if asset:
+        info = asset.get_info()
+        if info:
+            streams = info.get_video_streams()
+            if streams:
+                w, h = streams[0].get_width(), streams[0].get_height()
+                if w > 0 and h > 0:
+                    return w, h
+    source = clip.find_track_element(None, GES.VideoSource)
+    if source and source.get_track():
+        return get_frame_size(source)
+    return None
+
+
+def get_blur_bin_description(clip: GES.Clip) -> str:
+    """Returns the optimized bin description for the blur transition effect."""
+    size = _get_clip_media_size(clip)
+    if size:
+        width, height = size
+        max_dim = max(width, height)
+        if max_dim > BLUR_BACKGROUND_SIZE:
+            ratio = BLUR_BACKGROUND_SIZE / max_dim
+            small_w = max(2, round(width * ratio / 2) * 2)
+            small_h = max(2, round(height * ratio / 2) * 2)
+            return (
+                f"videoconvert ! videoscale ! "
+                f"capsfilter caps=video/x-raw,width={small_w},height={small_h} ! "
+                f"gaussianblur ! videoscale ! "
+                f"capsfilter caps=video/x-raw,width={width},height={height} ! "
+                f"videoconvert"
+            )
+    return "videoconvert ! gaussianblur ! videoconvert"
+
+
+def is_blur_effect(effect: GES.TrackElement) -> bool:
+    """Whether the effect is the one blurring the clip for a blur transition."""
+    if not isinstance(effect, GES.BaseEffect):
+        return False
+    res, value = effect.get_boolean(BLUR_EFFECT_META)
+    return bool(res and value)
+
+
+def _get_blur_effect(clip: GES.Clip) -> Optional[GES.BaseEffect]:
+    for effect in clip.get_top_effects():
+        if is_blur_effect(effect):
+            return effect
+    return None
+
+
+def get_blur_fades(clip: GES.Clip) -> Fades:
+    """Returns how long the clip blurs and unblurs at its ends."""
+    effect = _get_blur_effect(clip)
+    binding = effect.get_control_binding("sigma") if effect else None
+    if not binding:
+        return Fades(0.0, 0, 0)
+    keyframes = get_keyframes(binding.props.control_source)
+    if not keyframes or len(keyframes) < 2:
+        return Fades(0.0, 0, 0)
+
+    fade_in = 0
+    fade_out = 0
+    start_time = keyframes[0][0]
+    end_time = keyframes[-1][0]
+
+    if keyframes[0][1] > EPSILON:
+        for t, val in keyframes[1:]:
+            if abs(val) < EPSILON:
+                fade_in = t - start_time
+                break
+
+    if keyframes[-1][1] > EPSILON:
+        for t, val in reversed(keyframes[:-1]):
+            if abs(val) < EPSILON:
+                fade_out = end_time - t
+                break
+
+    return Fades(BLUR_MAX_SIGMA, fade_in, fade_out)
+
+
+def set_blur_fades(clip: GES.Clip, fade_in: Optional[int] = None,
+                   fade_out: Optional[int] = None) -> None:
+    """Changes how long the clip blurs and unblurs at its ends."""
+    fades = get_blur_fades(clip)
+    fades = Fades(BLUR_MAX_SIGMA,
+                  fades.fade_in if fade_in is None else fade_in,
+                  fades.fade_out if fade_out is None else fade_out)
+    effect = _get_blur_effect(clip)
+    if not fades.fade_in and not fades.fade_out:
+        if effect:
+            clip.remove(effect)
+        return
+
+    description = get_blur_bin_description(clip)
+    if effect and effect.props.bin_description != description:
+        clip.remove(effect)
+        effect = None
+
+    if not effect:
+        effect = GES.Effect.new(description)
+        effect.set_boolean(BLUR_EFFECT_META, True)
+        clip.add(effect)
+
+    binding = effect.get_control_binding("sigma")
+    if binding:
+        control_source = binding.props.control_source
+    else:
+        control_source = GstController.InterpolationControlSource()
+        control_source.props.mode = GstController.InterpolationMode.LINEAR
+        effect.set_control_source(control_source, "sigma", "direct-absolute")
+
+    start, end = get_source_range(effect)
+    keyframes = []
+    if fades.fade_in:
+        keyframes.append((start, BLUR_MAX_SIGMA))
+        keyframes.append((start + fades.fade_in, 0.0))
+    else:
+        keyframes.append((start, 0.0))
+
+    if fades.fade_out:
+        keyframes.append((end - fades.fade_out, 0.0))
+        keyframes.append((end, BLUR_MAX_SIGMA))
+    else:
+        keyframes.append((end, 0.0))
+
+    set_keyframes(control_source, sorted(dict(keyframes).items()))
+
+
 def get_contacts(layer: GES.Layer) -> List[Contact]:
     """Returns where the visual clips of the layer meet or overlap."""
     clips = sorted((clip for clip in layer.get_clips()
@@ -328,11 +466,16 @@ def get_contacts(layer: GES.Layer) -> List[Contact]:
             kind, direction = get_overlap_kind(clip_b)
             contacts.append(Contact(clip_a, clip_b, kind, end_a - start_b, direction))
         elif start_b == end_a:
+            blur_a = get_blur_fades(clip_a)
+            blur_b = get_blur_fades(clip_b)
             white_a = get_white_fades(clip_a)
             white_b = get_white_fades(clip_b)
             fades_a = get_image_fades(clip_a)
             fades_b = get_image_fades(clip_b)
-            if white_a.fade_out and white_b.fade_in:
+            if blur_a.fade_out and blur_b.fade_in:
+                contacts.append(Contact(clip_a, clip_b, BLUR,
+                                        blur_a.fade_out + blur_b.fade_in))
+            elif white_a.fade_out and white_b.fade_in:
                 contacts.append(Contact(clip_a, clip_b, FADE_TO_WHITE,
                                         white_a.fade_out + white_b.fade_in))
             elif fades_a and fades_b and fades_a.fade_out and fades_b.fade_in:
@@ -466,6 +609,9 @@ def remove_transition(contact: Contact) -> Contact:
     elif contact.kind == FADE_TO_WHITE:
         set_white_fades(contact.clip_a, fade_out=0)
         set_white_fades(contact.clip_b, fade_in=0)
+    elif contact.kind == BLUR:
+        set_blur_fades(contact.clip_a, fade_out=0)
+        set_blur_fades(contact.clip_b, fade_in=0)
     return Contact(contact.clip_a, contact.clip_b, None, 0)
 
 
@@ -494,6 +640,9 @@ def set_transition(contact: Contact, kind: str, duration: int,
     elif kind == FADE_TO_WHITE:
         set_white_fades(contact.clip_a, fade_out=duration // 2)
         set_white_fades(contact.clip_b, fade_in=duration - duration // 2)
+    elif kind == BLUR:
+        set_blur_fades(contact.clip_a, fade_out=duration // 2)
+        set_blur_fades(contact.clip_b, fade_in=duration - duration // 2)
     return Contact(contact.clip_a, contact.clip_b, kind, duration, direction)
 
 
@@ -512,13 +661,36 @@ def remove_transitions_of(clips) -> None:
 
 
 def remove_fades(clip_a: GES.Clip, clip_b: GES.Clip, kind: Optional[str]) -> None:
-    """Removes the fades of a fade to black or to white between the clips."""
+    """Removes the fades of a fade to black, white or blur between the clips."""
     if kind == FADE_TO_BLACK:
         set_image_fades(clip_a, fade_out=0)
         set_image_fades(clip_b, fade_in=0)
     elif kind == FADE_TO_WHITE:
         set_white_fades(clip_a, fade_out=0)
         set_white_fades(clip_b, fade_in=0)
+    elif kind == BLUR:
+        set_blur_fades(clip_a, fade_out=0)
+        set_blur_fades(clip_b, fade_in=0)
+
+
+def find_contact_for_transition(element: GES.TimelineElement) -> Optional[Contact]:
+    """Returns the Contact corresponding to a TransitionClip or VideoTransition."""
+    if isinstance(element, GES.TransitionClip):
+        clip = element
+    elif hasattr(element, "get_parent") and isinstance(element.get_parent(), GES.TransitionClip):
+        clip = element.get_parent()
+    else:
+        return None
+
+    layer = clip.get_layer()
+    if not layer:
+        return None
+
+    for contact in get_contacts(layer):
+        if contact.clip_b.props.start == clip.props.start:
+            return contact
+
+    return None
 
 
 def are_in_contact(clip_a: GES.Clip, clip_b: GES.Clip) -> bool:

@@ -159,13 +159,12 @@ GREETER_PERSPECTIVE_CSS = """
     .spl-accent {
         background-image: none;
         background-color: rgb(255, 138, 91);
-        color: rgb(29, 15, 8);
+        color: #ffffff;
         border: none;
         box-shadow: none;
         border-radius: 8px;
         font-weight: bold;
-        padding-left: 12px;
-        padding-right: 12px;
+        padding: 6px 16px;
     }
 
     .spl-accent:hover {
@@ -173,7 +172,29 @@ GREETER_PERSPECTIVE_CSS = """
     }
 
     .spl-accent label {
-        color: rgb(29, 15, 8);
+        color: #ffffff;
+        font-weight: bold;
+    }
+
+    .spl-greeter-open {
+        background-image: none;
+        background-color: rgb(37, 42, 52);
+        color: #ffffff;
+        border: 1px solid rgb(59, 66, 80);
+        box-shadow: none;
+        border-radius: 8px;
+        font-weight: bold;
+        padding: 6px 16px;
+    }
+
+    .spl-greeter-open:hover {
+        background-color: rgb(50, 56, 68);
+        border-color: rgb(80, 88, 105);
+    }
+
+    .spl-greeter-open label {
+        color: #ffffff;
+        font-weight: bold;
     }
 
     #recent_projects_listbox {
@@ -449,13 +470,12 @@ EDITOR_PERSPECTIVE_CSS = """
     .spl-accent {
         background-image: none;
         background-color: rgb(255, 138, 91);
-        color: rgb(29, 15, 8);
+        color: #ffffff;
         border: none;
         box-shadow: none;
         border-radius: 8px;
         font-weight: bold;
-        padding-left: 12px;
-        padding-right: 12px;
+        padding: 6px 16px;
     }
 
     .spl-accent:hover {
@@ -469,7 +489,8 @@ EDITOR_PERSPECTIVE_CSS = """
 
     .spl-accent label,
     .spl-accent image {
-        color: rgb(29, 15, 8);
+        color: #ffffff;
+        font-weight: bold;
     }
 
     .Clip {

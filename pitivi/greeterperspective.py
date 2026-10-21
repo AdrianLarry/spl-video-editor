@@ -285,6 +285,7 @@ class GreeterPerspective(Perspective):
         self.__new_project_button.set_action_name("greeter.new-project")
 
         self.__open_project_button = Gtk.Button.new_with_label(_("Open…"))
+        self.__open_project_button.get_style_context().add_class("spl-greeter-open")
         self.__open_project_button.set_tooltip_text(_("Open an existing project"))
         self.__open_project_button.set_action_name("greeter.open-project")
 

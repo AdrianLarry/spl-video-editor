@@ -20,14 +20,17 @@ from gi.repository import Gst
 
 from pitivi.utils.fades import get_keyframes
 from pitivi.utils.timeline import EditingContext
+from pitivi.utils.transitions import BLUR
 from pitivi.utils.transitions import BOTTOM
 from pitivi.utils.transitions import DISSOLVE
 from pitivi.utils.transitions import FADE_TO_BLACK
 from pitivi.utils.transitions import FADE_TO_WHITE
+from pitivi.utils.transitions import get_blur_fades
 from pitivi.utils.transitions import get_contacts
 from pitivi.utils.transitions import get_image_fades
 from pitivi.utils.transitions import get_max_duration
 from pitivi.utils.transitions import get_video_transition
+from pitivi.utils.transitions import is_blur_effect
 from pitivi.utils.transitions import LEFT
 from pitivi.utils.transitions import PUSH
 from pitivi.utils.transitions import RIGHT
@@ -115,6 +118,37 @@ class TransitionsTest(common.TestCase):
 
         self.action_log.undo()
         self.assertEqual(get_contacts(self.layer)[0].kind, FADE_TO_BLACK)
+
+    @common.setup_timeline
+    def test_blur(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+
+        contact, = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            contact = set_transition(contact, BLUR, SECOND)
+        # Nothing moves, the clips blur out and in.
+        self.assertEqual(clip_b.props.start, 4 * SECOND)
+        self.assertEqual(self._get_transitions(), [])
+        self.assertEqual(get_blur_fades(clip_a).fade_out, SECOND // 2)
+        self.assertEqual(get_blur_fades(clip_b).fade_in, SECOND // 2)
+        self.assertEqual(len([e for e in clip_a.get_top_effects() if is_blur_effect(e)]), 1)
+        self.assertEqual(len([e for e in clip_b.get_top_effects() if is_blur_effect(e)]), 1)
+        self.assertEqual(get_contacts(self.layer), [contact])
+        self.assertEqual(contact.kind, BLUR)
+
+        # Replaced by a dissolve.
+        with self.action_log.started("transition"):
+            contact = set_transition(contact, DISSOLVE, SECOND)
+        self.assertEqual(get_blur_fades(clip_a).fade_out, 0)
+        self.assertEqual(get_blur_fades(clip_b).fade_in, 0)
+        self.assertEqual(len([e for e in clip_a.get_top_effects() if is_blur_effect(e)]), 0)
+        self.assertEqual(len([e for e in clip_b.get_top_effects() if is_blur_effect(e)]), 0)
+        self.assertEqual(clip_b.props.start, 3 * SECOND)
+
+        self.action_log.undo()
+        self.assertEqual(get_contacts(self.layer)[0].kind, BLUR)
 
     @common.setup_timeline
     def test_trimming_keeps_the_dissolve(self):

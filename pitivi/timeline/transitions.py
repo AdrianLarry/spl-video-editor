@@ -27,33 +27,37 @@ from gi.repository import Gtk
 from gi.repository import Pango
 
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import filename_from_uri
+from pitivi.utils.transitions import BLUR
+from pitivi.utils.transitions import BOTTOM
 from pitivi.utils.transitions import Contact
 from pitivi.utils.transitions import DEFAULT_DURATION
 from pitivi.utils.transitions import DISSOLVE
 from pitivi.utils.transitions import FADE_TO_BLACK
-from pitivi.utils.transitions import BOTTOM
 from pitivi.utils.transitions import FADE_TO_WHITE
+from pitivi.utils.transitions import find_contact_for_transition
 from pitivi.utils.transitions import LEFT
+from pitivi.utils.transitions import MIN_DURATION
+from pitivi.utils.transitions import OVERLAPPING_KINDS
 from pitivi.utils.transitions import PUSH
 from pitivi.utils.transitions import RIGHT
 from pitivi.utils.transitions import SOFT_WIPE
 from pitivi.utils.transitions import TOP
 from pitivi.utils.transitions import get_max_duration
-from pitivi.utils.transitions import MIN_DURATION
 from pitivi.utils.transitions import remove_transition
 from pitivi.utils.transitions import set_transition
 from pitivi.utils.transitions import wipes_work
 from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import SPACING
 
-# The kinds offered, as in the mockup. The ones without a kind are not
-# available yet.
+# The kinds offered, as in the mockup.
 KINDS = ((DISSOLVE, _("Dissolve")),
          (SOFT_WIPE, _("Soft wipe")),
          (FADE_TO_BLACK, _("Fade to black")),
          (FADE_TO_WHITE, _("Fade to white")),
-         (PUSH, _("Slide")))
+         (PUSH, _("Slide")),
+         (BLUR, _("Blur")))
 
 # The sides the second clip appears from, with their icons.
 DIRECTIONS = ((LEFT, _("Left"), "go-next-symbolic"),
@@ -331,6 +335,32 @@ class TransitionPreview(Gtk.DrawingArea):
             cr.set_source(group)
             cr.mask(mask)
 
+        elif self.kind == BLUR:
+            if t < 0.5:
+                blur_amt = t / 0.5
+                self._draw_clip_a(cr, 0, 0, w, h)
+                if blur_amt > 0.05:
+                    radius = blur_amt * 7.0
+                    for dx, dy in ((-radius, 0), (radius, 0), (0, -radius), (0, radius),
+                                   (-radius * 0.7, -radius * 0.7), (radius * 0.7, radius * 0.7)):
+                        self._draw_clip_a(cr, dx, dy, w, h, alpha=0.15 * blur_amt)
+                    cr.save()
+                    cr.set_source_rgba(1.0, 1.0, 1.0, 0.22 * blur_amt)
+                    cr.paint()
+                    cr.restore()
+            else:
+                blur_amt = (1.0 - t) / 0.5
+                self._draw_clip_b(cr, 0, 0, w, h)
+                if blur_amt > 0.05:
+                    radius = blur_amt * 7.0
+                    for dx, dy in ((-radius, 0), (radius, 0), (0, -radius), (0, radius),
+                                   (-radius * 0.7, -radius * 0.7), (radius * 0.7, radius * 0.7)):
+                        self._draw_clip_b(cr, dx, dy, w, h, alpha=0.15 * blur_amt)
+                    cr.save()
+                    cr.set_source_rgba(1.0, 1.0, 1.0, 0.22 * blur_amt)
+                    cr.paint()
+                    cr.restore()
+
         else:
             self._draw_clip_a(cr, 0, 0, w, h)
 
@@ -541,3 +571,265 @@ class TransitionPopover(Gtk.Popover):
 
     def __remove_clicked_cb(self, unused_button):
         self.__change(lambda: remove_transition(self.contact))
+
+
+class TransitionPropertiesWidget(Gtk.ScrolledWindow, Loggable):
+    """Properties panel widget for configuring the selected transition.
+
+    Attributes:
+        app (Pitivi): The app.
+        contact (Optional[Contact]): The clips and their transition.
+    """
+
+    def __init__(self, app):
+        Gtk.ScrolledWindow.__init__(self)
+        Loggable.__init__(self)
+
+        self.app = app
+        self.contact: Optional[Contact] = None
+        self.ges_element = None
+
+        self.props.hscrollbar_policy = Gtk.PolicyType.NEVER
+        self.props.vscrollbar_policy = Gtk.PolicyType.AUTOMATIC
+
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=SPACING)
+        self.main_box.props.margin = 14
+
+        # Empty state placeholder
+        self.empty_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=SPACING)
+        self.empty_box.props.valign = Gtk.Align.CENTER
+        self.empty_box.props.vexpand = True
+        placeholder_title = Gtk.Label(label=_("No transition selected"))
+        placeholder_title.get_style_context().add_class("dim-label")
+        placeholder_desc = Gtk.Label(label=_("Select a transition on the timeline to configure it."))
+        placeholder_desc.get_style_context().add_class("dim-label")
+        placeholder_desc.set_line_wrap(True)
+        self.empty_box.pack_start(placeholder_title, False, False, 0)
+        self.empty_box.pack_start(placeholder_desc, False, False, 0)
+        self.main_box.pack_start(self.empty_box, True, True, 0)
+
+        # Content box when a transition is selected
+        self.content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=SPACING)
+        self.main_box.pack_start(self.content_box, False, False, 0)
+
+        self.title_label = Gtk.Label(xalign=0)
+        self.content_box.pack_start(self.title_label, False, False, 0)
+
+        self.subtitle_label = Gtk.Label(xalign=0)
+        self.subtitle_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.subtitle_label.set_max_width_chars(36)
+        self.subtitle_label.get_style_context().add_class("dim-label")
+        self.content_box.pack_start(self.subtitle_label, False, False, 0)
+
+        grid = Gtk.Grid(row_spacing=8, column_spacing=8, column_homogeneous=True)
+        self.kind_buttons = {}
+        self.previews = {}
+        group = None
+        for index, (kind, name) in enumerate(KINDS):
+            button = Gtk.RadioButton.new_from_widget(group)
+            group = group or button
+            button.set_mode(False)
+            button.get_style_context().add_class("spl-trans-card")
+            button.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+
+            card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            preview = TransitionPreview(kind, RIGHT)
+            preview.set_size_request(-1, 48)
+            self.previews[kind] = preview
+            card_box.pack_start(preview, True, True, 0)
+
+            label = Gtk.Label(xalign=0)
+            label.set_markup("<b>%s</b>" % GLib.markup_escape_text(name))
+            label.set_margin_start(2)
+            label.set_margin_bottom(2)
+            card_box.pack_start(label, False, False, 0)
+
+            button.add(card_box)
+
+            if kind:
+                self.kind_buttons[kind] = button
+                button.connect("toggled", self.__kind_toggled_cb)
+                button.connect("enter-notify-event", self.__card_enter_cb, preview)
+                button.connect("leave-notify-event", self.__card_leave_cb, preview)
+            else:
+                button.set_sensitive(False)
+            grid.attach(button, index % 2, index // 2, 1, 1)
+
+        self.content_box.pack_start(grid, False, False, 0)
+
+        self.direction_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
+        self.direction_box.pack_start(Gtk.Label(label=_("From"), xalign=0), False, False, 0)
+        directions_grid = Gtk.Grid(column_spacing=PADDING, column_homogeneous=True)
+        self.direction_buttons = {}
+        dir_group = None
+        for index, (direction, name, icon_name) in enumerate(DIRECTIONS):
+            button = Gtk.RadioButton.new_with_label_from_widget(dir_group, name)
+            dir_group = dir_group or button
+            button.set_mode(False)
+            button.set_image(Gtk.Image.new_from_icon_name(icon_name, Gtk.IconSize.MENU))
+            button.set_always_show_image(True)
+            button.connect("toggled", self.__direction_toggled_cb)
+            directions_grid.attach(button, index, 0, 1, 1)
+            self.direction_buttons[direction] = button
+        self.direction_box.pack_start(directions_grid, False, False, 0)
+        self.content_box.pack_start(self.direction_box, False, False, 0)
+
+        duration_box = Gtk.Box()
+        duration_box.pack_start(Gtk.Label(label=_("Duration")), False, False, 0)
+        self.duration_label = Gtk.Label()
+        duration_box.pack_end(self.duration_label, False, False, 0)
+        self.content_box.pack_start(duration_box, False, False, 0)
+
+        self.duration_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,
+                                                       MIN_DURATION / Gst.SECOND,
+                                                       MIN_DURATION / Gst.SECOND + 0.1, 0.1)
+        self.duration_scale.set_draw_value(False)
+        self.duration_scale.connect("value-changed", self.__duration_changed_cb)
+        self.content_box.pack_start(self.duration_scale, False, False, 0)
+
+        buttons_box = Gtk.Box(spacing=PADDING)
+        buttons_box.props.margin_top = 8
+        self.remove_button = Gtk.Button(label=_("Remove transition"))
+        self.remove_button.props.relief = Gtk.ReliefStyle.NONE
+        self.remove_button.get_style_context().add_class("spl-danger-text")
+        self.remove_button.connect("clicked", self.__remove_clicked_cb)
+        buttons_box.pack_start(self.remove_button, False, False, 0)
+
+        self.apply_button = Gtk.Button(label=_("Save"))
+        self.apply_button.get_style_context().add_class("suggested-action")
+        self.apply_button.get_style_context().add_class("spl-accent")
+        self.apply_button.connect("clicked", self.__apply_clicked_cb)
+        buttons_box.pack_end(self.apply_button, False, False, 0)
+        self.content_box.pack_start(buttons_box, False, False, 0)
+
+        self.add(self.main_box)
+        self.content_box.hide()
+        self.empty_box.show_all()
+
+    def activate(self, ges_timeline_element):
+        """Activates and shows properties for the selected transition."""
+        self.ges_element = ges_timeline_element
+        contact = find_contact_for_transition(ges_timeline_element)
+        if not contact:
+            self.deactivate()
+            return
+
+        self.contact = contact
+        self.title_label.set_markup("<b>%s</b>" % GLib.markup_escape_text(
+            _("Change transition") if contact.kind else _("Add transition")))
+        names = [filename_from_uri(clip.get_asset().props.id)
+                 for clip in (contact.clip_a, contact.clip_b)]
+        self.subtitle_label.set_text(_("Between «%s» and «%s»") % tuple(names))
+
+        active_kind = contact.kind or DISSOLVE
+        if active_kind in self.kind_buttons:
+            self.kind_buttons[active_kind].set_active(True)
+        for kind, prev in self.previews.items():
+            prev.set_selected(kind == active_kind)
+
+        active_dir = contact.direction or RIGHT
+        if active_dir in self.direction_buttons:
+            self.direction_buttons[active_dir].set_active(True)
+        for prev in self.previews.values():
+            prev.set_direction(active_dir)
+
+        if not wipes_work(contact.clip_a, contact.clip_b) and contact.kind != SOFT_WIPE:
+            self.kind_buttons[SOFT_WIPE].set_sensitive(False)
+        else:
+            self.kind_buttons[SOFT_WIPE].set_sensitive(True)
+
+        self.__update_duration_range()
+        duration = contact.duration if contact.kind else DEFAULT_DURATION
+        self.duration_scale.set_value(duration / Gst.SECOND)
+        self.__duration_changed_cb(self.duration_scale)
+
+        self.empty_box.hide()
+        self.content_box.show_all()
+        self.__update_direction_visibility()
+
+    def deactivate(self):
+        """Stops animations and displays empty state."""
+        for preview in self.previews.values():
+            preview.stop_animation()
+        self.contact = None
+        self.ges_element = None
+        self.content_box.hide()
+        self.empty_box.show_all()
+
+    def __card_enter_cb(self, button, event, preview):
+        preview.set_hovered(True)
+        return False
+
+    def __card_leave_cb(self, button, event, preview):
+        preview.set_hovered(False)
+        return False
+
+    def __direction_toggled_cb(self, button):
+        if button.get_active():
+            direction = self.get_direction()
+            for preview in self.previews.values():
+                preview.set_direction(direction)
+
+    def __update_direction_visibility(self):
+        self.direction_box.set_visible(self.get_kind() in DIRECTED_KINDS)
+
+    def get_direction(self):
+        for direction, button in self.direction_buttons.items():
+            if button.get_active():
+                return direction
+        return None
+
+    def get_kind(self):
+        for kind, button in self.kind_buttons.items():
+            if button.get_active():
+                return kind
+        return None
+
+    def __update_duration_range(self):
+        if not self.contact:
+            return
+        max_duration = get_max_duration(self.contact, self.get_kind()) / Gst.SECOND
+        min_duration = min(MIN_DURATION / Gst.SECOND, max_duration)
+        self.duration_scale.set_range(min_duration, max(max_duration, min_duration))
+
+    def __kind_toggled_cb(self, button):
+        for kind, btn in self.kind_buttons.items():
+            preview = self.previews.get(kind)
+            if preview:
+                preview.set_selected(btn.get_active())
+        if button.get_active() and hasattr(self, "duration_scale"):
+            self.__update_duration_range()
+        if button.get_active() and hasattr(self, "direction_box"):
+            self.__update_direction_visibility()
+
+    def __duration_changed_cb(self, scale):
+        self.duration_label.set_markup("<b>%s</b>" % GLib.markup_escape_text(
+            format_seconds(scale.get_value() * Gst.SECOND)))
+
+    def __change(self, change):
+        if not self.contact:
+            return
+        pipeline = self.app.project_manager.current_project.pipeline
+        with self.app.action_log.started("transition",
+                                         finalizing_action=CommitTimelineFinalizingAction(pipeline),
+                                         toplevel=True):
+            change()
+        layer = self.contact.clip_a.get_layer()
+        if layer and hasattr(layer, "schedule_update_gaps"):
+            layer.schedule_update_gaps()
+
+    def __apply_clicked_cb(self, unused_button):
+        if not self.contact:
+            return
+        duration = round(self.duration_scale.get_value() * 10) * Gst.SECOND // 10
+        kind = self.get_kind()
+        direction = self.get_direction()
+        self.__change(lambda: set_transition(self.contact, kind, duration, direction))
+        if kind not in OVERLAPPING_KINDS:
+            self.deactivate()
+
+    def __remove_clicked_cb(self, unused_button):
+        if not self.contact:
+            return
+        self.__change(lambda: remove_transition(self.contact))
+        self.deactivate()

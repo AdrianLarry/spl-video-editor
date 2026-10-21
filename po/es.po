@@ -2141,6 +2141,18 @@ msgid "Soft wipe"
 msgstr "Barrido suave"
 
 #: pitivi/timeline/transitions.py
+msgid "Blur"
+msgstr "Desenfoque"
+
+#: pitivi/timeline/transitions.py
+msgid "No transition selected"
+msgstr "Ninguna transición seleccionada"
+
+#: pitivi/timeline/transitions.py
+msgid "Select a transition on the timeline to configure it."
+msgstr "Seleccioná una transición en la línea de tiempo para configurarla."
+
+#: pitivi/timeline/transitions.py
 msgid "From"
 msgstr "Desde"
 

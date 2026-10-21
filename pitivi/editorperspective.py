@@ -44,7 +44,7 @@ from pitivi.settings import GlobalSettings
 from pitivi.tabsmanager import BaseTabs
 from pitivi.timeline.previewers import ThumbnailCache
 from pitivi.timeline.timeline import TimelineContainer
-from pitivi.transitions import TransitionsListWidget
+from pitivi.timeline.transitions import TransitionPropertiesWidget
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import path_from_uri
 from pitivi.utils.misc import with_build_label
@@ -242,7 +242,7 @@ class EditorPerspective(Perspective, Loggable):
         # uses it to list the effects.
         self.effectlist = EffectListWidget(self.app)
         self.clipconfig = ClipProperties(self.app, show_effects=False)
-        self.trans_list = TransitionsListWidget(self.app)
+        self.trans_list = TransitionPropertiesWidget(self.app)
         self.effects_page = self.__create_effects_page()
         self.context_tabs.append_page("Clip",
                                       self.clipconfig, Gtk.Label(label=_("Settings")))
@@ -577,6 +577,10 @@ class EditorPerspective(Perspective, Loggable):
         if isinstance(ges_clip, GES.TransitionClip):
             self.trans_list.show()
             self.context_tabs.set_current_page(1)
+            for child in ges_clip.get_children(False):
+                if isinstance(child, GES.VideoTransition):
+                    self.trans_list.activate(child)
+                    break
         elif isinstance(ges_clip, (GES.TitleClip, GES.SourceClip, GES.TestClip)):
             # Stay on the effects page if it's the current one.
             if self.context_tabs.get_current_page() == 1:

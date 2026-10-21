@@ -15,7 +15,14 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 """Tests for the transitions module."""
+from pitivi.timeline.transitions import TransitionPropertiesWidget
 from pitivi.transitions import TransitionsListWidget
+from pitivi.utils.transitions import BLUR
+from pitivi.utils.transitions import DISSOLVE
+from pitivi.utils.transitions import FADE_TO_BLACK
+from pitivi.utils.transitions import FADE_TO_WHITE
+from pitivi.utils.transitions import PUSH
+from pitivi.utils.transitions import SOFT_WIPE
 from tests import common
 
 
@@ -29,3 +36,17 @@ class TransitionsListWidgetTest(common.TestCase):
         mainloop = common.create_main_loop()
         mainloop.run(until_empty=True)
         self.assertGreater(len(widget.storemodel), 10)
+
+
+class TransitionPropertiesWidgetTest(common.TestCase):
+    """Tests for the TransitionPropertiesWidget class."""
+
+    def test_spl_transitions_offered(self):
+        """Checks all 6 SPL transitions are offered in properties panel."""
+        app = common.create_pitivi_mock()
+        widget = TransitionPropertiesWidget(app)
+        expected_kinds = {DISSOLVE, SOFT_WIPE, FADE_TO_BLACK, FADE_TO_WHITE, PUSH, BLUR}
+        self.assertEqual(set(widget.kind_buttons.keys()), expected_kinds)
+        self.assertEqual(set(widget.previews.keys()), expected_kinds)
+        self.assertTrue(widget.empty_box.get_visible())
+        self.assertFalse(widget.content_box.get_visible())
