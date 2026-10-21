@@ -18,6 +18,7 @@
 from gi.repository import GES
 from gi.repository import Gst
 
+from pitivi.utils.blurfill import set_blur_fill
 from pitivi.utils.fades import get_keyframes
 from pitivi.utils.timeline import EditingContext
 from pitivi.utils.transitions import BLUR
@@ -40,6 +41,11 @@ from pitivi.utils.transitions import get_white_fades
 from pitivi.utils.transitions import is_white_effect
 from pitivi.utils.transitions import set_transition
 from pitivi.utils.transitions import wipes_work
+from pitivi.utils.transitions import PUSH_WIPES
+from pitivi.utils.transitions import SOFT_WIPE_BORDER
+from pitivi.utils.transitions import sync_pushes
+from pitivi.utils.transitions import sync_saved_types
+from pitivi.utils.transitions import WIPES
 from tests import common
 
 SECOND = Gst.SECOND
@@ -446,16 +452,54 @@ class ImageTransitionsTest(common.TestCase):
         self.assertEqual((contact.kind, contact.direction), (PUSH, BOTTOM))
 
     @common.setup_timeline
-    def test_videos_keep_the_wipe(self):
+    def test_videos_smaller_than_the_frame(self):
         self._wait_until_project_loaded()
         asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
         clip_a = self.layer.add_asset(asset, 0, 0, 4 * SECOND, GES.TrackType.UNKNOWN)
         clip_b = self.layer.add_asset(asset, 4 * SECOND, 0, 4 * SECOND, GES.TrackType.UNKNOWN)
-        self.assertTrue(wipes_work(clip_a, clip_b))
+        # GES draws the wipes small in a corner.
+        self.assertFalse(wipes_work(clip_a, clip_b))
         contact, = get_contacts(self.layer)
         with self.action_log.started("transition"):
             set_transition(contact, PUSH, SECOND, LEFT)
-        self.assertNotEqual(get_video_transition(clip_b).get_transition_type(),
-                            GES.VideoStandardTransitionType.FADE_IN)
+        element = get_video_transition(clip_b)
+        self.assertEqual(element.get_transition_type(), GES.VideoStandardTransitionType.FADE_IN)
+
+        # The blurred fill makes the whole frame, the wipe works.
+        with self.action_log.started("fill"):
+            set_blur_fill(clip_a, True)
+            sync_pushes(self.layer)
+        self.assertTrue(wipes_work(clip_a, clip_b))
+        self.assertEqual((element.get_transition_type(), element.is_inverted()), PUSH_WIPES[LEFT])
         contact, = get_contacts(self.layer)
         self.assertEqual((contact.kind, contact.direction), (PUSH, LEFT))
+
+        # The fill of the second clip is already slid, it is uncovered
+        # where it comes in.
+        with self.action_log.started("fill"):
+            set_blur_fill(clip_b, True)
+            sync_pushes(self.layer)
+        self.assertEqual((element.get_transition_type(), element.is_inverted()), WIPES[LEFT])
+        contact, = get_contacts(self.layer)
+        self.assertEqual((contact.kind, contact.direction), (PUSH, LEFT))
+
+    @common.setup_timeline
+    def test_saved_types(self):
+        self._wait_until_project_loaded()
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
+        clip_a = self.layer.add_asset(asset, 0, 0, 4 * SECOND, GES.TrackType.UNKNOWN)
+        clip_b = self.layer.add_asset(asset, 4 * SECOND, 0, 4 * SECOND, GES.TrackType.UNKNOWN)
+        contact, = get_contacts(self.layer)
+        with self.action_log.started("transition"):
+            set_transition(contact, SOFT_WIPE, SECOND, RIGHT)
+        element = get_video_transition(clip_b)
+        transition_clip = element.get_parent()
+        self.assertEqual(transition_clip.props.vtype, GES.VideoStandardTransitionType.CROSSFADE)
+
+        # The project saves the type of the clip.
+        sync_saved_types(self.timeline)
+        self.assertEqual(transition_clip.props.vtype, WIPES[RIGHT][0])
+        self.assertEqual((element.get_transition_type(), element.is_inverted()), WIPES[RIGHT])
+        self.assertEqual(element.get_border(), SOFT_WIPE_BORDER)
+        contact, = get_contacts(self.layer)
+        self.assertEqual((contact.kind, contact.direction), (SOFT_WIPE, RIGHT))

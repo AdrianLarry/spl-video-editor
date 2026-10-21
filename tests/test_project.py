@@ -741,6 +741,11 @@ class TestExportSettings(common.TestCase):
         project.set_rendering(True)
         self.assertEqual(project.videowidth, 57)
         self.assertEqual(project.videoheight, 32)
+        # The encoder always gets the same colorimetry, the muxer does not
+        # accept a stream configured again.
+        restriction = project.video_profile.get_restriction()[0]
+        self.assertEqual(restriction["colorimetry"], "bt709")
+        self.assertEqual(restriction["chroma-site"], "mpeg2")
 
         # Pretend we're not rendering anymore.
         project.set_rendering(False)

@@ -55,6 +55,7 @@ from pitivi.utils.misc import quote_uri
 from pitivi.utils.misc import scale_pixbuf
 from pitivi.utils.misc import unicode_error_dialog
 from pitivi.utils.pipeline import Pipeline
+from pitivi.utils.transitions import sync_saved_types
 from pitivi.utils.ui import beautify_time_delta
 from pitivi.utils.ui import SPACING
 from pitivi.utils.validate import create_monitor
@@ -999,6 +1000,13 @@ class Project(Loggable, GES.Project):
             video_restrictions.set_value("width", width)
             video_restrictions.set_value("height", height)
 
+        # The clips can have different colorimetries, for example the
+        # blurred fill and the videos. The encoder is configured again when
+        # it changes and the muxer does not accept the new stream, which
+        # ends the video there.
+        video_restrictions.set_value("colorimetry", "bt709")
+        video_restrictions.set_value("chroma-site", "mpeg2")
+
         self._has_rendering_values = rendering
         self.video_profile.set_restriction(video_restrictions)
 
@@ -1748,6 +1756,7 @@ class Project(Loggable, GES.Project):
                 res = preset.save_preset(preset_name)
                 assert res
 
+        sync_saved_types(ges_timeline)
         return GES.Project.save(self, ges_timeline, uri, formatter_asset, overwrite)
 
     def use_proxies_for_assets(self, assets, scaled=False):

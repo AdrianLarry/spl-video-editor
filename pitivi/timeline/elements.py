@@ -60,6 +60,7 @@ from pitivi.utils.timeline import SELECT_ADD
 from pitivi.utils.timeline import Selected
 from pitivi.utils.timeline import UNSELECT
 from pitivi.utils.timeline import Zoomable
+from pitivi.utils.transitions import get_blur_fades
 from pitivi.utils.transitions import get_white_fades
 from pitivi.utils.ui import CURSORS
 from pitivi.utils.ui import DRAG_CURSOR
@@ -902,6 +903,10 @@ class TimelineElement(Gtk.Layout, Zoomable, Loggable):
             white_fades = get_white_fades(clip)
             self.__draw_fade_triangles(cr, white_fades.fade_in, white_fades.fade_out,
                                        (1, 1, 1, 0.6), (0, 0, 0, 0.5))
+            # The blurs of the transitions are bluish.
+            blur_fades = get_blur_fades(clip)
+            self.__draw_fade_triangles(cr, blur_fades.fade_in, blur_fades.fade_out,
+                                       (0.62, 0.72, 0.9, 0.6), (1, 1, 1, 0.6))
 
     def __draw_fade_triangles(self, cr, fade_in, fade_out, shade, line_color):
         if not fade_in and not fade_out:

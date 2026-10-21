@@ -41,6 +41,7 @@ from gi.repository import Gst
 from gi.repository import GstController
 
 from pitivi.utils.blurfill import get_blur_fill
+from pitivi.utils.blurfill import get_image_size
 from pitivi.utils.blurfill import link_alpha
 from pitivi.utils.blurfill import sync_shift
 from pitivi.utils.fades import EPSILON
@@ -138,28 +139,59 @@ class Contact(NamedTuple):
 OVERLAPPING_KINDS = (DISSOLVE, SOFT_WIPE, PUSH)
 
 
+def get_video_transition_of(clip: GES.TransitionClip) -> Optional[GES.VideoTransition]:
+    """Returns the video transition of the transition clip, if any."""
+    for element in clip.get_children(False):
+        if isinstance(element, GES.VideoTransition):
+            return element
+    return None
+
+
 def get_video_transition(clip_b: GES.Clip) -> Optional[GES.VideoTransition]:
     """Returns the video transition where the clip starts, if any."""
     layer = clip_b.get_layer()
     for clip in layer.get_clips() if layer else []:
         if isinstance(clip, GES.TransitionClip) and clip.props.start == clip_b.props.start:
-            for element in clip.get_children(False):
-                if isinstance(element, GES.VideoTransition):
-                    return element
+            element = get_video_transition_of(clip)
+            if element:
+                return element
     return None
+
+
+def covers_frame(clip: GES.Clip) -> bool:
+    """Whether the video of the clip is as big as the frame, before placed."""
+    if get_blur_fill(clip):
+        # The effect makes the whole frame.
+        return True
+    source = clip.find_track_element(None, GES.VideoSource)
+    if not source or not source.get_track():
+        return False
+    return get_image_size(clip) == get_frame_size(source)
 
 
 def wipes_work(clip_a: GES.Clip, clip_b: GES.Clip) -> bool:
     """Whether the wipes of GES are drawn right between the clips.
 
     The wipes are drawn wrong when a clip is an image: parts of the frame
-    are black and the edge is misplaced.
+    are black and the edge is misplaced. They are also drawn small in a
+    corner when neither video is as big as the frame.
     """
     for clip in (clip_a, clip_b):
         asset = clip.get_asset()
         if asset and asset.is_image():
             return False
-    return True
+    return covers_frame(clip_a) or covers_frame(clip_b)
+
+
+def _get_push_wipe(clip_b: GES.Clip, direction: str):
+    """Returns the wipe of a push, uncovering the second clip as it comes in.
+
+    The wipe applies to the image of the second clip before it is placed,
+    except when its blurred fill makes the frame already slid.
+    """
+    if get_blur_fill(clip_b):
+        return WIPES[direction]
+    return PUSH_WIPES[direction]
 
 
 def _get_push_direction(clip_b: GES.Clip) -> Optional[str]:
@@ -195,8 +227,15 @@ def get_overlap_kind(clip_b: GES.Clip):
         transition_type = element.get_transition_type()
         inverted = element.is_inverted()
         # A push has a hard edge.
-        kind = SOFT_WIPE if element.get_border() else PUSH
-        wipes = WIPES if kind == SOFT_WIPE else PUSH_WIPES
+        if not element.get_border() and transition_type != GES.VideoStandardTransitionType.CROSSFADE:
+            direction = _get_push_direction(clip_b)
+            if direction:
+                return PUSH, direction
+            wipes = PUSH_WIPES
+            kind = PUSH
+        else:
+            wipes = WIPES
+            kind = SOFT_WIPE
         for direction, wipe in wipes.items():
             if wipe == (transition_type, inverted):
                 return kind, direction
@@ -527,8 +566,10 @@ def apply_wipe(clip_a: GES.Clip, clip_b: GES.Clip, kind: str, direction: str) ->
     if kind == PUSH and not wipes_work(clip_a, clip_b):
         # Without the wipe, the second clip appears while coming in.
         transition_type, inverted = PUSH_FADE, False
+    elif kind == PUSH:
+        transition_type, inverted = _get_push_wipe(clip_b, direction)
     else:
-        transition_type, inverted = (WIPES if kind == SOFT_WIPE else PUSH_WIPES)[direction]
+        transition_type, inverted = WIPES[direction]
     border = SOFT_WIPE_BORDER if kind == SOFT_WIPE else 0
     if element.get_transition_type() != transition_type:
         element.set_transition_type(transition_type)
@@ -536,6 +577,26 @@ def apply_wipe(clip_a: GES.Clip, clip_b: GES.Clip, kind: str, direction: str) ->
         element.set_inverted(inverted)
     if element.get_border() != border:
         element.set_border(border)
+
+
+def sync_saved_types(timeline: GES.Timeline) -> None:
+    """Gives the transition clips the type of their video transitions.
+
+    The wipes and the pushes change the type of the video transition, and
+    the undo restores it there, but the project saves the type of the clip.
+    """
+    for layer in timeline.get_layers():
+        for clip in layer.get_clips():
+            if not isinstance(clip, GES.TransitionClip):
+                continue
+            element = get_video_transition_of(clip)
+            if element and clip.props.vtype != element.get_transition_type():
+                # Setting it on the clip sets it on its elements again,
+                # which resets their invert and border.
+                inverted, border = element.is_inverted(), element.get_border()
+                clip.props.vtype = element.get_transition_type()
+                element.set_inverted(inverted)
+                element.set_border(border)
 
 
 def _get_push_control_source(source: GES.VideoSource, property_name: str):
@@ -555,6 +616,9 @@ def sync_pushes(layer: GES.Layer) -> None:
     over their whole duration.
     """
     pushes = [contact for contact in get_contacts(layer) if contact.kind == PUSH]
+    for contact in pushes:
+        # The wipe depends on the sizes and the blurred fills of the clips.
+        apply_wipe(contact.clip_a, contact.clip_b, PUSH, contact.direction)
     for clip in layer.get_clips():
         source = clip.find_track_element(None, GES.VideoSource) if is_visual(clip) else None
         if not source or not source.get_track():

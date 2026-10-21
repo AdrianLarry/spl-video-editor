@@ -72,6 +72,7 @@ from pitivi.utils.motion import set_base_position
 from pitivi.utils.motion import set_zoom
 from pitivi.utils.pipeline import PipelineError
 from pitivi.utils.timeline import SELECT
+from pitivi.utils.transitions import is_blur_effect
 from pitivi.utils.transitions import is_white_effect
 from pitivi.utils.transitions import sync_pushes
 from pitivi.utils.ui import disable_scroll
@@ -704,8 +705,9 @@ class EffectProperties(Gtk.Expander, Loggable):
 
     def _create_effect_row(self, effect):
         if is_time_effect(effect) or effect.props.bin_description in HIDDEN_EFFECTS or \
-                is_white_effect(effect) or is_blur_fill_effect(effect):
-            # The fade to white of a transition is not an effect for the user.
+                is_white_effect(effect) or is_blur_effect(effect) or is_blur_fill_effect(effect):
+            # The fades to white or blurred of a transition are not effects
+            # for the user.
             return None
 
         effect_info = self.app.effects.get_info(effect)

@@ -30,6 +30,10 @@ from pitivi.clip_properties.title import FONTS
 from pitivi.clip_properties.title import TEXT_COLORS
 from pitivi.utils.misc import filename_from_uri
 from pitivi.utils.timeline import SELECT
+from pitivi.utils.transitions import BLUR
+from pitivi.utils.transitions import FADE_TO_WHITE
+from pitivi.utils.transitions import get_contacts
+from pitivi.utils.transitions import set_transition
 from tests import common
 
 
@@ -582,6 +586,25 @@ class EffectPropertiesTest(common.TestCase):
         with self.action_log.started("remove effect"):
             clip.remove(clip.get_top_effects()[0])
         self.assertEqual(clip.get_top_effects(), [])
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_transition_effects_hidden(self):
+        """Checks the effects of the blur and white transitions are not listed."""
+        effects_box = self.clipproperties.effect_expander
+        layer = self.timeline_container.ges_timeline.get_layers()[0]
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
+        clip_a = layer.add_asset(asset, 0, 0, 4 * Gst.SECOND, GES.TrackType.UNKNOWN)
+        clip_b = layer.add_asset(asset, 4 * Gst.SECOND, 0, 4 * Gst.SECOND, GES.TrackType.UNKNOWN)
+        for kind in (BLUR, FADE_TO_WHITE):
+            with self.action_log.started("transition"):
+                set_transition(get_contacts(layer)[0], kind, Gst.SECOND)
+            for clip in (clip_a, clip_b):
+                self.assertTrue(clip.get_top_effects())
+                for effect in clip.get_top_effects():
+                    self.assertIsNone(effects_box._create_effect_row(effect))
+                self.timeline_container.timeline.selection.select([clip])
+                self.assertEqual(effects_box.effects_listbox.get_children(), [])
 
 
 class TitlePropertiesTest(common.TestCase):
