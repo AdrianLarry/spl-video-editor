@@ -398,6 +398,11 @@ class TimeProperties(Gtk.Expander, Loggable):
         for power, mark in ((-2, "¼×"), (-1, "½×"), (0, "1×"), (1, "2×"), (2, "4×")):
             self.speed_slider.add_mark(power, Gtk.PositionType.BOTTOM, mark)
         self.speed_slider.connect("value-changed", self.__speed_slider_changed_cb)
+        # While dragging only the label changes, the speed is set when
+        # released: one step to undo for the whole drag.
+        self.speed_slider.connect("button-press-event", self.__speed_slider_button_cb, True)
+        self.speed_slider.connect("button-release-event", self.__speed_slider_button_cb, False)
+        self.__dragging_slider = False
         grid.attach(self.speed_slider, 0, 1, 2, 1)
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         buttons.get_style_context().add_class("linked")
@@ -424,19 +429,36 @@ class TimeProperties(Gtk.Expander, Loggable):
 
     def __update_speed_ui(self):
         rate = self._current_rate() if self._clip else 1
-        self.speed_value_label.set_markup("<b>%s×</b>" % locale.format_string("%.3g", rate))
+        self.__show_rate(rate)
         self.__updating_slider = True
         try:
             self.speed_slider.set_value(math.log2(rate))
         finally:
             self.__updating_slider = False
 
+    def __show_rate(self, rate):
+        self.speed_value_label.set_markup("<b>%s×</b>" % locale.format_string("%.3g", rate))
+
+    def __slider_rate(self):
+        # Round speeds, as 1.5 or 0.75, easy to read.
+        rate = round(2 ** self.speed_slider.get_value() * 20) / 20
+        return max(1 / 2 ** SIMPLE_RATE_POWER, min(2 ** SIMPLE_RATE_POWER, rate))
+
     def __speed_slider_changed_cb(self, slider):
         if self.__updating_slider or not self._clip:
             return
-        # Round speeds, as 1.5 or 0.75, easy to read.
-        rate = round(2 ** slider.get_value() * 20) / 20
-        self.props.rate = max(1 / 2 ** SIMPLE_RATE_POWER, min(2 ** SIMPLE_RATE_POWER, rate))
+        if self.__dragging_slider:
+            self.__show_rate(self.__slider_rate())
+        else:
+            self.props.rate = self.__slider_rate()
+
+    def __speed_slider_button_cb(self, slider, event, pressed):
+        if event.button != Gdk.BUTTON_PRIMARY:
+            return False
+        self.__dragging_slider = pressed
+        if not pressed and self._clip and not math.isclose(self.__slider_rate(), self._current_rate(), rel_tol=1e-6):
+            self.props.rate = self.__slider_rate()
+        return False
 
     def __speed_button_clicked_cb(self, unused_button, rate):
         if self._clip:
@@ -460,14 +482,17 @@ class TimeProperties(Gtk.Expander, Loggable):
         grid.attach(widget, 1, y, 1, 1)
         grid.attach(button, 2, y, 1, 1)
 
-    def __get_source_duration(self) -> Tuple[GES.Source, int]:
+    def __get_source_end(self) -> Tuple[GES.Source, int]:
+        """Returns the source ending first in its media, and its media time there."""
         assert self._clip is not None
 
         res = (None, Gst.CLOCK_TIME_NONE)
+        end = self._clip.props.start + self._clip.props.duration
         for source in self._sources.values():
-            internal_duration = self._clip.get_internal_time_from_timeline_time(source, source.props.duration)
-            if internal_duration < res[1]:
-                res = (source, internal_duration)
+            # The time is in the timeline, not from the start of the clip.
+            internal_end = self._clip.get_internal_time_from_timeline_time(source, end)
+            if internal_end < res[1]:
+                res = (source, internal_end)
 
         return res
 
@@ -527,7 +552,7 @@ class TimeProperties(Gtk.Expander, Loggable):
             self.__ensure_effects()
 
         prev_rate = self._current_rate()
-        if prev_rate == value:
+        if math.isclose(prev_rate, value, rel_tol=1e-6):
             return
 
         self.info("Setting speed to %s", value)
@@ -554,12 +579,12 @@ class TimeProperties(Gtk.Expander, Loggable):
             # transition.
             attached = bool(following) and following[0].props.start <= old_end
 
-            source, source_duration = self.__get_source_duration()
+            source, source_end = self.__get_source_end()
             for effect, propname in self._time_effects.values():
                 res = effect.set_child_property(propname, value)
                 assert res
 
-            new_end = self._clip.get_timeline_time_from_internal_time(source, self._clip.props.start + source_duration)
+            new_end = self._clip.get_timeline_time_from_internal_time(source, source_end)
 
             # We do not want to snap when setting clip speed
             project.ges_timeline.props.snapping_distance = 0
@@ -617,7 +642,9 @@ class TimeProperties(Gtk.Expander, Loggable):
 
         rate = None
         for effect, propname in self._time_effects.values():
-            if rate and rate != effect.get_child_property(propname).value:
+            # The tempo of the sound is a float, the rate of the video a
+            # double, 2.4 is not exactly the same in both.
+            if rate and not math.isclose(rate, effect.get_child_property(propname).value, rel_tol=1e-6):
                 # Do no notify before all children have they new value set
                 return
             rate = effect.get_child_property(propname).value

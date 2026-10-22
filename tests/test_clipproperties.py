@@ -1075,6 +1075,24 @@ class SpeedPropertiesTest(common.TestCase):
 
     @common.setup_project_with_clips(assets_names=["1sec_simpsons_trailer.mp4"])
     @common.setup_clipproperties
+    def test_clip_speed_not_at_start(self):
+        """Checks the speed of a clip later in the timeline, its start trimmed."""
+        clip, = self.layer.get_clips()
+        clip.props.start = 3 * Gst.SECOND
+        clip.props.in_point = Gst.SECOND // 5
+        clip.props.duration = Gst.SECOND // 2
+
+        self.timeline_container.timeline.selection.select([clip])
+        self.speed_box._speed_adjustment.props.value = 2.0
+        self.assert_applied_rate(2, 2.0, Gst.SECOND // 4)
+        self.assertEqual(clip.props.start, 3 * Gst.SECOND)
+        self.assertEqual(clip.props.in_point, Gst.SECOND // 5)
+
+        self.speed_box._speed_adjustment.props.value = 0.5
+        self.assert_applied_rate(2, 0.5, Gst.SECOND)
+
+    @common.setup_project_with_clips(assets_names=["1sec_simpsons_trailer.mp4"])
+    @common.setup_clipproperties
     def test_load_project_clip_speed(self):
         sources_count = 2
         clip, = self.layer.get_clips()
