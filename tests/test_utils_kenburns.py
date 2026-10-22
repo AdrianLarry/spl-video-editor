@@ -75,3 +75,26 @@ class ZoomFilterTest(common.TestCase):
         self.assertTrue(100 < alpha[20][10] < 155, alpha[20][10])
         self.assertTrue(100 < alpha[20][50] < 155, alpha[20][50])
         self.assertEqual(alpha[20][30], 255)
+
+    def test_photo_changed(self):
+        """Checks a still image is made smaller again when it changes."""
+        self.assertTrue(register())
+        pipeline = Gst.parse_launch(
+            "appsrc name=src caps=video/x-raw,format=BGRA,width=4,height=4,framerate=10/1 format=time ! "
+            "%s static=true ! video/x-raw,width=4,height=4 ! appsink name=sink" % ELEMENT_NAME)
+        src = pipeline.get_by_name("src")
+        sink = pipeline.get_by_name("sink")
+        pipeline.set_state(Gst.State.PLAYING)
+        try:
+            colors = []
+            for index, pixel in enumerate((b"\x00\x00\xff\xff", b"\x00\x00\xff\xff", b"\xff\x00\x00\xff")):
+                buffer = Gst.Buffer.new_wrapped(pixel * 16)
+                buffer.pts = index * Gst.SECOND // 10
+                buffer.duration = Gst.SECOND // 10
+                src.emit("push-buffer", buffer)
+                sample = sink.emit("pull-sample")
+                colors.append(sample.get_buffer().extract_dup(0, 4))
+        finally:
+            pipeline.set_state(Gst.State.NULL)
+        # Red twice, kept, then blue, made again.
+        self.assertEqual(colors, [b"\x00\x00\xff\xff", b"\x00\x00\xff\xff", b"\xff\x00\x00\xff"])

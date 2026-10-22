@@ -54,6 +54,7 @@ from pitivi.utils.fades import read_fades
 from pitivi.utils.fades import set_keyframes
 from pitivi.utils.motion import BASE_META
 from pitivi.utils.motion import get_frame_size
+from pitivi.utils.motion import get_zoom_effect
 from pitivi.utils.motion import sync_motion
 from pitivi.utils.motion import uses_zoom_effect
 
@@ -337,6 +338,7 @@ def set_white_fades(clip: GES.Clip, fade_in: Optional[int] = None,
         effect = GES.Effect.new(WHITE_EFFECT_BIN_DESCRIPTION)
         effect.set_boolean(WHITE_EFFECT_META, True)
         clip.add(effect)
+        order_effects(clip)
     # The fades of the image, 1 being the original image and 0 white.
     keyframes = fades_keyframes(fades, *get_source_range(effect))
     # The "direct" bindings map 0 and 1 to the lowest and highest values:
@@ -382,6 +384,10 @@ def _get_clip_media_size(clip: GES.Clip) -> Optional[Tuple[int, int]]:
 def get_blur_bin_description(clip: GES.Clip) -> str:
     """Returns the optimized bin description for the blur transition effect."""
     size = _get_clip_media_size(clip)
+    source = clip.find_track_element(None, GES.VideoSource)
+    if get_zoom_effect(clip) and source and source.get_track():
+        # After the effect zooming the photo, it blurs the frame.
+        size = get_frame_size(source)
     if size:
         width, height = size
         max_dim = max(width, height)
@@ -466,6 +472,7 @@ def set_blur_fades(clip: GES.Clip, fade_in: Optional[int] = None,
         effect = GES.Effect.new(description)
         effect.set_boolean(BLUR_EFFECT_META, True)
         clip.add(effect)
+        order_effects(clip)
 
     binding = effect.get_control_binding("sigma")
     if binding:
@@ -490,6 +497,22 @@ def set_blur_fades(clip: GES.Clip, fade_in: Optional[int] = None,
         keyframes.append((end, 0.0))
 
     set_keyframes(control_source, sorted(dict(keyframes).items()))
+
+
+def order_effects(clip: GES.Clip) -> None:
+    """Puts the effects of the transitions after the one zooming the photo.
+
+    The effect zooming the photo makes it smaller once, from a still image:
+    the blurs and the fades to white change it, they apply to the frame it
+    makes.
+    """
+    zoom_effect = get_zoom_effect(clip)
+    if not zoom_effect:
+        return
+    for effect in clip.get_top_effects():
+        if (is_blur_effect(effect) or is_white_effect(effect)) and \
+                clip.get_top_effect_index(effect) > clip.get_top_effect_index(zoom_effect):
+            clip.set_top_effect_index(effect, 0)
 
 
 def get_contacts(layer: GES.Layer) -> List[Contact]:
@@ -654,6 +677,10 @@ def sync_pushes(layer: GES.Layer) -> None:
             sync_shift(effect, offsets, start, end)
             segments = {}
         sync_motion(source, segments)
+        if _get_blur_effect(clip):
+            # Made again if it blurs the frame zoomed, or not anymore.
+            set_blur_fades(clip)
+        order_effects(clip)
 
 
 def _segment_offset(segment, timestamp: int) -> float:

@@ -38,6 +38,9 @@ ELEMENT_NAME = "splzoom"
 # long, as by the blurfill module.
 BACKGROUND_SIZE = 480
 
+# How many bytes of the image are compared to know whether it changed.
+SAMPLE_SIZE = 4096
+
 # cairo draws in ARGB32, which is BGRA in the memory of little endian
 # machines.
 CAPS = Gst.Caps.from_string("video/x-raw,format=BGRA")
@@ -178,14 +181,18 @@ class ZoomFilter(GstBase.BaseTransform):
         # Never bigger than the image: cairo enlarges it when drawing.
         base_width = min(in_width, max(1, round(width * max_zoom)))
         base_height = min(in_height, max(1, round(height * max_zoom)))
-        key = (in_width, in_height, base_width, base_height,
-               self.out_info.width, self.out_info.height, self.props_values["fill-sigma"])
-        if self.props_values["static"] and self.__base_key == key and self.__base:
-            return self.__base
-
         res, mapinfo = inbuf.map(Gst.MapFlags.READ)
         assert res
         try:
+            # A photo is made smaller once, but another effect before this
+            # one can change it, so a sample of its pixels tells whether it
+            # changed.
+            step = max(1, mapinfo.size // SAMPLE_SIZE) | 1
+            key = (in_width, in_height, base_width, base_height,
+                   self.out_info.width, self.out_info.height, self.props_values["fill-sigma"],
+                   bytes(mapinfo.data[::step]))
+            if self.props_values["static"] and self.__base_key == key and self.__base:
+                return self.__base
             data = bytearray(mapinfo.data)
         finally:
             inbuf.unmap(mapinfo)

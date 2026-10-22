@@ -34,6 +34,8 @@ from pitivi.utils.motion import Zoom
 from pitivi.utils.motion import ZOOM_IN
 from pitivi.utils.motion import ZOOM_OUT
 from pitivi.utils.timeline import EditingContext
+from pitivi.utils.transitions import BLUR
+from pitivi.utils.transitions import FADE_TO_WHITE
 from pitivi.utils.transitions import get_contacts
 from pitivi.utils.transitions import PUSH
 from pitivi.utils.transitions import RIGHT
@@ -283,3 +285,29 @@ class PhotoZoomTest(ZoomTest):
         self.action_log.undo()
         self.assertFalse(get_blur_fill(clip).props.active)
         self.assertEqual(get_zoom_effect(clip).get_child_property("fill-sigma"), (True, get_blur_sigma(source)))
+
+    @common.setup_timeline
+    def test_zoom_with_transition_effects(self):
+        """Checks the blurs and the fades to white apply to the zoomed frame."""
+        self._wait_until_project_loaded()
+        self._add_clip(0)
+        clip_b, source_b = self._add_clip(4)
+        self._set_zoom(source_b, Zoom(ZOOM_IN, "center", 1.5))
+        effect = get_zoom_effect(clip_b)
+        for kind in (BLUR, FADE_TO_WHITE):
+            with self.action_log.started("transition", toplevel=True):
+                set_transition(get_contacts(self.layer)[0], kind, SECOND)
+            transition_effects = [e for e in clip_b.get_top_effects() if e != effect]
+            self.assertEqual(len(transition_effects), 1, kind)
+            # Applied after the zoom, on the frame.
+            self.assertLess(clip_b.get_top_effect_index(transition_effects[0]),
+                            clip_b.get_top_effect_index(effect), kind)
+            if kind == BLUR:
+                self.assertIn("width=1920,height=1080", transition_effects[0].props.bin_description)
+
+        # Without zoom, the blur is made again for the photo.
+        with self.action_log.started("transition", toplevel=True):
+            set_transition(get_contacts(self.layer)[0], BLUR, SECOND)
+        self._set_zoom(source_b, None)
+        blur, = clip_b.get_top_effects()
+        self.assertNotIn("width=1920", blur.props.bin_description)
