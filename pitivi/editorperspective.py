@@ -626,6 +626,7 @@ class EditorPerspective(Perspective, Loggable):
         self.render_button.set_always_show_image(True)
         self.render_button.set_label(_("Export video"))
         self.render_button.get_style_context().add_class("spl-accent")
+        self.render_button.get_style_context().add_class("spl-accent-main")
         self.render_button.set_tooltip_text(
             _("Export your project as a finished movie"))
         self.render_button.set_sensitive(False)  # The only one we have to set.

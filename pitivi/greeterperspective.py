@@ -278,9 +278,13 @@ class GreeterPerspective(Perspective):
         headerbar = Gtk.HeaderBar()
         headerbar.get_style_context().add_class("spl-headerbar")
 
-        self.__new_project_button = Gtk.Button.new_with_label(_("New"))
+        self.__new_project_button = Gtk.Button.new_from_icon_name(
+            "list-add-symbolic", Gtk.IconSize.BUTTON)
+        self.__new_project_button.set_always_show_image(True)
+        self.__new_project_button.set_label(_("New"))
         # The main action, as in the editor.
         self.__new_project_button.get_style_context().add_class("spl-accent")
+        self.__new_project_button.get_style_context().add_class("spl-accent-main")
         self.__new_project_button.set_tooltip_text(_("Create a new project"))
         self.__new_project_button.set_action_name("greeter.new-project")
 

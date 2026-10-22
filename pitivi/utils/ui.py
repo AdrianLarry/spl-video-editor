@@ -156,9 +156,11 @@ GREETER_PERSPECTIVE_CSS = """
         box-shadow: none;
     }
 
+    /* The orange of the actions, deeper than the accent of the details so
+       that the white text reads, 4:1. */
     .spl-accent {
         background-image: none;
-        background-color: rgb(255, 138, 91);
+        background-color: rgb(217, 83, 30);
         color: #ffffff;
         border: none;
         box-shadow: none;
@@ -168,10 +170,21 @@ GREETER_PERSPECTIVE_CSS = """
     }
 
     .spl-accent:hover {
-        background-color: rgb(255, 164, 127);
+        background-color: rgb(232, 98, 46);
     }
 
-    .spl-accent label {
+    /* The main action of the screen, taller than the other buttons. */
+    .spl-accent-main {
+        min-height: 36px;
+        padding: 0 18px;
+    }
+
+    .spl-accent-main image {
+        margin-right: 4px;
+    }
+
+    .spl-accent label,
+    .spl-accent image {
         color: #ffffff;
         font-weight: bold;
     }
@@ -467,9 +480,11 @@ EDITOR_PERSPECTIVE_CSS = """
     }
 
     /* The main action, as "Export video" in the mockup. */
+    /* The orange of the actions, deeper than the accent of the details so
+       that the white text reads, 4:1. */
     .spl-accent {
         background-image: none;
-        background-color: rgb(255, 138, 91);
+        background-color: rgb(217, 83, 30);
         color: #ffffff;
         border: none;
         box-shadow: none;
@@ -479,11 +494,21 @@ EDITOR_PERSPECTIVE_CSS = """
     }
 
     .spl-accent:hover {
-        background-color: rgb(255, 164, 127);
+        background-color: rgb(232, 98, 46);
+    }
+
+    /* The main action of the screen, taller than the other buttons. */
+    .spl-accent-main {
+        min-height: 36px;
+        padding: 0 18px;
+    }
+
+    .spl-accent-main image {
+        margin-right: 4px;
     }
 
     .spl-accent:disabled {
-        background-color: rgb(255, 138, 91);
+        background-color: rgb(217, 83, 30);
         opacity: 0.45;
     }
 
