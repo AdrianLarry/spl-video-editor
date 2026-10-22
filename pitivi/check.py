@@ -426,6 +426,8 @@ def initialize_modules():
     require_version("GstVideo", GST_API_VERSION)
     from pitivi.utils.kenburns import register as register_zoom_element
     register_zoom_element()
+    from pitivi.utils.blurfilter import register as register_blur_element
+    register_blur_element()
 
     from pitivi.utils.misc import video_info_get_natural_height, video_info_get_natural_width, video_info_get_rotation
 

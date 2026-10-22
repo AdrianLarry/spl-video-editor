@@ -41,6 +41,7 @@ from gi.repository import Gst
 from gi.repository import GstController
 
 from pitivi.utils.blurfill import get_active_blur_fill
+from pitivi.utils.blurfilter import ELEMENT_NAME as BLUR_ELEMENT_NAME
 from pitivi.utils.blurfill import get_blur_fill
 from pitivi.utils.blurfill import get_image_size
 from pitivi.utils.blurfill import link_alpha
@@ -372,7 +373,7 @@ def set_white_fades(clip: GES.Clip, fade_in: Optional[int] = None,
                                        for timestamp, image in keyframes])
 
 
-BLUR_BACKGROUND_SIZE = 640
+# How much the clips are blurred the most, see blurfilter.REFERENCE_SIZE.
 BLUR_MAX_SIGMA = 6.0
 BLUR_EFFECT_META = "spl::fade-blur"
 
@@ -395,11 +396,11 @@ def _get_clip_media_size(clip: GES.Clip) -> Optional[Tuple[int, int]]:
 
 
 def get_blur_bin_description(clip: GES.Clip) -> str:
-    """Returns the optimized bin description for the blur transition effect.
+    """Returns the bin description of the effect of the blur transitions.
 
-    The image is blurred small and made back as big as shown, not as big as
-    the photo: making a photo of 12 megapixels in every frame was too slow
-    for the viewer.
+    It works on the image as big as shown, not as big as the photo: making
+    a photo of 12 megapixels in every frame was too slow for the viewer. Its
+    element lets the frames pass untouched where it does not blur.
     """
     size = _get_clip_media_size(clip)
     source = clip.find_track_element(None, GES.VideoSource)
@@ -414,19 +415,10 @@ def get_blur_bin_description(clip: GES.Clip) -> str:
     if size:
         width, height = size
         width, height = max(2, round(width / 2) * 2), max(2, round(height / 2) * 2)
-        max_dim = max(width, height)
-        if max_dim > BLUR_BACKGROUND_SIZE:
-            ratio = BLUR_BACKGROUND_SIZE / max_dim
-            small_w = max(2, round(width * ratio / 2) * 2)
-            small_h = max(2, round(height * ratio / 2) * 2)
-            return (
-                f"videoconvert ! videoscale ! "
-                f"capsfilter caps=video/x-raw,width={small_w},height={small_h},pixel-aspect-ratio=1/1 ! "
-                f"gaussianblur ! videoscale ! "
+        return (f"videoscale ! "
                 f"capsfilter caps=video/x-raw,width={width},height={height},pixel-aspect-ratio=1/1 ! "
-                f"videoconvert"
-            )
-    return "videoconvert ! gaussianblur ! videoconvert"
+                f"videoconvert ! video/x-raw,format=BGRA ! {BLUR_ELEMENT_NAME} ! videoconvert")
+    return f"videoconvert ! video/x-raw,format=BGRA ! {BLUR_ELEMENT_NAME} ! videoconvert"
 
 
 def is_blur_effect(effect: GES.TrackElement) -> bool:
