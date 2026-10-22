@@ -328,8 +328,10 @@ class EditingContext(GObject.Object, Loggable):
         # stop overlapping for a moment.
         from pitivi.utils.transitions import get_contacts
         from pitivi.utils.transitions import get_video_transition
+        from pitivi.utils.transitions import get_blur_fades
         from pitivi.utils.transitions import get_white_fades
         self.__white_fades = {}
+        self.__blur_fades = {}
         self.__wipes = []
         # The fades to black or white between clips, removed if the clips
         # are not in contact anymore after the edit.
@@ -344,10 +346,16 @@ class EditingContext(GObject.Object, Loggable):
                     if contact.direction and element:
                         self.__wipes.append((contact.clip_b, element.get_transition_type(),
                                              element.is_inverted(), element.get_border()))
+                    if contact.kind and contact.overlapping and not contact.direction:
+                        # A blur, its fades are removed with the overlap.
+                        self.__fade_contacts.append((contact.clip_a, contact.clip_b, contact.kind))
                 for clip in timeline_layer.get_clips():
                     fades = get_white_fades(clip)
                     if fades.fade_in or fades.fade_out:
                         self.__white_fades[clip] = fades
+                    fades = get_blur_fades(clip)
+                    if fades.fade_in or fades.fade_out:
+                        self.__blur_fades[clip] = fades
 
         self.edge = edge
         self.mode = mode
@@ -415,7 +423,10 @@ class EditingContext(GObject.Object, Loggable):
             from pitivi.utils.transitions import are_in_contact
             from pitivi.utils.transitions import remove_fades
             for clip_a, clip_b, kind in self.__fade_contacts:
-                if not are_in_contact(clip_a, clip_b):
+                end_a = clip_a.props.start + clip_a.props.duration
+                overlapping = clip_a.get_layer() and clip_a.get_layer() == clip_b.get_layer() and \
+                    clip_a.props.start < clip_b.props.start < end_a
+                if not are_in_contact(clip_a, clip_b) and not overlapping:
                     remove_fades(clip_a, clip_b, kind)
 
         if self.__actions_mark:
@@ -630,6 +641,11 @@ class EditingContext(GObject.Object, Loggable):
                 for clip, fades in self.__white_fades.items():
                     if clip.get_layer():
                         set_white_fades(clip, fades.fade_in, fades.fade_out)
+            if self.__blur_fades:
+                from pitivi.utils.transitions import set_blur_fades
+                for clip, fades in self.__blur_fades.items():
+                    if clip.get_layer():
+                        set_blur_fades(clip, fades.fade_in, fades.fade_out)
             from pitivi.utils.transitions import get_video_transition
             for clip_b, transition_type, inverted, border in self.__wipes:
                 element = get_video_transition(clip_b) if clip_b.get_layer() else None

@@ -39,6 +39,8 @@ from pitivi.utils.transitions import SOFT_WIPE
 from pitivi.utils.transitions import TOP
 from pitivi.utils.transitions import get_white_fades
 from pitivi.utils.transitions import is_white_effect
+from pitivi.utils.transitions import remove_transition
+from pitivi.utils.transitions import set_blur_fades
 from pitivi.utils.transitions import set_transition
 from pitivi.utils.transitions import wipes_work
 from pitivi.utils.transitions import PUSH_WIPES
@@ -134,17 +136,23 @@ class TransitionsTest(common.TestCase):
         contact, = get_contacts(self.layer)
         with self.action_log.started("transition"):
             contact = set_transition(contact, BLUR, SECOND)
-        # Nothing moves, the clips blur out and in.
-        self.assertEqual(clip_b.props.start, 4 * SECOND)
-        self.assertEqual(self._get_transitions(), [])
-        self.assertEqual(get_blur_fades(clip_a).fade_out, SECOND // 2)
-        self.assertEqual(get_blur_fades(clip_b).fade_in, SECOND // 2)
+        # The clips overlap as for a dissolve, both blurred.
+        self.assertEqual(clip_b.props.start, 3 * SECOND)
+        self.assertEqual(self._get_transitions(), [(3, 1)])
+        self.assertEqual(get_blur_fades(clip_a).fade_out, SECOND)
+        self.assertEqual(get_blur_fades(clip_b).fade_in, SECOND)
         self.assertEqual(len([e for e in clip_a.get_top_effects() if is_blur_effect(e)]), 1)
         self.assertEqual(len([e for e in clip_b.get_top_effects() if is_blur_effect(e)]), 1)
         self.assertEqual(get_contacts(self.layer), [contact])
         self.assertEqual(contact.kind, BLUR)
+        self.assertTrue(contact.overlapping)
+        # The most blurred in the middle: the first clip from it, the
+        # second one until it.
+        blur_a = [e for e in clip_a.get_top_effects() if is_blur_effect(e)][0]
+        keyframes = get_keyframes(blur_a.get_control_binding("sigma").props.control_source)
+        self.assertEqual([(t / SECOND, v) for t, v in keyframes][-3:], [(3, 0), (3.5, 6), (4, 6)])
 
-        # Replaced by a dissolve.
+        # Replaced by a dissolve, the blurs go.
         with self.action_log.started("transition"):
             contact = set_transition(contact, DISSOLVE, SECOND)
         self.assertEqual(get_blur_fades(clip_a).fade_out, 0)
@@ -155,6 +163,51 @@ class TransitionsTest(common.TestCase):
 
         self.action_log.undo()
         self.assertEqual(get_contacts(self.layer)[0].kind, BLUR)
+
+        # Removed, the clips meet again.
+        with self.action_log.started("transition"):
+            remove_transition(get_contacts(self.layer)[0])
+        self.assertEqual(clip_b.props.start, 4 * SECOND)
+        self.assertEqual(get_blur_fades(clip_a).fade_out, 0)
+        self.assertIsNone(get_contacts(self.layer)[0].kind)
+
+    @common.setup_timeline
+    def test_blur_of_older_projects(self):
+        """Checks the blurs between clips meeting are still found."""
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+        with self.action_log.started("blur"):
+            set_blur_fades(clip_a, fade_out=SECOND // 2)
+            set_blur_fades(clip_b, fade_in=SECOND // 2)
+        contact, = get_contacts(self.layer)
+        self.assertEqual((contact.kind, contact.duration), (BLUR, SECOND))
+        self.assertFalse(contact.overlapping)
+
+        # Replaced by the blur which overlaps.
+        with self.action_log.started("transition"):
+            set_transition(contact, BLUR, SECOND)
+        contact, = get_contacts(self.layer)
+        self.assertEqual((contact.kind, contact.duration), (BLUR, SECOND))
+        self.assertEqual(clip_b.props.start, 3 * SECOND)
+
+    @common.setup_timeline
+    def test_moving_away_removes_the_blur(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        clip_b = self._add_clip(4)
+        with self.action_log.started("transition"):
+            set_transition(get_contacts(self.layer)[0], BLUR, SECOND)
+
+        with self.action_log.started("move"):
+            context = EditingContext(clip_b, self.timeline, GES.EditMode.EDIT_NORMAL,
+                                     GES.Edge.EDGE_NONE, self.app)
+            context.edit_to(6 * SECOND, self.layer)
+            context.finish()
+        # Apart, with a gap: no transition and no blur left.
+        self.assertEqual(get_contacts(self.layer), [])
+        self.assertEqual(get_blur_fades(clip_a).fade_out, 0)
+        self.assertEqual(get_blur_fades(clip_b).fade_in, 0)
 
     @common.setup_timeline
     def test_trimming_keeps_the_dissolve(self):

@@ -299,6 +299,17 @@ class TransitionPreview(Gtk.DrawingArea):
         cr.show_text("B")
         cr.restore()
 
+    @staticmethod
+    def _draw_blurred(cr, draw_clip, w, h, blur_amt, alpha):
+        """Draws a clip blurred by copies around it."""
+        draw_clip(cr, 0, 0, w, h, alpha=alpha)
+        if blur_amt <= 0.05:
+            return
+        radius = blur_amt * 7.0
+        for dx, dy in ((-radius, 0), (radius, 0), (0, -radius), (0, radius),
+                       (-radius * 0.7, -radius * 0.7), (radius * 0.7, radius * 0.7)):
+            draw_clip(cr, dx, dy, w, h, alpha=0.15 * blur_amt * alpha)
+
     def _draw_cb(self, widget, cr):
         w = widget.get_allocated_width()
         h = widget.get_allocated_height()
@@ -445,30 +456,10 @@ class TransitionPreview(Gtk.DrawingArea):
             cr.mask(mask)
 
         elif self.kind == BLUR:
-            if t < 0.5:
-                blur_amt = t / 0.5
-                self._draw_clip_a(cr, 0, 0, w, h)
-                if blur_amt > 0.05:
-                    radius = blur_amt * 7.0
-                    for dx, dy in ((-radius, 0), (radius, 0), (0, -radius), (0, radius),
-                                   (-radius * 0.7, -radius * 0.7), (radius * 0.7, radius * 0.7)):
-                        self._draw_clip_a(cr, dx, dy, w, h, alpha=0.15 * blur_amt)
-                    cr.save()
-                    cr.set_source_rgba(1.0, 1.0, 1.0, 0.22 * blur_amt)
-                    cr.paint()
-                    cr.restore()
-            else:
-                blur_amt = (1.0 - t) / 0.5
-                self._draw_clip_b(cr, 0, 0, w, h)
-                if blur_amt > 0.05:
-                    radius = blur_amt * 7.0
-                    for dx, dy in ((-radius, 0), (radius, 0), (0, -radius), (0, radius),
-                                   (-radius * 0.7, -radius * 0.7), (radius * 0.7, radius * 0.7)):
-                        self._draw_clip_b(cr, dx, dy, w, h, alpha=0.15 * blur_amt)
-                    cr.save()
-                    cr.set_source_rgba(1.0, 1.0, 1.0, 0.22 * blur_amt)
-                    cr.paint()
-                    cr.restore()
+            # Both clips mixed as in a dissolve, the most blurred in the
+            # middle: the first one from the middle, the second one until it.
+            self._draw_blurred(cr, self._draw_clip_a, w, h, min(1.0, t * 2), 1.0)
+            self._draw_blurred(cr, self._draw_clip_b, w, h, min(1.0, (1.0 - t) * 2), t)
 
         else:
             self._draw_clip_a(cr, 0, 0, w, h)

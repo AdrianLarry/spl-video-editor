@@ -54,6 +54,7 @@ from pitivi.utils.fades import read_fades
 from pitivi.utils.fades import set_keyframes
 from pitivi.utils.motion import BASE_META
 from pitivi.utils.motion import get_frame_size
+from pitivi.utils.motion import get_base_position
 from pitivi.utils.motion import get_zoom_effect
 from pitivi.utils.motion import sync_motion
 from pitivi.utils.motion import uses_zoom_effect
@@ -131,15 +132,23 @@ class Contact(NamedTuple):
     direction: Optional[str] = None
 
     @property
+    def overlapping(self) -> bool:
+        """Whether the clips overlap, as for a dissolve.
+
+        The blurs of older projects are between clips meeting.
+        """
+        return self.clip_b.props.start < self.clip_a.props.start + self.clip_a.props.duration
+
+    @property
     def position(self) -> int:
         """The time in the middle of the transition, or where the clips meet."""
-        if self.kind in OVERLAPPING_KINDS:
+        if self.overlapping:
             return self.clip_b.props.start + self.duration // 2
         return self.clip_b.props.start
 
 
 # The kinds for which the clips overlap.
-OVERLAPPING_KINDS = (DISSOLVE, SOFT_WIPE, PUSH)
+OVERLAPPING_KINDS = (DISSOLVE, SOFT_WIPE, PUSH, BLUR)
 
 
 def get_video_transition_of(clip: GES.TransitionClip) -> Optional[GES.VideoTransition]:
@@ -224,6 +233,10 @@ def get_overlap_kind(clip_b: GES.Clip):
     """Returns the kind and direction of the transition where the clip starts."""
     element = get_video_transition(clip_b)
     if element:
+        if element.get_transition_type() == GES.VideoStandardTransitionType.CROSSFADE and \
+                get_blur_fades(clip_b).fade_in:
+            # A dissolve of the clips blurred around the middle.
+            return BLUR, None
         if element.get_transition_type() == PUSH_FADE:
             # A push where the second clip appears while coming in.
             return PUSH, _get_push_direction(clip_b) or RIGHT
@@ -382,14 +395,25 @@ def _get_clip_media_size(clip: GES.Clip) -> Optional[Tuple[int, int]]:
 
 
 def get_blur_bin_description(clip: GES.Clip) -> str:
-    """Returns the optimized bin description for the blur transition effect."""
+    """Returns the optimized bin description for the blur transition effect.
+
+    The image is blurred small and made back as big as shown, not as big as
+    the photo: making a photo of 12 megapixels in every frame was too slow
+    for the viewer.
+    """
     size = _get_clip_media_size(clip)
     source = clip.find_track_element(None, GES.VideoSource)
-    if get_zoom_effect(clip) and source and source.get_track():
-        # After the effect zooming the photo, it blurs the frame.
-        size = get_frame_size(source)
+    if source and source.get_track():
+        if get_zoom_effect(clip):
+            # After the effect zooming the photo, it blurs the frame.
+            size = get_frame_size(source)
+        elif size:
+            shown = get_base_position(source)
+            if 0 < shown["width"] * shown["height"] < size[0] * size[1]:
+                size = (shown["width"], shown["height"])
     if size:
         width, height = size
+        width, height = max(2, round(width / 2) * 2), max(2, round(height / 2) * 2)
         max_dim = max(width, height)
         if max_dim > BLUR_BACKGROUND_SIZE:
             ratio = BLUR_BACKGROUND_SIZE / max_dim
@@ -397,9 +421,9 @@ def get_blur_bin_description(clip: GES.Clip) -> str:
             small_h = max(2, round(height * ratio / 2) * 2)
             return (
                 f"videoconvert ! videoscale ! "
-                f"capsfilter caps=video/x-raw,width={small_w},height={small_h} ! "
+                f"capsfilter caps=video/x-raw,width={small_w},height={small_h},pixel-aspect-ratio=1/1 ! "
                 f"gaussianblur ! videoscale ! "
-                f"capsfilter caps=video/x-raw,width={width},height={height} ! "
+                f"capsfilter caps=video/x-raw,width={width},height={height},pixel-aspect-ratio=1/1 ! "
                 f"videoconvert"
             )
     return "videoconvert ! gaussianblur ! videoconvert"
@@ -483,15 +507,19 @@ def set_blur_fades(clip: GES.Clip, fade_in: Optional[int] = None,
         effect.set_control_source(control_source, "sigma", "direct-absolute")
 
     start, end = get_source_range(effect)
+    # In a blur transition the clips overlap: the first one is the most
+    # blurred from the middle, and the second one until the middle.
     keyframes = []
     if fades.fade_in:
         keyframes.append((start, BLUR_MAX_SIGMA))
+        keyframes.append((start + fades.fade_in // 2, BLUR_MAX_SIGMA))
         keyframes.append((start + fades.fade_in, 0.0))
     else:
         keyframes.append((start, 0.0))
 
     if fades.fade_out:
         keyframes.append((end - fades.fade_out, 0.0))
+        keyframes.append((end - fades.fade_out // 2, BLUR_MAX_SIGMA))
         keyframes.append((end, BLUR_MAX_SIGMA))
     else:
         keyframes.append((end, 0.0))
@@ -553,7 +581,7 @@ def get_contacts(layer: GES.Layer) -> List[Contact]:
 def get_max_duration(contact: Contact, kind: str) -> int:
     """Returns the longest transition of the kind the clips allow."""
     shortest = min(contact.clip_a.props.duration, contact.clip_b.props.duration)
-    if contact.kind in OVERLAPPING_KINDS:
+    if contact.kind and contact.overlapping:
         # The clips overlap, they get back their length without it.
         shortest += contact.duration
     if kind in OVERLAPPING_KINDS:
@@ -702,7 +730,10 @@ def _segment_offset(segment, timestamp: int) -> float:
 
 def remove_transition(contact: Contact) -> Contact:
     """Removes the transition between the clips, returns the contact."""
-    if contact.kind in OVERLAPPING_KINDS:
+    if contact.kind == BLUR:
+        set_blur_fades(contact.clip_a, fade_out=0)
+        set_blur_fades(contact.clip_b, fade_in=0)
+    if contact.kind in OVERLAPPING_KINDS and contact.overlapping:
         # GES removes the transition when the clips stop overlapping.
         _shift_following(contact, contact.duration)
         if contact.kind == PUSH:
@@ -713,9 +744,6 @@ def remove_transition(contact: Contact) -> Contact:
     elif contact.kind == FADE_TO_WHITE:
         set_white_fades(contact.clip_a, fade_out=0)
         set_white_fades(contact.clip_b, fade_in=0)
-    elif contact.kind == BLUR:
-        set_blur_fades(contact.clip_a, fade_out=0)
-        set_blur_fades(contact.clip_b, fade_in=0)
     return Contact(contact.clip_a, contact.clip_b, None, 0)
 
 
@@ -738,15 +766,16 @@ def set_transition(contact: Contact, kind: str, duration: int,
                 sync_pushes(contact.clip_b.get_layer())
         else:
             direction = None
+        if kind == BLUR:
+            # Both blurred the most in the middle, mixed as in a dissolve.
+            set_blur_fades(contact.clip_a, fade_out=duration)
+            set_blur_fades(contact.clip_b, fade_in=duration)
     elif kind == FADE_TO_BLACK:
         set_image_fades(contact.clip_a, fade_out=duration // 2)
         set_image_fades(contact.clip_b, fade_in=duration - duration // 2)
     elif kind == FADE_TO_WHITE:
         set_white_fades(contact.clip_a, fade_out=duration // 2)
         set_white_fades(contact.clip_b, fade_in=duration - duration // 2)
-    elif kind == BLUR:
-        set_blur_fades(contact.clip_a, fade_out=duration // 2)
-        set_blur_fades(contact.clip_b, fade_in=duration - duration // 2)
     return Contact(contact.clip_a, contact.clip_b, kind, duration, direction)
 
 
