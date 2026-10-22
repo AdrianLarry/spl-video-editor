@@ -89,6 +89,35 @@ def _set_needed(effect: GES.BaseEffect, needed: bool) -> None:
         effect.props.active = needed
 
 
+def is_blur_fill_needed(clip: GES.Clip) -> bool:
+    """Whether the image of the clip leaves room for its blurred fill."""
+    source = clip.find_track_element(None, GES.VideoSource)
+    if not source or not source.get_track():
+        return False
+    return is_fill_needed(get_image_size(clip), _frame_size(source))
+
+
+def set_blur_fill_active(clip: GES.Clip, active: bool) -> None:
+    """Makes the effect of the blurred fill active or not, if any.
+
+    It is inactive when not needed, or when the effect zooming the photo
+    makes the fill.
+    """
+    effect = get_blur_fill(clip)
+    if effect:
+        _set_needed(effect, active)
+
+
+def get_fit_rect(clip: GES.Clip) -> Tuple[float, float, float, float]:
+    """Returns where the image of the clip fits the frame: x, y, width, height."""
+    source = clip.find_track_element(None, GES.VideoSource)
+    image_width, image_height = get_image_size(clip)
+    frame_width, frame_height = _frame_size(source)
+    fit = min(frame_width / image_width, frame_height / image_height)
+    width, height = image_width * fit, image_height * fit
+    return (frame_width - width) / 2, (frame_height - height) / 2, width, height
+
+
 def get_blur_sigma(container: GES.MetaContainer) -> float:
     """Returns the sigma of the blurred fill, or DEFAULT_BLUR_SIGMA."""
     res, sigma = container.get_double(BLUR_SIGMA_META)
@@ -117,6 +146,11 @@ def set_blur_sigma(source: GES.VideoSource, sigma: float) -> None:
         effect = get_blur_fill(clip)
         if effect:
             effect.set_child_property("sigma", float(sigma))
+        from pitivi.utils.motion import get_zoom_effect  # pylint: disable=import-outside-toplevel
+        zoom_effect = get_zoom_effect(clip)
+        if zoom_effect and zoom_effect.get_child_property("fill-sigma")[1]:
+            # The effect zooming the photo makes its fill.
+            zoom_effect.set_child_property("fill-sigma", float(sigma))
 
 
 def _even(value: float) -> int:

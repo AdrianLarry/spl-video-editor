@@ -31,7 +31,9 @@ from pitivi.undo.base import UndoableAction
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.blurfill import get_blur_fill
 from pitivi.utils.blurfill import update_blur_fill
-from pitivi.utils.transitions import PUSH_BASE_META
+from pitivi.utils.motion import get_base_position
+from pitivi.utils.motion import is_animated_by_user
+from pitivi.utils.motion import set_base_position
 from pitivi.utils.transitions import sync_pushes
 
 HORIZONTAL = "horizontal"
@@ -134,26 +136,14 @@ def get_framed_position(framing: Tuple[str, float, float], old_position: Dict[st
 
 def _get_position(source):
     """Returns the position of the source, None if animated by the user."""
-    position = {}
-    for prop in POSITION_PROPERTIES:
-        res, base = source.get_int(PUSH_BASE_META % prop)
-        if source.get_control_binding(prop):
-            if not res:
-                return None
-            # Animated for a push, the position is the one around it.
-            position[prop] = base
-        else:
-            position[prop] = source.get_child_property(prop)[1]
-    return position
+    if is_animated_by_user(source):
+        return None
+    # When moving, the position is the one around which it moves.
+    return get_base_position(source)
 
 
 def _set_position(source, position):
-    for prop, value in position.items():
-        res, unused_base = source.get_int(PUSH_BASE_META % prop)
-        if res and source.get_control_binding(prop):
-            source.set_int(PUSH_BASE_META % prop, value)
-        else:
-            source.set_child_property(prop, value)
+    set_base_position(source, position)
 
 
 class FormatChangedAction(UndoableAction):

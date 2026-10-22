@@ -71,16 +71,25 @@ class TransformationPropertiesTest(common.TestCase):
 
     @common.setup_timeline
     @common.setup_clipproperties
-    def test_zoom_only_for_videos(self):
-        """Checks the automatic zoom is offered for the videos only."""
+    def test_zoom_offered(self):
+        """Checks the automatic zoom is offered for the photos and the videos.
+
+        With the blurred fill, only for the photos: the effect zooming
+        them zooms the fill too.
+        """
         zoom_box = self.clipproperties.zoom_expander
+        transformation_box = self.clipproperties.transformation_expander
         layer = self.timeline_container.timeline.ges_timeline.get_layers()[0]
-        for sample, offered in (("flat_colour1_640x480.png", False),
-                                ("one_fps_numeroted_blue.mkv", True)):
+        for sample, offered_with_fill in (("flat_colour1_640x480.png", True),
+                                          ("one_fps_numeroted_blue.mkv", False)):
             asset = GES.UriClipAsset.request_sync(common.get_sample_uri(sample))
             clip = layer.add_asset(asset, layer.get_duration(), 0, Gst.SECOND, GES.TrackType.UNKNOWN)
             self.timeline_container.timeline.selection.select([clip])
-            self.assertEqual(zoom_box.get_visible(), offered, sample)
+            self.assertTrue(zoom_box.get_visible(), sample)
+            transformation_box.blur_fill_button.clicked()
+            self.timeline_container.timeline.selection.select([])
+            self.timeline_container.timeline.selection.select([clip])
+            self.assertEqual(zoom_box.get_visible(), offered_with_fill, sample)
 
     @common.setup_timeline
     @common.setup_clipproperties

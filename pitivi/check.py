@@ -420,6 +420,13 @@ def initialize_modules():
     # Monkey patch deprecated methods to use the new variant by default
     GES.TrackElement.list_children_properties = GES.TimelineElement.list_children_properties
 
+    # SPL: the element zooming the photos with sub-pixel precision, used in
+    # the bin description of an effect.
+    require_version("GstBase", GST_API_VERSION)
+    require_version("GstVideo", GST_API_VERSION)
+    from pitivi.utils.kenburns import register as register_zoom_element
+    register_zoom_element()
+
     from pitivi.utils.misc import video_info_get_natural_height, video_info_get_natural_width, video_info_get_rotation
 
     # Monkey patch a helper method for retrieving the size of a video

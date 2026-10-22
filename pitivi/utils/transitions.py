@@ -55,6 +55,7 @@ from pitivi.utils.fades import set_keyframes
 from pitivi.utils.motion import BASE_META
 from pitivi.utils.motion import get_frame_size
 from pitivi.utils.motion import sync_motion
+from pitivi.utils.motion import uses_zoom_effect
 
 DISSOLVE = "dissolve"
 FADE_TO_BLACK = "fade-to-black"
@@ -637,7 +638,10 @@ def sync_pushes(layer: GES.Layer) -> None:
                 segments.setdefault(property_name, []).append(
                     (start, factor_b * size, start + contact.duration, 0))
         effect = get_active_blur_fill(clip)
-        if effect:
+        if effect and uses_zoom_effect(source):
+            # The effect zooming the frame made by the fill slides it.
+            sync_shift(effect, {}, start, end)
+        elif effect:
             # The effect makes the whole frame, it slides it.
             offsets = {}
             for property_name, prop_segments in segments.items():

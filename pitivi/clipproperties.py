@@ -55,8 +55,8 @@ from pitivi.effects import HIDDEN_EFFECTS
 from pitivi.trackerperspective import CoverObjectPopover
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.blurfill import BLUR_SIGMA_META
-from pitivi.utils.blurfill import get_active_blur_fill
 from pitivi.utils.blurfill import get_blur_fill
+from pitivi.utils.blurfill import is_blur_fill_needed
 from pitivi.utils.blurfill import get_blur_sigma
 from pitivi.utils.blurfill import is_blur_fill_effect
 from pitivi.utils.blurfill import set_blur_fill
@@ -68,7 +68,9 @@ from pitivi.utils.formats import get_fill_position
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import disconnect_all_by_func
 from pitivi.utils.motion import get_base_position
+from pitivi.utils.motion import get_zoom_effect
 from pitivi.utils.motion import has_motion
+from pitivi.utils.motion import is_zoom_effect
 from pitivi.utils.motion import set_base_position
 from pitivi.utils.motion import set_zoom
 from pitivi.utils.pipeline import PipelineError
@@ -289,12 +291,12 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
                     color_clip_source = child
 
         self.transformation_expander.set_source(video_source)
-        # The zoom is offered for the videos only. The slow zoom on a photo
-        # shakes, see section 5 of TRASPASO-SPL.md.
-        is_visual = (isinstance(video_source, GES.VideoUriSource) and
-                     not ges_clip.get_asset().is_image())
-        # The blurred fill covers the source, which zooms.
-        if is_visual and get_blur_fill(ges_clip):
+        # The photos zoom with the effect drawing them with sub-pixel
+        # precision, also with the blurred fill, which it zooms.
+        is_visual = isinstance(video_source, GES.VideoUriSource)
+        is_image = is_visual and ges_clip.get_asset().is_image()
+        if is_visual and not is_image and get_blur_fill(ges_clip):
+            # The blurred fill covers the source of the video, which zooms.
             is_visual = False
         self.zoom_expander.set_source(video_source if is_visual else None)
         is_video = (isinstance(video_source, GES.VideoUriSource) and
@@ -706,9 +708,10 @@ class EffectProperties(Gtk.Expander, Loggable):
 
     def _create_effect_row(self, effect):
         if is_time_effect(effect) or effect.props.bin_description in HIDDEN_EFFECTS or \
-                is_white_effect(effect) or is_blur_effect(effect) or is_blur_fill_effect(effect):
-            # The fades to white or blurred of a transition are not effects
-            # for the user.
+                is_white_effect(effect) or is_blur_effect(effect) or is_blur_fill_effect(effect) or \
+                is_zoom_effect(effect):
+            # The fades to white or blurred of a transition, the blurred fill
+            # and the automatic zoom are not effects for the user.
             return None
 
         effect_info = self.app.effects.get_info(effect)
@@ -1176,6 +1179,10 @@ class TransformationProperties(Gtk.Expander, Loggable):
                     effect = get_blur_fill(clip)
                     if effect:
                         effect.set_child_property("sigma", float(sigma))
+                    zoom_effect = get_zoom_effect(clip)
+                    if zoom_effect and zoom_effect.get_child_property("fill-sigma")[1]:
+                        # The effect zooming the photo makes its fill.
+                        zoom_effect.set_child_property("fill-sigma", float(sigma))
             finally:
                 self._updating_framing_ui = False
 
@@ -1201,7 +1208,7 @@ class TransformationProperties(Gtk.Expander, Loggable):
                 self.fill_button.set_active(False)
                 self.blur_fill_button.set_active(True)
                 self.blur_box.show()
-                needed = bool(get_active_blur_fill(clip))
+                needed = is_blur_fill_needed(clip)
                 self.blur_header.set_visible(needed)
                 self.blur_scale.set_visible(needed)
                 self.blur_unneeded_label.set_visible(not needed)
@@ -1235,8 +1242,11 @@ class TransformationProperties(Gtk.Expander, Loggable):
                                          finalizing_action=CommitTimelineFinalizingAction(
                                              self._project.pipeline),
                                          toplevel=True):
-            # The zoom moves the source, which the blurred fill covers.
-            set_zoom(self.source, None)
+            is_image = clip.get_asset().is_image()
+            if not is_image:
+                # The zoom of a video moves the source, which the blurred
+                # fill covers. The zoom of a photo zooms the fill too.
+                set_zoom(self.source, None)
             set_blur_fill(clip, True)
             layer = clip.get_layer()
             if layer:
@@ -1245,7 +1255,7 @@ class TransformationProperties(Gtk.Expander, Loggable):
         self.__update_framing_buttons()
         zoom_expander = getattr(self.app.gui.editor.clipconfig, "zoom_expander", None) \
             if hasattr(self.app.gui, "editor") else None
-        if isinstance(zoom_expander, Gtk.Widget):
+        if isinstance(zoom_expander, Gtk.Widget) and not is_image:
             zoom_expander.set_source(None)
 
     def __create_orientation_buttons(self):

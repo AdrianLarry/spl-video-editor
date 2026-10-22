@@ -18,11 +18,15 @@
 from gi.repository import GES
 from gi.repository import Gst
 
+from pitivi.utils.blurfill import get_blur_fill
+from pitivi.utils.blurfill import get_blur_sigma
+from pitivi.utils.blurfill import set_blur_fill
 from pitivi.utils.fades import get_keyframes
 from pitivi.utils.formats import set_format
 from pitivi.utils.formats import VERTICAL
 from pitivi.utils.motion import get_base_position
 from pitivi.utils.motion import get_zoom
+from pitivi.utils.motion import get_zoom_effect
 from pitivi.utils.motion import motion_keyframes
 from pitivi.utils.motion import set_base_position
 from pitivi.utils.motion import set_zoom
@@ -78,8 +82,11 @@ class MotionKeyframesTest(common.TestCase):
 class ZoomTest(common.TestCase):
     """Tests for the automatic zoom of the clips."""
 
+    # A video, 4:3: its own source moves. The photos zoom with an effect.
+    SAMPLE = "one_fps_numeroted_blue.mkv"
+
     def _add_clip(self, start):
-        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri(self.SAMPLE))
         clip = self.layer.add_asset(asset, start * SECOND, 0, 4 * SECOND, GES.TrackType.UNKNOWN)
         return clip, clip.find_track_element(None, GES.VideoSource)
 
@@ -159,3 +166,120 @@ class ZoomTest(common.TestCase):
         self.assertEqual(self._keyframes(source_a, "height"), [(0, 1920), (4, 2880)])
         self.action_log.undo()
         self.assertEqual(self._keyframes(source_a, "width"), [(0, 1920), (4, 2880)])
+
+
+class PhotoZoomTest(ZoomTest):
+    """Tests for the automatic zoom of the photos, drawn by an effect."""
+
+    SAMPLE = "flat_colour1_640x480.png"
+
+    @staticmethod
+    def _effect_keyframes(effect, name):
+        binding = effect.get_control_binding(name)
+        return [(timestamp / SECOND, round(value, 3))
+                for timestamp, value in get_keyframes(binding.props.control_source)]
+
+    @staticmethod
+    def _source_position(source):
+        return [source.get_child_property(prop)[1] for prop in ("posx", "posy", "width", "height")]
+
+    @common.setup_timeline
+    def test_zoom(self):
+        self._wait_until_project_loaded()
+        clip, source = self._add_clip(0)
+        base = get_base_position(source)
+        self.assertEqual(base, {"posx": 240, "posy": 0, "width": 1440, "height": 1080})
+
+        self._set_zoom(source, Zoom(ZOOM_IN, "center", 1.5))
+        effect = get_zoom_effect(clip)
+        self.assertIn("max-zoom=1.500", effect.props.bin_description)
+        self.assertIn("width=1920,height=1080", effect.props.bin_description)
+        # The effect places the photo, the source covers the frame, still.
+        self.assertEqual(self._source_position(source), [0, 0, 1920, 1080])
+        self.assertFalse(source.get_control_binding("width"))
+        self.assertEqual(get_base_position(source), base)
+        self.assertEqual(self._effect_keyframes(effect, "zoom"), [(0, 1), (4, 1.5)])
+        self.assertEqual(clip.get_top_effect_index(effect), 0)
+
+        # Trimming the clip keeps the zoom from its start to its end.
+        with self.action_log.started("trim", toplevel=True):
+            context = EditingContext(clip, self.timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_END, self.app)
+            context.edit_to(2 * SECOND, self.layer)
+            context.finish()
+        self.assertEqual(self._effect_keyframes(effect, "zoom"), [(0, 1), (2, 1.5)])
+        self.action_log.undo()
+        self.assertEqual(self._effect_keyframes(effect, "zoom"), [(0, 1), (4, 1.5)])
+
+        # Without zoom, the source places the photo again.
+        self._set_zoom(source, None)
+        self.assertIsNone(get_zoom_effect(clip))
+        self.assertEqual(self._source_position(source), [240, 0, 1440, 1080])
+
+        self.action_log.undo()
+        effect = get_zoom_effect(clip)
+        self.assertEqual(self._effect_keyframes(effect, "zoom"), [(0, 1), (4, 1.5)])
+        self.assertEqual(self._source_position(source), [0, 0, 1920, 1080])
+        self.action_log.undo()
+        self.assertIsNone(get_zoom_effect(clip))
+        self.assertEqual(self._source_position(source), [240, 0, 1440, 1080])
+
+    @common.setup_timeline
+    def test_zoom_with_push_and_framing(self):
+        self._wait_until_project_loaded()
+        clip_a, source_a = self._add_clip(0)
+        self._add_clip(4)
+        self._set_zoom(source_a, Zoom(ZOOM_IN, "center", 1.5))
+        contact, = get_contacts(self.layer)
+        with self.action_log.started("transition", toplevel=True):
+            set_transition(contact, PUSH, SECOND, RIGHT)
+        # The photo zooms, and goes out to the left during the push.
+        effect = get_zoom_effect(clip_a)
+        self.assertEqual(self._effect_keyframes(effect, "offset-x"), [(0, 0), (3, 0), (4, -1920)])
+        self.assertEqual(self._effect_keyframes(effect, "zoom"), [(0, 1), (4, 1.5)])
+        self.assertEqual(self._source_position(source_a), [0, 0, 1920, 1080])
+
+        # Filling the frame changes the rectangle of the photo.
+        with self.action_log.started("fill", toplevel=True):
+            set_base_position(source_a, {"posx": 0, "posy": -180, "width": 1920, "height": 1440})
+            sync_pushes(self.layer)
+        self.assertEqual(get_base_position(source_a), {"posx": 0, "posy": -180, "width": 1920, "height": 1440})
+
+        # Another format, the effect is made for it, the photo still fills.
+        set_format(self.app, self.project, VERTICAL)
+        effect = get_zoom_effect(clip_a)
+        self.assertIn("width=1080,height=1920", effect.props.bin_description)
+        self.assertEqual(get_base_position(source_a)["height"], 1920)
+        self.assertEqual(self._source_position(source_a), [0, 0, 1080, 1920])
+        self.assertEqual(self._effect_keyframes(effect, "offset-x"), [(0, 0), (3, 0), (4, -1080)])
+        self.action_log.undo()
+        effect = get_zoom_effect(clip_a)
+        self.assertIn("width=1920,height=1080", effect.props.bin_description)
+        self.assertEqual(get_base_position(source_a), {"posx": 0, "posy": -180, "width": 1920, "height": 1440})
+
+    @common.setup_timeline
+    def test_zoom_with_blur_fill(self):
+        self._wait_until_project_loaded()
+        clip, source = self._add_clip(0)
+        self._set_zoom(source, Zoom(ZOOM_OUT, "top", 1.2))
+        with self.action_log.started("fill", toplevel=True):
+            set_blur_fill(clip, True)
+            sync_pushes(self.layer)
+        effect = get_zoom_effect(clip)
+        # The effect makes the fill once, behind the photo fitting the frame,
+        # and zooms all of it. The effect of the fill would remake it in
+        # every frame, it is inactive.
+        self.assertEqual(get_base_position(source), {"posx": 240, "posy": 0, "width": 1440, "height": 1080})
+        self.assertEqual(effect.get_child_property("fill-sigma"), (True, get_blur_sigma(source)))
+        self.assertFalse(get_blur_fill(clip).props.active)
+        self.assertEqual(clip.get_top_effect_index(effect), 0)
+        self.assertEqual(self._effect_keyframes(effect, "zoom"), [(0, 1.2), (4, 1)])
+        self.assertEqual(effect.get_child_property("anchor-y"), (True, 0.0))
+
+        # Without zoom, the effect of the fill makes it again.
+        self._set_zoom(source, None)
+        self.assertIsNone(get_zoom_effect(clip))
+        self.assertTrue(get_blur_fill(clip).props.active)
+        self.action_log.undo()
+        self.assertFalse(get_blur_fill(clip).props.active)
+        self.assertEqual(get_zoom_effect(clip).get_child_property("fill-sigma"), (True, get_blur_sigma(source)))
