@@ -599,6 +599,49 @@ class Pipeline(GES.Pipeline, SimplePipeline):
                   cur_frame, new_frame, new_pos)
         self.simple_seek(new_pos)
 
+    def create_sink(self):
+        """Creates the sink of the viewer, getting frames as big as shown.
+
+        gtksink draws the frames in the main thread: scaling a frame of the
+        project to the viewer took most of it, and the viewer, the playhead
+        and the whole interface played at about 27 frames per second. The
+        frames are made smaller before, in the streaming thread.
+        """
+        video_sink, widget = SimplePipeline.create_sink(self)
+        if VIDEOSINK_FACTORY.get_name() != "gtksink":
+            return video_sink, widget
+
+        sink_bin = Gst.Bin.new("spl-preview")
+        scale = Gst.ElementFactory.make("videoscale", None)
+        size = Gst.ElementFactory.make("capsfilter", "spl-preview-size")
+        convert = Gst.ElementFactory.make("videoconvert", None)
+        for element in (scale, size, convert, video_sink):
+            sink_bin.add(element)
+        scale.link(size)
+        size.link(convert)
+        convert.link(video_sink)
+        sink_bin.add_pad(Gst.GhostPad.new("sink", scale.get_static_pad("sink")))
+        widget.connect("size-allocate", self.__preview_size_allocate_cb, size)
+        return sink_bin, widget
+
+    def __preview_size_allocate_cb(self, widget, allocation, size):
+        frame_width, frame_height = 0, 0
+        for track in self.props.timeline.get_tracks() if self.props.timeline else []:
+            caps = track.get_restriction_caps() if track.props.track_type == GES.TrackType.VIDEO else None
+            if caps:
+                frame_width = caps.get_structure(0).get_int("width")[1]
+                frame_height = caps.get_structure(0).get_int("height")[1]
+        if not frame_width or not frame_height:
+            return
+        scale_factor = widget.get_scale_factor()
+        fit = min(allocation.width * scale_factor / frame_width,
+                  allocation.height * scale_factor / frame_height, 1)
+        width = max(2, round(frame_width * fit / 2) * 2)
+        height = max(2, round(frame_height * fit / 2) * 2)
+        caps = Gst.Caps.from_string("video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1" % (width, height))
+        if not size.props.caps or not size.props.caps.is_equal(caps):
+            size.props.caps = caps
+
     def get_last_frame_position(self) -> int:
         """Returns where the last frame of the timeline starts.
 

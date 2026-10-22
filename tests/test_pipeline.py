@@ -195,3 +195,27 @@ class TestPipeline(common.TestCase):
             with mock.patch.object(pipe, "play"):
                 pipe.toggle_playback()
             simple_seek.assert_called_with(pipe, 0)
+
+    def test_preview_size(self):
+        """Checks the viewer gets frames as big as shown, not as the project."""
+        ges_timeline = GES.Timeline.new()
+        track = GES.VideoTrack.new()
+        self.assertTrue(ges_timeline.add_track(track))
+        track.set_restriction_caps(Gst.Caps.from_string("video/x-raw,width=1080,height=1920"))
+        pipe = Pipeline(app=common.create_pitivi_mock())
+        pipe.set_timeline(ges_timeline)
+        size = Gst.ElementFactory.make("capsfilter", None)
+        widget = mock.Mock()
+        widget.get_scale_factor.return_value = 2
+        allocation = mock.Mock(width=400, height=500)
+
+        pipe._Pipeline__preview_size_allocate_cb(widget, allocation, size)
+        # 1000 pixels high on the screen, the project keeps its shape.
+        structure = size.props.caps.get_structure(0)
+        self.assertEqual((structure.get_int("width")[1], structure.get_int("height")[1]), (562, 1000))
+
+        # Never bigger than the project.
+        allocation = mock.Mock(width=1000, height=2000)
+        pipe._Pipeline__preview_size_allocate_cb(widget, allocation, size)
+        structure = size.props.caps.get_structure(0)
+        self.assertEqual((structure.get_int("width")[1], structure.get_int("height")[1]), (1080, 1920))
