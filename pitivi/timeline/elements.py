@@ -1951,6 +1951,12 @@ class TransitionClip():
 
         # In the case of TransitionClips, we are the only container
         self._add_trim_handles()
+        # SPL: the duration of a transition changes in its popover only.
+        for handle in self.handles:
+            self._overlay.remove(handle)
+        self.handles = []
+        self.left_handle = None
+        self.right_handle = None
 
         self.props.has_tooltip = True
 
