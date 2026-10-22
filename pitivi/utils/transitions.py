@@ -40,6 +40,7 @@ from gi.repository import GES
 from gi.repository import Gst
 from gi.repository import GstController
 
+from pitivi.utils.blurfill import BLUR_SIGMA_META
 from pitivi.utils.blurfill import get_active_blur_fill
 from pitivi.utils.blurfilter import ELEMENT_NAME as BLUR_ELEMENT_NAME
 from pitivi.utils.blurfill import get_blur_fill
@@ -54,6 +55,10 @@ from pitivi.utils.fades import get_source_range
 from pitivi.utils.fades import read_fades
 from pitivi.utils.fades import set_keyframes
 from pitivi.utils.motion import BASE_META
+from pitivi.utils.motion import MOTION_PROPERTIES
+from pitivi.utils.motion import ZOOM_ANCHOR_META
+from pitivi.utils.motion import ZOOM_KIND_META
+from pitivi.utils.motion import ZOOM_SCALE_META
 from pitivi.utils.motion import get_frame_size
 from pitivi.utils.motion import get_base_position
 from pitivi.utils.motion import get_zoom_effect
@@ -533,6 +538,40 @@ def order_effects(clip: GES.Clip) -> None:
         if (is_blur_effect(effect) or is_white_effect(effect)) and \
                 clip.get_top_effect_index(effect) > clip.get_top_effect_index(zoom_effect):
             clip.set_top_effect_index(effect, 0)
+
+
+# What SPL keeps in the video source of a clip, with the type of each.
+SOURCE_METAS = [(meta, "string") for meta in (ZOOM_KIND_META, ZOOM_ANCHOR_META, PUSH_DIRECTION_META)] + \
+    [(meta, "double") for meta in (ZOOM_SCALE_META, BLUR_SIGMA_META)] + \
+    [(BASE_META % prop, "int") for prop in MOTION_PROPERTIES]
+
+
+def replace_asset(clip: GES.UriClip, asset: GES.Asset) -> bool:
+    """Replaces the asset of the clip, as by a proxy, returns whether it did.
+
+    GES makes the sources of the clip again, without the metas of SPL: the
+    zoom and the pushes would be lost. They are kept, and the motion is
+    made again for the new source.
+    """
+    source = clip.find_track_element(None, GES.VideoSource)
+    metas = []
+    for meta, kind in SOURCE_METAS if source else []:
+        if kind == "string":
+            value = source.get_string(meta)
+            res = value is not None
+        else:
+            res, value = getattr(source, "get_" + kind)(meta)
+        if res:
+            metas.append((meta, kind, value))
+    if not clip.set_asset(asset):
+        return False
+    source = clip.find_track_element(None, GES.VideoSource)
+    for meta, kind, value in metas if source else []:
+        getattr(source, "set_" + kind)(meta, value)
+    layer = clip.get_layer()
+    if layer and source and source.get_track():
+        sync_pushes(layer)
+    return True
 
 
 def get_contacts(layer: GES.Layer) -> List[Contact]:

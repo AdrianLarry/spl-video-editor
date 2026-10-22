@@ -38,6 +38,7 @@ from pitivi.utils.transitions import BLUR
 from pitivi.utils.transitions import FADE_TO_WHITE
 from pitivi.utils.transitions import get_contacts
 from pitivi.utils.transitions import PUSH
+from pitivi.utils.transitions import replace_asset
 from pitivi.utils.transitions import RIGHT
 from pitivi.utils.transitions import set_transition
 from pitivi.utils.transitions import sync_pushes
@@ -311,3 +312,15 @@ class PhotoZoomTest(ZoomTest):
         self._set_zoom(source_b, None)
         blur, = clip_b.get_top_effects()
         self.assertNotIn("width=1920", blur.props.bin_description)
+
+    @common.setup_timeline
+    def test_replace_asset_keeps_zoom(self):
+        """Checks a proxy or its photo replacing the asset keeps the zoom."""
+        self._wait_until_project_loaded()
+        clip, source = self._add_clip(0)
+        self._set_zoom(source, Zoom(ZOOM_IN, "top", 1.4))
+        other = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour2_640x480.png"))
+        self.assertTrue(replace_asset(clip, other))
+        source = clip.find_track_element(None, GES.VideoSource)
+        self.assertEqual(get_zoom(source), Zoom(ZOOM_IN, "top", 1.4))
+        self.assertEqual(self._effect_keyframes(get_zoom_effect(clip), "zoom"), [(0, 1), (4, 1.4)])

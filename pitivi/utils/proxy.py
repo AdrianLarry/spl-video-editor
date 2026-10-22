@@ -144,6 +144,13 @@ class ProxyManager(GObject.Object, Loggable):
 
     hq_proxy_extension = "proxy.mov"
     scaled_proxy_extension = "scaledproxy.mov"
+    # SPL: the photos are shown from a smaller copy. Two photos of 12
+    # megapixels made in every frame of a transition were too slow for the
+    # viewer. The exported video uses the photos.
+    photo_proxy_extension = "photoproxy.jpg"
+    # Photos bigger than this on their bigger side get a copy this big.
+    PHOTO_PROXY_THRESHOLD = 2560
+    PHOTO_PROXY_SIZE = 2048
     # Suffix for filenames of proxies being created.
     part_suffix = ".part"
 
@@ -159,6 +166,8 @@ class ProxyManager(GObject.Object, Loggable):
         self._start_proxying_time = 0
         self.__running_transcoders = []
         self.__pending_transcoders = []
+        # The photos whose copy is being made.
+        self.__photo_jobs = set()
         # The scaled proxy transcoders waiting for their corresponding shadow
         # HQ proxy transcoder to finish.
         self.__waiting_transcoders = []
@@ -287,7 +296,12 @@ class ProxyManager(GObject.Object, Loggable):
 
     @classmethod
     def is_proxy_asset(cls, obj):
-        return cls.is_scaled_proxy(obj) or cls.is_hq_proxy(obj)
+        return cls.is_scaled_proxy(obj) or cls.is_hq_proxy(obj) or cls.is_photo_proxy(obj)
+
+    @classmethod
+    def is_photo_proxy(cls, obj):
+        uri = obj.props.id if isinstance(obj, GES.Asset) else obj
+        return uri.endswith("." + cls.photo_proxy_extension)
 
     @classmethod
     def is_scaled_proxy(cls, obj):
@@ -321,7 +335,7 @@ class ProxyManager(GObject.Object, Loggable):
         else:
             uri = obj
 
-        if cls.is_scaled_proxy(uri):
+        if cls.is_scaled_proxy(uri) or cls.is_photo_proxy(uri):
             return ".".join(uri.split(".")[:-4])
 
         if cls.is_proxy_asset(uri):
@@ -737,6 +751,84 @@ class ProxyManager(GObject.Object, Loggable):
                 self.__pending_transcoders.remove(transcoder)
                 self.emit("asset-preparing-cancelled", asset)
 
+    def get_photo_proxy_size(self, asset):
+        """Returns the size of the copy of the photo, None if it needs none."""
+        if not asset.is_image() or self.is_proxy_asset(asset) or \
+                self.app.settings.proxying_strategy == ProxyingStrategy.NOTHING:
+            return None
+        streams = asset.get_info().get_video_streams()
+        if not streams:
+            return None
+        # As GES shows it, not turned by the camera metadata.
+        width, height = streams[0].get_width(), streams[0].get_height()
+        if max(width, height) <= self.PHOTO_PROXY_THRESHOLD:
+            return None
+        ratio = self.PHOTO_PROXY_SIZE / max(width, height)
+        return max(2, round(width * ratio)), max(2, round(height * ratio))
+
+    def get_photo_proxy_uri(self, asset):
+        """Returns the URI of the copy of the photo, None if it needs none."""
+        size = self.get_photo_proxy_size(asset)
+        if not size:
+            return None
+        asset_file = Gio.File.new_for_uri(asset.get_id())
+        try:
+            file_size = asset_file.query_info(Gio.FILE_ATTRIBUTE_STANDARD_SIZE,
+                                              Gio.FileQueryInfoFlags.NONE,
+                                              None).get_size()
+        except GLib.Error:
+            return None
+        return "%s.%s.%sx%s.%s" % (asset.get_id(), file_size, size[0], size[1],
+                                   self.photo_proxy_extension)
+
+    def __make_photo_proxy(self, asset, proxy_uri):
+        """Makes the copy of the photo in a thread, then uses it."""
+        if asset in self.__photo_jobs:
+            return
+        self.__photo_jobs.add(asset)
+        width, height = self.get_photo_proxy_size(asset)
+
+        def make():
+            # pylint: disable=import-outside-toplevel
+            import gi
+            gi.require_version("GdkPixbuf", "2.0")
+            from gi.repository import GdkPixbuf
+            path = Gst.uri_get_location(proxy_uri)
+            try:
+                if not os.path.exists(path):
+                    # Not turned by the camera metadata, as GES shows it.
+                    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                        Gst.uri_get_location(asset.get_id()), width, height, False)
+                    part = path + self.part_suffix
+                    pixbuf.savev(part, "jpeg", ["quality"], ["92"])
+                    os.rename(part, path)
+            except GLib.Error as error:
+                self.warning("Could not make the copy of %s: %s", asset.get_id(), error)
+                GLib.idle_add(self.__photo_proxy_done, asset, None)
+                return
+            GLib.idle_add(self.__photo_proxy_made, asset, proxy_uri)
+
+        import threading  # pylint: disable=import-outside-toplevel
+        threading.Thread(target=make, daemon=True).start()
+
+    def __photo_proxy_made(self, asset, proxy_uri):
+        GES.Asset.request_async(GES.UriClip, proxy_uri, None, self.__photo_proxy_loaded_cb, asset)
+        return False
+
+    def __photo_proxy_loaded_cb(self, unused_source, res, asset):
+        try:
+            proxy = GES.Asset.request_finish(res)
+        except GLib.Error as error:
+            self.warning("Could not load the copy of %s: %s", asset.get_id(), error)
+            proxy = None
+        self.__photo_proxy_done(asset, proxy)
+
+    def __photo_proxy_done(self, asset, proxy):
+        self.__photo_jobs.discard(asset)
+        # Without a copy, the photo itself is used.
+        self.emit("proxy-ready", asset, proxy)
+        return False
+
     def add_job(self, asset, scaled=False, shadow=False):
         """Adds a transcoding job for the specified asset if needed.
 
@@ -747,6 +839,11 @@ class ProxyManager(GObject.Object, Loggable):
             shadow (Optional[bool]): Whether to create a high-quality proxy
                 to shadow a scaled proxy.
         """
+        photo_proxy_uri = self.get_photo_proxy_uri(asset)
+        if photo_proxy_uri:
+            self.__make_photo_proxy(asset, photo_proxy_uri)
+            return
+
         force_proxying = asset.force_proxying
         video_streams = asset.get_info().get_video_streams()
         if video_streams:

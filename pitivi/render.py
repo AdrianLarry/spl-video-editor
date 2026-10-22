@@ -39,6 +39,7 @@ from pitivi.utils.misc import is_pathname_valid
 from pitivi.utils.misc import path_from_uri
 from pitivi.utils.misc import show_user_manual
 from pitivi.utils.ripple_update_group import RippleUpdateGroup
+from pitivi.utils.transitions import replace_asset
 from pitivi.utils.ui import AUDIO_CHANNELS
 from pitivi.utils.ui import beautify_eta
 from pitivi.utils.ui import create_audio_rates_model
@@ -1506,12 +1507,12 @@ class RenderDialog(Loggable):
             asset = self._asset_replacement(clip)
             if asset:
                 self.__replaced_assets[clip] = clip.get_asset()
-                clip.set_asset(asset)
+                replace_asset(clip, asset)
 
     def _use_proxy_assets(self):
         for clip, asset in self.__replaced_assets.items():
             self.info("Reverting to using proxy asset %s", asset)
-            clip.set_asset(asset)
+            replace_asset(clip, asset)
 
         self.__replaced_assets = {}
 

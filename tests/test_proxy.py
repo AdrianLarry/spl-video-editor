@@ -20,6 +20,7 @@ from unittest import mock
 
 from gi.repository import GES
 
+from pitivi.utils.proxy import ProxyingStrategy
 from tests import common
 
 
@@ -71,6 +72,26 @@ class TestProxyManager(common.TestCase):
                                    "file:///home/file.name.mp4")
         self._check_get_target_uri("file:///home/file.name.mp4.1927006.proxy.mov",
                                    "file:///home/file.name.mp4")
+        self._check_get_target_uri("file:///home/photo.jpg.464063.1536x2048.photoproxy.jpg",
+                                   "file:///home/photo.jpg")
+
+    def test_photo_proxy(self):
+        """Checks the big photos get a smaller copy, the others none."""
+        app = common.create_pitivi_mock(proxying_strategy=ProxyingStrategy.AUTOMATIC)
+        manager = app.proxy_manager
+        photo = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour4_1600x1200.jpg"))
+        video = GES.UriClipAsset.request_sync(common.get_sample_uri("tears_of_steel.webm"))
+        # Not bigger than the threshold.
+        self.assertIsNone(manager.get_photo_proxy_uri(photo))
+        self.assertIsNone(manager.get_photo_proxy_uri(video))
+
+        with mock.patch.object(manager, "PHOTO_PROXY_THRESHOLD", 1000), \
+                mock.patch.object(manager, "PHOTO_PROXY_SIZE", 800):
+            self.assertEqual(manager.get_photo_proxy_size(photo), (800, 600))
+            uri = manager.get_photo_proxy_uri(photo)
+            self.assertTrue(uri.endswith(".800x600.photoproxy.jpg"), uri)
+            self.assertTrue(manager.is_proxy_asset(uri))
+            self.assertEqual(manager.get_target_uri(uri), photo.get_id())
 
     def _check_get_proxy_uri(self, asset_uri, expected_uri, size=10, scaled=False, scaled_res=(1280, 720)):
         app = common.create_pitivi_mock()

@@ -300,6 +300,12 @@ class SimplePipeline(GObject.Object, Loggable):
             self._listening_sig_id = 0
 
     def _async_done_not_received_cb(self, reason, timeout):
+        if self.rendering():
+            # SPL: a wait started before the rendering, which reset the
+            # pipeline in the middle of the export. See commit_timeline.
+            self.warning("Async operation timed out while rendering, ignored: %s", reason)
+            self._timeout_async_id = 0
+            return False
         self.error("Async operation timed out after %d seconds, aborting: %s", timeout, reason)
         self._remove_waiting_for_async_done_timeout()
         self._recover()
@@ -693,7 +699,11 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         if message.type == Gst.MessageType.ASYNC_DONE:
             self.app.gui.editor.timeline_ui.timeline.update_visible_overlays()
 
-        if message.type == Gst.MessageType.ASYNC_DONE and\
+        if message.type == Gst.MessageType.ASYNC_DONE and self._commit_wanted and self.rendering():
+            # SPL: committed when the rendering started, see commit_timeline.
+            self._commit_wanted = False
+            self._remove_waiting_for_async_done_timeout()
+        elif message.type == Gst.MessageType.ASYNC_DONE and\
                 self._commit_wanted:
             self.debug("Committing now that ASYNC is DONE")
             self._add_waiting_for_async_done_timeout("_bus_message_cb: committing")
@@ -717,6 +727,12 @@ class Pipeline(GES.Pipeline, SimplePipeline):
             self.commit_timeline()
 
     def commit_timeline(self):
+        if self.rendering():
+            # SPL: NLE commits when the rendering starts. Waiting for the
+            # ASYNC_DONE of a commit while rendering timed out and reset the
+            # pipeline in the middle of the export.
+            self._commit_wanted = False
+            return
         if self._prevent_commits > 0 or self.get_simple_state() == Gst.State.NULL:
             # No need to commit. NLE will do it automatically when
             # changing state from READY to PAUSED.

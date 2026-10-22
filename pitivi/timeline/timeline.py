@@ -63,6 +63,7 @@ from pitivi.utils.timeline import TimelineError
 from pitivi.utils.timeline import UNSELECT
 from pitivi.utils.timeline import Zoomable
 from pitivi.utils.transitions import remove_transitions_of
+from pitivi.utils.transitions import replace_asset
 from pitivi.utils.transitions import sync_pushes
 from pitivi.utils.ui import EFFECT_TARGET_ENTRY
 from pitivi.utils.ui import LAYER_HEIGHT
@@ -1830,10 +1831,10 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
 
             if not proxy:
                 if clip.get_asset().props.id in proxy_uris:
-                    clip.set_asset(asset)
+                    replace_asset(clip, asset)
             else:
                 if clip.get_asset() == asset:
-                    clip.set_asset(proxy)
+                    replace_asset(clip, proxy)
 
         self._project.pipeline.commit_timeline()
 
