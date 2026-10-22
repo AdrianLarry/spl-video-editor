@@ -409,11 +409,11 @@ msgstr "Exportar como archivo…"
 
 #: data/ui/mainmenubutton.ui:85
 msgid "Export the frame at the current playhead position as an image file."
-msgstr "Exportar el marco en la posición actual como un archivo de imagen."
+msgstr "Guarda como imagen lo que se ve ahora en el visor."
 
 #: data/ui/mainmenubutton.ui:89
 msgid "Export current frame..."
-msgstr "Exportar fotograma actual…"
+msgstr "Guardar imagen de este momento…"
 
 #: data/ui/mainmenubutton.ui:115
 msgid "Edit the project settings"
@@ -432,7 +432,7 @@ msgstr "Preferencias"
 
 #: data/ui/mainmenubutton.ui:164
 msgid "Keyboard Shortcuts"
-msgstr "Atajo del teclado"
+msgstr "Atajos de teclado"
 
 #: data/ui/mainmenubutton.ui:180
 msgid "User Manual"

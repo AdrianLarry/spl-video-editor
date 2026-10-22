@@ -650,6 +650,14 @@ class EditorPerspective(Perspective, Loggable):
 
         self.menu_button = self.builder.get_object("menubutton")
         self.keyboard_shortcuts_button = self.builder.get_object("menu_shortcuts")
+        # SPL: the format is chosen in the viewer and the frame rate follows
+        # the clips, the other settings and the manual are for professionals.
+        for name in ("menu_revert_to_saved", "menu_export_tarball", "menu_sep3",
+                     "menu_project_settings", "menu_preferences", "menu_help",
+                     "menu_interactive_intro"):
+            item = self.builder.get_object(name)
+            item.hide()
+            item.set_no_show_all(True)
 
         headerbar.pack_end(self.menu_button)
         headerbar.pack_end(self.save_button)
