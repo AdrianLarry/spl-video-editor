@@ -557,13 +557,23 @@ class EditingContext(GObject.Object, Loggable):
             return Gst.CLOCK_TIME_NONE
         return self.focus.props.start + max_duration - self.focus.props.in_point
 
+    def __get_transition_overlap(self):
+        """Returns how much the next clip overlaps the end, for a transition."""
+        if not self.__following:
+            return 0
+        return max(0, self.__original_end - self.__following[0][1])
+
     def __place_following(self, end):
         """Pushes the following clips once the end reaches the next one."""
         if not self.__following:
             return
-        # A gap before the next clip is filled first. A clip overlapping
-        # the end for a transition keeps overlapping it.
-        delta = max(0, end - max(self.__original_end, self.__following[0][1]))
+        if self.__get_transition_overlap():
+            # A clip overlapping the end for a transition goes with it, also
+            # back, so the transition keeps its duration.
+            delta = end - self.__original_end
+        else:
+            # A gap before the next clip is filled first.
+            delta = max(0, end - max(self.__original_end, self.__following[0][1]))
         moves = [(clip, start + delta) for clip, start in self.__following
                  if clip.props.start != start + delta]
         if moves and moves[0][1] > moves[0][0].props.start:
@@ -620,6 +630,10 @@ class EditingContext(GObject.Object, Loggable):
             position = max(position, self.__previous_end)
         elif trimming and self.edge == GES.Edge.EDGE_END:
             position = min(position, self.__get_max_end())
+            overlap = self.__get_transition_overlap()
+            if overlap:
+                # At least twice the transition, as when choosing it.
+                position = max(position, self.focus.props.start + 2 * overlap)
             self.__place_following(position)
 
         res = self.focus.edit([], priority, self.mode, self.edge, int(position))

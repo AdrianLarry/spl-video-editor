@@ -504,9 +504,10 @@ class FullLayer(Layer, Zoomable):
             width = button.get_preferred_width()[1]
             height = button.get_preferred_height()[1]
             x = self.ns_to_pixel(contact.position) - width // 2
-            # Centered on the clips, which are at the top when the layer
-            # has both audio and video.
-            y = max(0, (LAYER_HEIGHT // 2 - height) // 2)
+            # At the bottom of the video, which is at the top when the layer
+            # has both audio and video: above it the edges of the clips are
+            # free to be trimmed, and their names are seen.
+            y = max(0, LAYER_HEIGHT // 2 - height - 4)
             self.move(button, max(0, x), y)
             button.connect("clicked", self.__transition_clicked_cb, contact)
             self.transition_buttons.append(button)

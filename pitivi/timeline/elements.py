@@ -1318,7 +1318,8 @@ class TrimHandle(Gtk.EventBox, Loggable):
 
     __gtype_name__ = "PitiviTrimHandle"
 
-    SELECTED_WIDTH = 5
+    # SPL: wide enough to be easy to grab.
+    SELECTED_WIDTH = 10
     DEFAULT_WIDTH = 1
     PIXBUF = None
 
@@ -1939,6 +1940,29 @@ class TitleClip(FullSourceClip):
         return None
 
 
+class FirstClipEndHandle(TrimHandle):
+    """The handle on the right edge of a transition, trimming the first clip."""
+
+    __gtype_name__ = "PitiviFirstClipEndHandle"
+
+    def __init__(self, transition_clip):
+        self.__transition_clip = transition_clip
+        TrimHandle.__init__(self, transition_clip, GES.Edge.EDGE_END)
+
+    @property
+    def clip(self):
+        """The widget of the clip ending where the transition ends."""
+        from pitivi.utils.transitions import find_contact_for_transition  # pylint: disable=import-outside-toplevel
+        contact = find_contact_for_transition(self.__transition_clip.ges_clip)
+        if contact and getattr(contact.clip_a, "ui", None):
+            return contact.clip_a.ui
+        return self.__transition_clip
+
+    @clip.setter
+    def clip(self, unused_value):
+        pass
+
+
 class TransitionClip():
 
     __gtype_name__ = "PitiviTransitionClip"
@@ -1955,12 +1979,15 @@ class TransitionClip():
 
         # In the case of TransitionClips, we are the only container
         self._add_trim_handles()
-        # SPL: the duration of a transition changes in its popover only.
+        # SPL: the duration of a transition changes in its popover only. Its
+        # right edge is the end of the first clip, which it stretches or
+        # shortens, the transition keeping its duration.
         for handle in self.handles:
             self._overlay.remove(handle)
-        self.handles = []
         self.left_handle = None
-        self.right_handle = None
+        self.right_handle = FirstClipEndHandle(self)
+        self._overlay.add_overlay(self.right_handle)
+        self.handles = [self.right_handle]
 
         self.props.has_tooltip = True
 

@@ -918,6 +918,8 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
             self.dragging_element = self._get_parent_of_type(event_widget, Clip)
             if isinstance(event_widget, TrimHandle):
                 self.__clicked_handle = event_widget
+                # SPL: the handle of a transition trims the first clip.
+                self.dragging_element = event_widget.clip
             self.debug("Dragging element is %s", self.dragging_element)
 
             if self.dragging_element:

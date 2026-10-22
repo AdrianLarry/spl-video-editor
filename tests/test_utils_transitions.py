@@ -236,6 +236,25 @@ class TransitionsTest(common.TestCase):
             context.finish()
         self.assertEqual(self._get_transitions(), [(4, 1)])
 
+        # Shortening the first clip brings the second one back, keeping the
+        # transition.
+        with self.action_log.started("trim"):
+            context = EditingContext(clip_a, self.timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_END, self.app)
+            context.edit_to(3 * SECOND, self.layer)
+            context.finish()
+        self.assertEqual(clip_a.props.duration, 3 * SECOND)
+        self.assertEqual(self._get_transitions(), [(2, 1)])
+
+        # Not shorter than twice the transition.
+        with self.action_log.started("trim"):
+            context = EditingContext(clip_a, self.timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_END, self.app)
+            context.edit_to(SECOND, self.layer)
+            context.finish()
+        self.assertEqual(clip_a.props.duration, 2 * SECOND)
+        self.assertEqual(self._get_transitions(), [(1, 1)])
+
     @common.setup_timeline
     def test_fade_to_white(self):
         self._wait_until_project_loaded()
