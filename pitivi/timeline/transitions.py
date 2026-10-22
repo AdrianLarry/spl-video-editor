@@ -81,17 +81,126 @@ def format_seconds(duration):
     return locale.format_string("%.1f s", duration / Gst.SECOND)
 
 
+# The angle turning the icons drawn for a clip coming from the right.
+ICON_ANGLES = {RIGHT: 0, LEFT: math.pi, TOP: -math.pi / 2, BOTTOM: math.pi / 2}
+ICON_SIZE = 14
+
+
+class TransitionIcon(Gtk.DrawingArea):
+    """A small icon of a kind of transition, or a plus for adding one."""
+
+    def __init__(self, kind, direction=None):
+        Gtk.DrawingArea.__init__(self)
+        self.kind = kind
+        self.direction = direction or RIGHT
+        self.set_size_request(ICON_SIZE, ICON_SIZE)
+        self.props.halign = Gtk.Align.CENTER
+        self.props.valign = Gtk.Align.CENTER
+        self.connect("draw", self.__draw_cb)
+
+    def __draw_cb(self, unused_widget, cr):
+        size = ICON_SIZE
+        cr.translate(size / 2, size / 2)
+        if self.kind in (SOFT_WIPE, PUSH):
+            cr.rotate(ICON_ANGLES[self.direction])
+        cr.set_line_width(1.5)
+        cr.set_source_rgb(1, 1, 1)
+        draw = {DISSOLVE: self._draw_dissolve,
+                SOFT_WIPE: self._draw_soft_wipe,
+                FADE_TO_BLACK: self._draw_fade_to_black,
+                FADE_TO_WHITE: self._draw_fade_to_white,
+                PUSH: self._draw_push,
+                BLUR: self._draw_blur}.get(self.kind, self._draw_add)
+        draw(cr)
+        return False
+
+    @staticmethod
+    def _draw_dissolve(cr):
+        # Two images, one appearing over the other.
+        cr.arc(-2, 0, 4.25, 0, 2 * math.pi)
+        cr.stroke()
+        cr.arc(2, 0, 4.25, 0, 2 * math.pi)
+        cr.set_source_rgba(1, 1, 1, 0.6)
+        cr.fill()
+
+    @staticmethod
+    def _draw_soft_wipe(cr):
+        # A frame uncovered from a side, with a soft edge.
+        cr.rectangle(-5.5, -4.5, 11, 9)
+        gradient = cairo.LinearGradient(-3, 0, 4, 0)
+        gradient.add_color_stop_rgba(0, 1, 1, 1, 0)
+        gradient.add_color_stop_rgba(1, 1, 1, 1, 1)
+        cr.set_source(gradient)
+        cr.fill_preserve()
+        cr.set_source_rgb(1, 1, 1)
+        cr.stroke()
+
+    @staticmethod
+    def _draw_fade_to_black(cr):
+        # An image going dark.
+        cr.arc(0, 0, 5, 0, 2 * math.pi)
+        gradient = cairo.LinearGradient(-5, 0, 5, 0)
+        gradient.add_color_stop_rgba(0, 1, 1, 1, 1)
+        gradient.add_color_stop_rgba(1, 0, 0, 0, 1)
+        cr.set_source(gradient)
+        cr.fill_preserve()
+        cr.set_source_rgb(1, 1, 1)
+        cr.stroke()
+
+    @staticmethod
+    def _draw_fade_to_white(cr):
+        # An image turning into light.
+        cr.arc(0, 0, 3.5, 0, 2 * math.pi)
+        cr.fill()
+        for index in range(8):
+            angle = index * math.pi / 4
+            cr.move_to(5 * math.cos(angle), 5 * math.sin(angle))
+            cr.line_to(6.5 * math.cos(angle), 6.5 * math.sin(angle))
+        cr.set_line_width(1.2)
+        cr.stroke()
+
+    @staticmethod
+    def _draw_push(cr):
+        # The second image pushing the first one out.
+        cr.rectangle(-6, -3.5, 5, 7)
+        cr.stroke()
+        cr.rectangle(1, -4.25, 5.75, 8.5)
+        cr.fill()
+
+    @staticmethod
+    def _draw_blur(cr):
+        # An image going out of focus.
+        for radius, alpha in ((6, 0.25), (4.5, 0.5), (3, 1)):
+            cr.arc(0, 0, radius, 0, 2 * math.pi)
+            cr.set_source_rgba(1, 1, 1, alpha)
+            cr.fill()
+
+    @staticmethod
+    def _draw_add(cr):
+        cr.move_to(-4.5, 0)
+        cr.line_to(4.5, 0)
+        cr.move_to(0, -4.5)
+        cr.line_to(0, 4.5)
+        cr.set_line_width(1.75)
+        cr.stroke()
+
+
 def create_transition_button(contact: Contact) -> Gtk.Button:
-    """Creates the button showing the transition, or for adding one."""
+    """Creates the round button showing the transition, or for adding one.
+
+    It shows an icon of the kind, its name is in the tooltip.
+    """
     button = Gtk.Button()
-    button.get_style_context().add_class("TransitionButton")
+    style = button.get_style_context()
+    style.add_class("TransitionButton")
+    style.add_class("spl-trans-chip")
     button.props.focus_on_click = False
+    button.add(TransitionIcon(contact.kind, contact.direction))
     if contact.kind:
-        button.set_label(get_kind_name(contact.kind))
         button.set_tooltip_text(_("%s, %s. Click to change or remove it.") %
                                 (get_kind_name(contact.kind), format_seconds(contact.duration)))
     else:
-        button.set_image(Gtk.Image.new_from_icon_name("list-add-symbolic", Gtk.IconSize.MENU))
+        style.add_class("spl-trans-chip-add")
         button.set_tooltip_text(_("Add a transition"))
     return button
 

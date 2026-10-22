@@ -280,7 +280,8 @@ class TestLayer(common.TestCase):
         layer_ui.update_gaps()
 
         button, = layer_ui.transition_buttons
-        self.assertIsNotNone(button.get_image())
+        self.assertIsNone(button.get_child().kind)
+        self.assertEqual(button.get_tooltip_text(), "Add a transition")
 
         contact, = get_contacts(self.layer)
         popover = TransitionPopover(self.app, contact, button)
@@ -292,7 +293,9 @@ class TestLayer(common.TestCase):
         self.assertEqual(get_contacts(self.layer)[0].kind, DISSOLVE)
         layer_ui.update_gaps()
         button, = layer_ui.transition_buttons
-        self.assertEqual(button.get_label(), "Dissolve")
+        # An icon of the kind, its name is in the tooltip.
+        self.assertEqual(button.get_child().kind, DISSOLVE)
+        self.assertTrue(button.get_tooltip_text().startswith("Dissolve, "))
 
         # Removed with the button of the popover.
         popover = TransitionPopover(self.app, get_contacts(self.layer)[0], button)

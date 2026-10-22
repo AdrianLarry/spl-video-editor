@@ -504,6 +504,28 @@ EDITOR_PERSPECTIVE_CSS = """
         background-color: rgba(127, 200, 204, 0.7);
     }
 
+    /* The round buttons of the transitions on the timeline. */
+    .spl-trans-chip {
+        background-image: none;
+        background-color: rgba(15, 17, 21, 0.8);
+        border: 1.5px solid rgba(255, 255, 255, 0.7);
+        border-radius: 12px;
+        box-shadow: none;
+        min-width: 20px;
+        min-height: 20px;
+        padding: 1px;
+    }
+
+    .spl-trans-chip:hover {
+        background-color: rgba(15, 17, 21, 0.95);
+        border-color: rgb(255, 138, 91);
+    }
+
+    .spl-trans-chip-add {
+        border-style: dashed;
+        border-color: rgba(255, 255, 255, 0.5);
+    }
+
     /* The transition cards in the popover, as in the mockup. */
     .spl-trans-card {
         background-image: none;
