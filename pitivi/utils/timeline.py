@@ -552,10 +552,12 @@ class EditingContext(GObject.Object, Loggable):
 
     def __get_max_end(self):
         """Returns the latest end of the focus, limited by its media."""
-        max_duration = self.focus.props.max_duration
-        if max_duration == Gst.CLOCK_TIME_NONE:
+        # The limit of GES counts the speed of the clip, a slower clip
+        # lasting longer.
+        duration_limit = self.focus.props.duration_limit
+        if duration_limit == Gst.CLOCK_TIME_NONE:
             return Gst.CLOCK_TIME_NONE
-        return self.focus.props.start + max_duration - self.focus.props.in_point
+        return self.focus.props.start + duration_limit
 
     def __get_transition_overlap(self):
         """Returns how much the next clip overlaps the end, for a transition."""

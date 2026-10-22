@@ -16,6 +16,8 @@
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 """Widgets to control clips properties."""
 import bisect
+import locale
+import math
 import os
 from gettext import gettext as _
 from typing import Callable
@@ -74,6 +76,7 @@ from pitivi.utils.motion import is_zoom_effect
 from pitivi.utils.motion import set_base_position
 from pitivi.utils.motion import set_zoom
 from pitivi.utils.pipeline import PipelineError
+from pitivi.utils.timeline import EditingContext
 from pitivi.utils.timeline import SELECT
 from pitivi.utils.transitions import is_blur_effect
 from pitivi.utils.transitions import is_white_effect
@@ -104,6 +107,8 @@ DEFAULT_BLENDING = "over"
 # Max speed rate we allow to be applied to clips.
 # The minimum is 1 / MAX_RATE.
 MAX_RATE = 10
+# SPL: the slider goes from a quarter to four times the speed.
+SIMPLE_RATE_POWER = 2
 
 # The size of the thumbnails of the applied effects.
 EFFECT_THUMBNAIL_WIDTH = 34
@@ -301,7 +306,10 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.zoom_expander.set_source(video_source if is_visual else None)
         is_video = (isinstance(video_source, GES.VideoUriSource) and
                     not ges_clip.get_asset().is_image())
-        self.speed_expander.set_clip(ges_clip if is_video else None)
+        # The speed is offered for the videos and the sounds, not for the
+        # photos or the titles, which last as long as wanted.
+        is_sound = isinstance(audio_source, GES.AudioUriSource) and not video_source
+        self.speed_expander.set_clip(ges_clip if is_video or is_sound else None)
         self.title_expander.set_source(title_source)
         self.color_expander.set_source(color_clip_source)
         self.compositing_expander.set_source(video_source)
@@ -374,10 +382,35 @@ class TimeProperties(Gtk.Expander, Loggable):
             linear = self._rate_to_linear(rate)
             self._speed_scale.add_mark(linear, Gtk.PositionType.BOTTOM, "{}".format(rate))
 
-        hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        hbox.pack_start(self._speed_spin_button, False, False, PADDING)
-        hbox.pack_start(self._speed_scale, False, False, PADDING)
-        self.__add_widget_to_grid(grid, _("Speed"), hbox, self._speed_reset_button_clicked_cb, 0)
+        # SPL: as the sound, the label with its value on the right, the
+        # slider below, from a quarter to four times, and quick buttons.
+        # The spin button and the scale of Pitivi are kept, not shown.
+        grid.props.row_spacing = PADDING
+        grid.attach(Gtk.Label(label=_("Speed:"), xalign=0, hexpand=True), 0, 0, 1, 1)
+        self.speed_value_label = Gtk.Label(halign=Gtk.Align.END)
+        grid.attach(self.speed_value_label, 1, 0, 1, 1)
+        # The position is the power of two of the speed: as much room for
+        # slower as for faster.
+        self.speed_slider = Gtk.Scale.new_with_range(
+            Gtk.Orientation.HORIZONTAL, -SIMPLE_RATE_POWER, SIMPLE_RATE_POWER, 0.05)
+        self.speed_slider.set_draw_value(False)
+        self.speed_slider.set_hexpand(True)
+        for power, mark in ((-2, "¼×"), (-1, "½×"), (0, "1×"), (1, "2×"), (2, "4×")):
+            self.speed_slider.add_mark(power, Gtk.PositionType.BOTTOM, mark)
+        self.speed_slider.connect("value-changed", self.__speed_slider_changed_cb)
+        grid.attach(self.speed_slider, 0, 1, 2, 1)
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        buttons.get_style_context().add_class("linked")
+        buttons.props.halign = Gtk.Align.START
+        for rate, text, tooltip in ((0.5, "½×", _("Slow motion, twice as long")),
+                                    (1, "1×", _("Normal speed")),
+                                    (2, "2×", _("Fast, half as long"))):
+            button = Gtk.Button(label=text)
+            button.set_tooltip_text(tooltip)
+            button.connect("clicked", self.__speed_button_clicked_cb, rate)
+            buttons.pack_start(button, False, False, 0)
+        grid.attach(buttons, 0, 2, 2, 1)
+        self.__updating_slider = False
 
         self.__setting_rate = False
         self.bind_property("rate",
@@ -386,6 +419,28 @@ class TimeProperties(Gtk.Expander, Loggable):
         self.bind_property("rate_linear",
                            self._speed_scale_adjustment, "value",
                            GObject.BindingFlags.BIDIRECTIONAL)
+        self.connect("notify::rate", lambda *unused: self.__update_speed_ui())
+        self.__update_speed_ui()
+
+    def __update_speed_ui(self):
+        rate = self._current_rate() if self._clip else 1
+        self.speed_value_label.set_markup("<b>%s×</b>" % locale.format_string("%.3g", rate))
+        self.__updating_slider = True
+        try:
+            self.speed_slider.set_value(math.log2(rate))
+        finally:
+            self.__updating_slider = False
+
+    def __speed_slider_changed_cb(self, slider):
+        if self.__updating_slider or not self._clip:
+            return
+        # Round speeds, as 1.5 or 0.75, easy to read.
+        rate = round(2 ** slider.get_value() * 20) / 20
+        self.props.rate = max(1 / 2 ** SIMPLE_RATE_POWER, min(2 ** SIMPLE_RATE_POWER, rate))
+
+    def __speed_button_clicked_cb(self, unused_button, rate):
+        if self._clip:
+            self.props.rate = rate
 
     def _speed_reset_button_clicked_cb(self, button):
         self._speed_adjustment.props.value = 1
@@ -488,6 +543,17 @@ class TimeProperties(Gtk.Expander, Loggable):
             for track_element in self._clip.get_children(True):
                 track_element.set_auto_clamp_control_sources(False)
 
+            # Before the speed changes the duration.
+            old_end = self._clip.props.start + self._clip.props.duration
+            layer = self._clip.get_layer()
+            following = sorted((clip for clip in layer.get_clips()
+                                if not isinstance(clip, GES.TransitionClip) and clip != self._clip and
+                                clip.props.start >= self._clip.props.start),
+                               key=lambda clip: clip.props.start)
+            # Whether the next clip comes right after, or overlaps for a
+            # transition.
+            attached = bool(following) and following[0].props.start <= old_end
+
             source, source_duration = self.__get_source_duration()
             for effect, propname in self._time_effects.values():
                 res = effect.set_child_property(propname, value)
@@ -497,7 +563,21 @@ class TimeProperties(Gtk.Expander, Loggable):
 
             # We do not want to snap when setting clip speed
             project.ges_timeline.props.snapping_distance = 0
-            self._clip.edit_full(-1, GES.EditMode.TRIM, GES.Edge.END, new_end)
+            # SPL: as when trimming, the following clips are pushed instead
+            # of overlapped, and the transitions and the fades are kept.
+            context = EditingContext(self._clip, project.ges_timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_END, self.app, log_actions=False)
+            # The exact end, not on a frame, else each change of the speed
+            # would lose a piece of the media.
+            context.with_video = False
+            context.edit_to(new_end, layer)
+            context.finish()
+            shift = self._clip.props.start + self._clip.props.duration - old_end
+            if attached and shift < 0:
+                # Faster, the following clips come back with the end, as
+                # they are pushed when slower.
+                for clip in following:
+                    clip.set_start(clip.props.start + shift)
             for track_element in self._clip.get_children(True):
                 track_element.set_auto_clamp_control_sources(True)
             is_auto_clamp = False

@@ -94,11 +94,12 @@ class TransformationPropertiesTest(common.TestCase):
     @common.setup_timeline
     @common.setup_clipproperties
     def test_speed_only_for_videos(self):
-        """Checks the speed property is offered for the videos only."""
+        """Checks the speed property is offered for the videos and sounds only."""
         speed_box = self.clipproperties.speed_expander
         layer = self.timeline_container.timeline.ges_timeline.get_layers()[0]
         for sample, offered in (("flat_colour1_640x480.png", False),
-                                ("one_fps_numeroted_blue.mkv", True)):
+                                ("one_fps_numeroted_blue.mkv", True),
+                                ("mp3_sample.mp3", True)):
             asset = GES.UriClipAsset.request_sync(common.get_sample_uri(sample))
             clip = layer.add_asset(asset, layer.get_duration(), 0, Gst.SECOND, GES.TrackType.UNKNOWN)
             self.timeline_container.timeline.selection.select([clip])
@@ -915,13 +916,13 @@ class SpeedPropertiesTest(common.TestCase):
 
     def assert_applied_rate(self, sources_count, rate, duration):
         self.assertEqual(len(self.speed_box._time_effects), sources_count)
-        self.assertEqual(self.speed_box.props.rate, rate)
+        self.assertAlmostEqual(self.speed_box.props.rate, rate)
         self.assertEqual(self.speed_box._clip.props.duration, duration)
         for effect, propname in self.speed_box._time_effects.values():
             self.assertTrue(propname in ["rate", "tempo"], propname)
-            self.assertEqual(effect.get_child_property(propname).value, rate)
+            self.assertAlmostEqual(effect.get_child_property(propname).value, rate)
 
-        self.assertEqual(self.speed_box._speed_adjustment.props.value, rate)
+        self.assertAlmostEqual(self.speed_box._speed_adjustment.props.value, rate)
 
     def assert_clip_speed_child_props(self, clip, audio, video, value):
         if audio:
@@ -1000,10 +1001,18 @@ class SpeedPropertiesTest(common.TestCase):
         self.assertEqual(clip2.props.duration, total_duration - duration)
         self.assertEqual(self.project.ges_timeline.props.snapping_distance, duration)
 
-        # 0.1 would lead to clip1 totally overlapping clip2, ensure it is a noop
+        # SPL: slower, clip1 pushes clip2 instead of overlapping it.
         self.speed_box._speed_adjustment.props.value = 0.1
-        self.assert_applied_rate(sources_count, 0.5, duration)
+        self.assertAlmostEqual(self.speed_box.props.rate, 0.1)
+        # The rate is a float, a bit different from 0.1.
+        self.assertAlmostEqual(self.speed_box._clip.props.duration, duration * 5, delta=Gst.USECOND)
+        clip1, clip2 = self.layer.get_clips()
+        self.assertEqual(clip2.props.start, clip1.props.start + clip1.props.duration)
         self.assertEqual(self.project.ges_timeline.props.snapping_distance, duration)
+        self.action_log.undo()
+        self.assert_applied_rate(sources_count, 0.5, duration)
+        clip1, clip2 = self.layer.get_clips()
+        self.assertEqual(clip2.props.start, duration)
 
         self.action_log.undo()
         self.assert_applied_rate(sources_count, 0.5, int(duration / 2) * 4)

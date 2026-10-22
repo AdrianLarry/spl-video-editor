@@ -2145,6 +2145,22 @@ msgid "Blur"
 msgstr "Desenfoque"
 
 #: pitivi/clipproperties.py
+msgid "Fast, half as long"
+msgstr "Rápido, dura la mitad"
+
+#: pitivi/clipproperties.py
+msgid "Normal speed"
+msgstr "Velocidad normal"
+
+#: pitivi/clipproperties.py
+msgid "Slow motion, twice as long"
+msgstr "Cámara lenta, dura el doble"
+
+#: pitivi/clipproperties.py
+msgid "Speed:"
+msgstr "Velocidad:"
+
+#: pitivi/clipproperties.py
 msgid "Not needed in this format, the image covers the frame."
 msgstr "No hace falta en este formato: la imagen cubre todo el cuadro."
 
