@@ -599,6 +599,28 @@ class Pipeline(GES.Pipeline, SimplePipeline):
                   cur_frame, new_frame, new_pos)
         self.simple_seek(new_pos)
 
+    def get_last_frame_position(self) -> int:
+        """Returns where the last frame of the timeline starts.
+
+        The end of the timeline has no clip, the viewer would show black.
+        """
+        duration = self.get_duration()
+        frame_duration = Gst.SECOND // 30
+        for track in self.props.timeline.get_tracks() if self.props.timeline else []:
+            if track.props.track_type != GES.TrackType.VIDEO:
+                continue
+            caps = track.get_restriction_caps()
+            res, num, denom = caps.get_structure(0).get_fraction("framerate") if caps else (False, 0, 0)
+            if res and num:
+                frame_duration = Gst.SECOND * denom // num
+        return max(0, duration - frame_duration)
+
+    def toggle_playback(self):
+        if not self.playing() and self._last_position >= self.get_last_frame_position():
+            # At the end, playing starts again.
+            self.simple_seek(0)
+        SimplePipeline.toggle_playback(self)
+
     def simple_seek(self, position):
         if self.props.timeline.is_empty():
             # Nowhere to seek.
@@ -606,6 +628,9 @@ class Pipeline(GES.Pipeline, SimplePipeline):
 
         if self.rendering():
             raise PipelineError("Trying to seek while rendering")
+
+        # SPL: the viewer shows the last frame, not the black after it.
+        position = min(position, self.get_last_frame_position())
 
         st = Gst.Structure.new_empty("seek")
         if self.get_simple_state() == Gst.State.PLAYING:
@@ -633,6 +658,10 @@ class Pipeline(GES.Pipeline, SimplePipeline):
             self._commit_wanted = False
         else:
             SimplePipeline._bus_message_cb(self, bus, message)
+
+        if message.type == Gst.MessageType.EOS and not self.rendering():
+            # SPL: the viewer shows the last frame, not black.
+            self.simple_seek(self.get_last_frame_position())
 
     @contextlib.contextmanager
     def commit_timeline_after(self):

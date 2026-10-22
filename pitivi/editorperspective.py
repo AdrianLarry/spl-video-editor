@@ -115,6 +115,7 @@ class EditorPerspective(Perspective, Loggable):
         self._create_ui()
         self.app.gui.connect("focus-in-event", self.__focus_in_event_cb)
         self.app.gui.connect("destroy", self._destroyed_cb)
+        self.app.gui.connect("key-press-event", self.__space_key_press_cb)
 
     def activate_compact_mode(self):
         """Shrinks widgets to suit better a small screen."""
@@ -350,6 +351,27 @@ class EditorPerspective(Perspective, Loggable):
             self.app.gui.disconnect_by_func(self.__fullscreen_key_press_cb)
             self.app.gui.unfullscreen()
         self.viewer.set_fullscreen_state(fullscreen)
+
+    def __space_key_press_cb(self, window, event):
+        """Plays or pauses with the space bar, wherever the focus is.
+
+        The shortcut of the timeline works only when it has the focus, and
+        a focused button is activated by the space bar instead.
+        """
+        if event.keyval != Gdk.KEY_space or not self.toplevel_widget.get_mapped():
+            return False
+        modifiers = Gtk.accelerator_get_default_mod_mask()
+        if event.state & modifiers:
+            return False
+        focus = window.get_focus()
+        if isinstance(focus, (Gtk.Entry, Gtk.TextView)):
+            # Typing a text, as of a title.
+            return False
+        project = self.app.project_manager.current_project
+        if not project or project.pipeline.rendering():
+            return False
+        project.pipeline.toggle_playback()
+        return True
 
     def __fullscreen_key_press_cb(self, unused_window, event):
         if event.keyval == Gdk.KEY_Escape:

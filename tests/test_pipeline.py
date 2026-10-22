@@ -168,3 +168,30 @@ class TestPipeline(common.TestCase):
                         pipe.commit_timeline()
                         self.assertEqual(commit.call_count, 0)
                 self.assertEqual(commit.call_count, 1)
+
+    def test_last_frame(self):
+        """Checks the viewer stops on the last frame, not on the black after it."""
+        ges_timeline = GES.Timeline.new()
+        track = GES.VideoTrack.new()
+        self.assertTrue(ges_timeline.add_track(track))
+        track.set_restriction_caps(Gst.Caps.from_string("video/x-raw,framerate=25/1"))
+        layer = ges_timeline.append_layer()
+        layer.add_clip(GES.TestClip.new())
+        pipe = Pipeline(app=common.create_pitivi_mock())
+        pipe.set_timeline(ges_timeline)
+
+        with mock.patch.object(pipe, "get_duration") as get_duration, \
+                mock.patch.object(SimplePipeline, "simple_seek") as simple_seek:
+            get_duration.return_value = 10 * Gst.SECOND
+            last_frame = 10 * Gst.SECOND - Gst.SECOND // 25
+            self.assertEqual(pipe.get_last_frame_position(), last_frame)
+
+            # The end is the last frame.
+            pipe.simple_seek(10 * Gst.SECOND)
+            simple_seek.assert_called_with(pipe, last_frame)
+
+            # Playing on the last frame starts again.
+            pipe._last_position = last_frame
+            with mock.patch.object(pipe, "play"):
+                pipe.toggle_playback()
+            simple_seek.assert_called_with(pipe, 0)

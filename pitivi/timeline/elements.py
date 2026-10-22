@@ -1534,6 +1534,10 @@ class Clip(Gtk.EventBox, Loggable):
                          if isinstance(elem, (GES.SourceClip, GES.TransitionClip))]
         self.timeline.selection.set_selection(selection, mode)
 
+        if mode == SELECT and isinstance(self.ges_clip, GES.SourceClip):
+            # SPL: the viewer shows the clip from its start.
+            self.app.project_manager.current_project.pipeline.simple_seek(self.ges_clip.props.start)
+
         return False
 
     def release(self):
