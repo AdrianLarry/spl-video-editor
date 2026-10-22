@@ -503,3 +503,26 @@ class ImageTransitionsTest(common.TestCase):
         self.assertEqual(element.get_border(), SOFT_WIPE_BORDER)
         contact, = get_contacts(self.layer)
         self.assertEqual((contact.kind, contact.direction), (SOFT_WIPE, RIGHT))
+
+
+class DurationTest(common.TestCase):
+    """Tests for changing the duration of the transitions."""
+
+    @common.setup_timeline
+    def test_change_duration(self):
+        self._wait_until_project_loaded()
+        for sample in ("flat_colour1_640x480.png", "one_fps_numeroted_blue.mkv"):
+            for kind in (PUSH, DISSOLVE):
+                for layer_clip in self.layer.get_clips():
+                    self.layer.remove_clip(layer_clip)
+                asset = GES.UriClipAsset.request_sync(common.get_sample_uri(sample))
+                clip_a = self.layer.add_asset(asset, 0, 0, 4 * SECOND, GES.TrackType.UNKNOWN)
+                clip_b = self.layer.add_asset(asset, 4 * SECOND, 0, 4 * SECOND, GES.TrackType.UNKNOWN)
+                for duration in (1, 2, 0.5, 1.5):
+                    with self.action_log.started("transition"):
+                        set_transition(get_contacts(self.layer)[0], kind, int(duration * SECOND), RIGHT)
+                    contact, = get_contacts(self.layer)
+                    self.assertEqual((contact.kind, contact.duration), (kind, int(duration * SECOND)),
+                                     (sample, kind, duration))
+                    self.assertEqual(clip_b.props.start, int((4 - duration) * SECOND), (sample, kind, duration))
+                    self.assertEqual(clip_a.props.duration, 4 * SECOND)

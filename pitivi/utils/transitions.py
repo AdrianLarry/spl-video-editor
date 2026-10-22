@@ -575,8 +575,16 @@ def _shift_following(contact: Contact, shift: int) -> None:
     if shift > 0:
         # Moving right, start with the last one so that none overlap.
         following.reverse()
-    for clip in following:
-        clip.set_start(clip.props.start + shift)
+    # Else a short transition snaps the second clip back to the end of the
+    # first one, and the overlap making the transition is lost.
+    timeline = layer.get_timeline()
+    snapping_distance = timeline.props.snapping_distance
+    timeline.props.snapping_distance = 0
+    try:
+        for clip in following:
+            clip.set_start(clip.props.start + shift)
+    finally:
+        timeline.props.snapping_distance = snapping_distance
 
 
 def apply_wipe(clip_a: GES.Clip, clip_b: GES.Clip, kind: str, direction: str) -> None:
