@@ -48,6 +48,9 @@ MAX_BLUR_SIGMA = 20.0
 SHIFT_PROPERTIES = {"posx": ("GstVideoBox::left", "GstVideoBox::right"),
                     "posy": ("GstVideoBox::top", "GstVideoBox::bottom")}
 ALPHA_PROPERTY = "GstAlpha::alpha"
+# The blurred fill is kept but inactive when the image fitting the frame
+# leaves at most this on its sides: it would be hidden.
+FITS_MARGIN = 2
 
 
 def is_blur_fill_effect(effect: GES.TrackElement) -> bool:
@@ -64,6 +67,26 @@ def get_blur_fill(clip: GES.Clip) -> Optional[GES.BaseEffect]:
         if is_blur_fill_effect(effect):
             return effect
     return None
+
+
+def get_active_blur_fill(clip: GES.Clip) -> Optional[GES.BaseEffect]:
+    """Returns the effect making the blurred fill of the clip, if active."""
+    effect = get_blur_fill(clip)
+    return effect if effect and effect.props.active else None
+
+
+def is_fill_needed(image_size: Tuple[int, int], frame_size: Tuple[int, int]) -> bool:
+    """Whether the image fitting the frame leaves room for the blurred fill."""
+    image_width, image_height = image_size
+    frame_width, frame_height = frame_size
+    fit = min(frame_width / image_width, frame_height / image_height)
+    return frame_width - image_width * fit > FITS_MARGIN or \
+        frame_height - image_height * fit > FITS_MARGIN
+
+
+def _set_needed(effect: GES.BaseEffect, needed: bool) -> None:
+    if effect.props.active != needed:
+        effect.props.active = needed
 
 
 def get_blur_sigma(container: GES.MetaContainer) -> float:
@@ -191,9 +214,13 @@ def set_blur_fill(clip: GES.Clip, enabled: bool, sigma: Optional[float] = None) 
     sigma = min(MAX_BLUR_SIGMA, max(MIN_BLUR_SIGMA, float(sigma)))
 
     frame_size = _frame_size(source)
-    description = blur_fill_description(get_image_size(clip), frame_size, sigma)
+    image_size = get_image_size(clip)
+    description = blur_fill_description(image_size, frame_size, sigma)
+    # Kept for when the frame changes again, but the image covers it.
+    needed = is_fill_needed(image_size, frame_size)
     if effect and effect.props.bin_description == description:
         effect.set_child_property("sigma", float(sigma))
+        _set_needed(effect, needed)
         return effect
     if effect:
         clip.remove(effect)
@@ -208,6 +235,7 @@ def set_blur_fill(clip: GES.Clip, enabled: bool, sigma: Optional[float] = None) 
     width, height = frame_size
     set_base_position(source, {"posx": 0, "posy": 0, "width": width, "height": height})
     link_alpha(effect, source)
+    _set_needed(effect, needed)
     return effect
 
 

@@ -40,6 +40,7 @@ from gi.repository import GES
 from gi.repository import Gst
 from gi.repository import GstController
 
+from pitivi.utils.blurfill import get_active_blur_fill
 from pitivi.utils.blurfill import get_blur_fill
 from pitivi.utils.blurfill import get_image_size
 from pitivi.utils.blurfill import link_alpha
@@ -160,7 +161,7 @@ def get_video_transition(clip_b: GES.Clip) -> Optional[GES.VideoTransition]:
 
 def covers_frame(clip: GES.Clip) -> bool:
     """Whether the video of the clip is as big as the frame, before placed."""
-    if get_blur_fill(clip):
+    if get_active_blur_fill(clip):
         # The effect makes the whole frame.
         return True
     source = clip.find_track_element(None, GES.VideoSource)
@@ -189,7 +190,7 @@ def _get_push_wipe(clip_b: GES.Clip, direction: str):
     The wipe applies to the image of the second clip before it is placed,
     except when its blurred fill makes the frame already slid.
     """
-    if get_blur_fill(clip_b):
+    if get_active_blur_fill(clip_b):
         return WIPES[direction]
     return PUSH_WIPES[direction]
 
@@ -635,7 +636,7 @@ def sync_pushes(layer: GES.Layer) -> None:
             if contact.clip_b == clip:
                 segments.setdefault(property_name, []).append(
                     (start, factor_b * size, start + contact.duration, 0))
-        effect = get_blur_fill(clip)
+        effect = get_active_blur_fill(clip)
         if effect:
             # The effect makes the whole frame, it slides it.
             offsets = {}

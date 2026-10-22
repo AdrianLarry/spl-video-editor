@@ -55,6 +55,7 @@ from pitivi.effects import HIDDEN_EFFECTS
 from pitivi.trackerperspective import CoverObjectPopover
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.blurfill import BLUR_SIGMA_META
+from pitivi.utils.blurfill import get_active_blur_fill
 from pitivi.utils.blurfill import get_blur_fill
 from pitivi.utils.blurfill import get_blur_sigma
 from pitivi.utils.blurfill import is_blur_fill_effect
@@ -1121,6 +1122,7 @@ class TransformationProperties(Gtk.Expander, Loggable):
         blur_box.props.margin_bottom = 2
 
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.blur_header = header
         header.pack_start(Gtk.Label(label=_("Blur:"), xalign=0), True, True, 0)
         self.blur_value_label = Gtk.Label(halign=Gtk.Align.END)
         header.pack_end(self.blur_value_label, False, False, 0)
@@ -1135,6 +1137,13 @@ class TransformationProperties(Gtk.Expander, Loggable):
         self.blur_scale.set_hexpand(True)
         self.blur_scale.connect("value-changed", self.__blur_scale_value_changed_cb)
         blur_box.pack_start(self.blur_scale, False, False, 0)
+
+        # When the image covers the frame, the fill is kept but inactive.
+        self.blur_unneeded_label = Gtk.Label(
+            label=_("Not needed in this format, the image covers the frame."), xalign=0)
+        self.blur_unneeded_label.set_line_wrap(True)
+        self.blur_unneeded_label.get_style_context().add_class("dim-label")
+        blur_box.pack_start(self.blur_unneeded_label, False, False, 0)
 
         blur_box.show_all()
         blur_box.set_no_show_all(True)
@@ -1192,6 +1201,10 @@ class TransformationProperties(Gtk.Expander, Loggable):
                 self.fill_button.set_active(False)
                 self.blur_fill_button.set_active(True)
                 self.blur_box.show()
+                needed = bool(get_active_blur_fill(clip))
+                self.blur_header.set_visible(needed)
+                self.blur_scale.set_visible(needed)
+                self.blur_unneeded_label.set_visible(not needed)
                 sigma = get_blur_sigma(self.source)
                 self.blur_adjustment.props.value = round(sigma / 0.2)
                 self.blur_value_label.set_markup("<b>%d %%</b>" % round(self.blur_adjustment.props.value))
@@ -1285,8 +1298,11 @@ class TransformationProperties(Gtk.Expander, Loggable):
                                          toplevel=True):
             set_orientation(clip, new_orientation)
             if get_blur_fill(clip):
-                # The blurred fill is made again for the turned image.
+                # The blurred fill is made again for the turned image, it
+                # can be needed or not, which the pushes follow.
                 update_blur_fill(clip)
+                if clip.get_layer():
+                    sync_pushes(clip.get_layer())
             elif new_orientation.swaps_dimensions != orientation.swaps_dimensions:
                 # The image keeps its aspect ratio, so it has to be framed again.
                 self.__set_framing(self.get_framing_position(fill))

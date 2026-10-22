@@ -20,10 +20,13 @@ from gi.repository import Gst
 
 from pitivi.utils.blurfill import ALPHA_PROPERTY
 from pitivi.utils.blurfill import blur_fill_description
+from pitivi.utils.blurfill import get_active_blur_fill
 from pitivi.utils.blurfill import get_blur_fill
 from pitivi.utils.blurfill import get_blur_sigma
 from pitivi.utils.blurfill import set_blur_fill
+from pitivi.utils.blurfill import is_fill_needed
 from pitivi.utils.blurfill import set_blur_sigma
+from pitivi.utils.blurfill import update_blur_fill
 from pitivi.utils.fades import get_keyframes
 from pitivi.utils.formats import set_format
 from pitivi.utils.formats import VERTICAL
@@ -55,6 +58,42 @@ class BlurFillTest(common.TestCase):
         # Custom sigma in description
         custom_desc = blur_fill_description((800, 800), (1080, 1920), sigma=15.0)
         self.assertIn("gaussianblur sigma=15", custom_desc)
+
+    def test_fill_needed(self):
+        self.assertTrue(is_fill_needed((1080, 1920), (1920, 1080)))
+        self.assertFalse(is_fill_needed((1080, 1920), (1080, 1920)))
+        # A photo of a phone, 3:4, leaves bands in a vertical frame.
+        self.assertTrue(is_fill_needed((3000, 4000), (1080, 1920)))
+        # The rounding leaves a pixel at most.
+        self.assertFalse(is_fill_needed((1079, 1920), (1080, 1920)))
+
+    @common.setup_timeline
+    def test_unneeded_fill_is_inactive(self):
+        self._wait_until_project_loaded()
+        clip_a = self._add_image(0)
+        self._add_image(3)
+        self._set_blur_fill(clip_a, True)
+        with self.action_log.started("push", toplevel=True):
+            set_transition(get_contacts(self.layer)[0], PUSH, SECOND, RIGHT)
+        self.assertTrue(get_active_blur_fill(clip_a))
+
+        # In a 4:3 frame the image covers it, the fill is kept inactive.
+        source = clip_a.find_track_element(None, GES.VideoSource)
+        with self.action_log.started("frame", toplevel=True):
+            source.get_track().update_restriction_caps(
+                Gst.Caps.from_string("video/x-raw,width=1440,height=1080"))
+            update_blur_fill(clip_a)
+            sync_pushes(self.layer)
+        effect = get_blur_fill(clip_a)
+        self.assertFalse(effect.props.active)
+        self.assertIsNone(get_active_blur_fill(clip_a))
+        # The source itself moves for the push.
+        values = {value for unused, value in
+                  get_keyframes(source.get_control_binding("posx").props.control_source)}
+        self.assertGreater(len(values), 1)
+
+        self.action_log.undo()
+        self.assertTrue(get_active_blur_fill(clip_a))
 
     def _add_image(self, start):
         asset = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))

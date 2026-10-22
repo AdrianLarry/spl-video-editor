@@ -2144,6 +2144,10 @@ msgstr "Barrido suave"
 msgid "Blur"
 msgstr "Desenfoque"
 
+#: pitivi/clipproperties.py
+msgid "Not needed in this format, the image covers the frame."
+msgstr "No hace falta en este formato: la imagen cubre todo el cuadro."
+
 #: pitivi/timeline/transitions.py
 msgid "No transition selected"
 msgstr "Ninguna transición seleccionada"
