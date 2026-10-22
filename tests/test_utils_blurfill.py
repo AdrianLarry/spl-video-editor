@@ -48,10 +48,10 @@ class BlurFillTest(common.TestCase):
     def test_description(self):
         # A square image in a vertical frame: it fits the width.
         description = blur_fill_description((800, 800), (1080, 1920))
-        self.assertIn("width=1080,height=1080 ! spl-mix.sink_1", description)
+        self.assertIn("width=1080,height=1080,pixel-aspect-ratio=1/1 ! spl-mix.sink_1", description)
         self.assertIn("sink_1::xpos=0 sink_1::ypos=420", description)
         # The background covers a small frame, cropped to it.
-        self.assertIn("width=480,height=480 ! videocrop left=105 right=105 top=0 bottom=0", description)
+        self.assertIn("width=480,height=480,pixel-aspect-ratio=1/1 ! videocrop left=105 right=105 top=0 bottom=0", description)
         self.assertTrue(description.endswith("format=AYUV,width=1080,height=1920"))
         self.assertIsNotNone(GES.Effect.new(description))
 

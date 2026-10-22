@@ -184,16 +184,21 @@ def blur_fill_description(image_size: Tuple[int, int], frame_size: Tuple[int, in
     cover_width, cover_height = _even(image_width * cover), _even(image_height * cover)
     crop_x, crop_y = cover_width - small_width, cover_height - small_height
 
+    # The sizes keep square pixels: else videoscale changes the pixel aspect
+    # ratio to keep the shape of the image, the compositor makes it a bit
+    # narrower and the last column shows the background of the compositor.
+
     # The image fitting the frame.
     fit = min(frame_width / image_width, frame_height / image_height)
     fit_width, fit_height = _even(image_width * fit), _even(image_height * fit)
 
     return ("tee name=spl-tee "
-            "spl-tee. ! queue ! videoscale ! capsfilter caps=video/x-raw,width=%d,height=%d ! "
+            "spl-tee. ! queue ! videoscale ! capsfilter caps=video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1 ! "
             "videocrop left=%d right=%d top=%d bottom=%d ! gaussianblur sigma=%d ! videoscale ! "
-            "capsfilter caps=video/x-raw,width=%d,height=%d ! spl-mix.sink_0 "
-            "spl-tee. ! queue ! videoscale ! capsfilter caps=video/x-raw,width=%d,height=%d ! spl-mix.sink_1 "
-            "compositor name=spl-mix sink_1::xpos=%d sink_1::ypos=%d ! "
+            "capsfilter caps=video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1 ! spl-mix.sink_0 "
+            "spl-tee. ! queue ! videoscale ! "
+            "capsfilter caps=video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1 ! spl-mix.sink_1 "
+            "compositor name=spl-mix background=black sink_1::xpos=%d sink_1::ypos=%d ! "
             "capsfilter caps=video/x-raw,width=%d,height=%d ! "
             "videobox border-alpha=0 ! alpha name=spl-alpha ! "
             "capsfilter caps=video/x-raw,format=AYUV,width=%d,height=%d"
