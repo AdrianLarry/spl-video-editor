@@ -942,6 +942,19 @@ class TestTimelineContainer(common.TestCase):
         timeline_container.update_clips_asset(mock.Mock())
 
 
+    def test_best_zoom_ratio_shows_30_seconds_at_least(self):
+        timeline_container = common.create_timeline_container()
+        timeline = timeline_container.timeline
+        allocation = mock.Mock(width=600)
+        with mock.patch.object(timeline.layout, "get_allocation", return_value=allocation):
+            # A new video shows 30 seconds, plus one for the last.
+            self.assertEqual(timeline.calc_best_zoom_ratio(mini=False), 600 / 30)
+            with mock.patch.object(timeline.ges_timeline, "get_duration", return_value=10 * Gst.SECOND):
+                self.assertEqual(timeline.calc_best_zoom_ratio(mini=False), 600 / 30)
+            # A longer one, all of it.
+            with mock.patch.object(timeline.ges_timeline, "get_duration", return_value=60 * Gst.SECOND):
+                self.assertEqual(timeline.calc_best_zoom_ratio(mini=False), 600 / 60)
+
 class TestClipsEdges(common.TestCase):
 
     def test_clips_edges(self):

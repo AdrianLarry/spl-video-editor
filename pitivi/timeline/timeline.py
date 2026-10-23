@@ -88,6 +88,10 @@ from pitivi.utils.widgets import ZoomBox
 # The color showing where a new layer would be created, as in the mockup.
 NEW_LAYER_ZONE_COLOR = (1.0, 0.541, 0.357)
 
+# The time shown at least when the whole timeline is in view: a new or short
+# video shows these seconds, a longer one all of it.
+MIN_FIT_DURATION = 30 * Gst.SECOND
+
 
 GlobalSettings.add_config_option('markersSnappableByDefault',
                                  section="user-interface",
@@ -454,6 +458,8 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         self.add(hbox)
 
         self.layout = FullLayersLayout(self)
+        self.__layout_width = 0
+        self.layout.connect("size-allocate", self.__layout_size_allocate_cb)
         self.layout.props.can_focus = True
         self.layout.props.can_default = True
         self.hadj = self.layout.get_hadjustment()
@@ -506,6 +512,9 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         # Whether the entire timeline content is in view and
         # it should be kept that way if it makes sense.
         self.zoomed_fitted = True
+        # Whether the timeline is fitted again when the drag ends.
+        self.__fit_after_drag = False
+        self.__fit_handle = 0
 
         # A list of (controls separator, layers separator) tuples.
         self._separators = []
@@ -678,6 +687,30 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
     def _duration_changed_cb(self, ges_timeline, pspec):
         self.layout.update_width()
         self.mini_layout.update_width()
+        self.__keep_fitted()
+
+    def __layout_size_allocate_cb(self, unused_widget, allocation):
+        # Shown or resized, still fitted.
+        if allocation.width != self.__layout_width:
+            self.__layout_width = allocation.width
+            self.__keep_fitted()
+
+    def __keep_fitted(self):
+        """Fits the timeline in view again, unless the user zoomed."""
+        if not self.zoomed_fitted:
+            return
+        if self.dragging_element or self.editing_context:
+            # Zooming under the pointer would be confusing.
+            self.__fit_after_drag = True
+            return
+        if not self.__fit_handle:
+            self.__fit_handle = GLib.idle_add(self.__fit_cb)
+
+    def __fit_cb(self):
+        self.__fit_handle = 0
+        if self.zoomed_fitted:
+            self.set_best_zoom_ratio(allow_zoom_in=True)
+        return False
 
     def scroll_to_playhead(self, align=None, when_not_in_view=False, delayed=False):
         """Scrolls so that the playhead is in view.
@@ -1499,6 +1532,7 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
 
         self.update_snapping_distance()
         self.zoomed_fitted = False
+        self.editor_state.set_value("zoom-fitted", False)
 
         self.update_position()
         self.editor_state.set_value("zoom-level", Zoomable.get_current_zoom_level())
@@ -1506,6 +1540,9 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
     def calc_best_zoom_ratio(self, mini=True):
         """Returns the zoom ratio so that the entire timeline is in (mini)view."""
         duration = 0 if not self.ges_timeline else self.ges_timeline.get_duration()
+        if not mini:
+            # SPL: at least some seconds, the ruler of a new video too.
+            duration = max(duration, MIN_FIT_DURATION)
         if not duration or (mini and not self.mini_layout_container.get_visible()):
             # Maximum available width, the parent is TimelineContainer
             return self.get_parent().get_allocated_width()
@@ -1523,8 +1560,9 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
 
     def set_best_zoom_ratio(self, allow_zoom_in=False):
         """Sets the zoom level so that the entire timeline is in view."""
-        duration = 0 if not self.ges_timeline else self.ges_timeline.get_duration()
-        if not duration:
+        if not self.ges_timeline or self.layout.get_allocation().width <= 1:
+            # Fitted when allocated, see __layout_size_allocate_cb.
+            self.zoomed_fitted = True
             return
 
         zoom_ratio = self.calc_best_zoom_ratio(mini=False)
@@ -1543,6 +1581,7 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         # Only do this at the very end, after updating the other widgets.
         self.log("Setting 'zoomed_fitted' to True")
         self.zoomed_fitted = True
+        self.editor_state.set_value("zoom-fitted", True)
 
         self.hadj.set_value(0)
 
@@ -1774,6 +1813,9 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
             self.editing_context.finish()
 
         self.dragging_element = None
+        if self.__fit_after_drag:
+            self.__fit_after_drag = False
+            GLib.idle_add(self.__keep_fitted)
         if self.dragging_group is not None:
             self.dragging_group.ungroup(recursive=False)
             self.dragging_group = None
@@ -1992,7 +2034,7 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
                 self.timeline.selection.set_selection(clips, SELECT)
 
         zoom_level = self.editor_state.get_value("zoom-level")
-        if zoom_level:
+        if zoom_level and not self.editor_state.get_value("zoom-fitted"):
             Zoomable.set_zoom_level(zoom_level)
         else:
             self.timeline.set_best_zoom_ratio(allow_zoom_in=True)
