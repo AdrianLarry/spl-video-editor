@@ -865,8 +865,11 @@ class LayerObserver(MetaContainerObserver, Loggable):
 
     def _disconnect_from_control_source(self, binding):
         control_source = binding.props.control_source
-        observer = self.keyframe_observers.pop(control_source)
-        observer.release()
+        # The blurred fill shares the alpha control source of the source,
+        # disconnected with the first.
+        observer = self.keyframe_observers.pop(control_source, None)
+        if observer:
+            observer.release()
 
     def _clip_added_cb(self, layer, clip):
         self._connect_to_clip(clip)

@@ -311,8 +311,9 @@ def _sync_zoom_effect(source: GES.VideoSource, effect: Optional[GES.BaseEffect],
         clip.add(effect)
         for prop, name in ZOOM_EFFECT_RECT.items():
             effect.set_child_property(name, float(base[prop]))
-        width, height = frame_size
-        _set_source_base(source, {"posx": 0, "posy": 0, "width": width, "height": height})
+    # Always, a clip split or pasted getting the position of a new one.
+    width, height = frame_size
+    _set_source_base(source, {"posx": 0, "posy": 0, "width": width, "height": height})
     if clip.get_top_effect_index(effect) != 0:
         # After the other effects, the blurred fill making the frame.
         clip.set_top_effect_index(effect, 0)

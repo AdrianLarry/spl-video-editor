@@ -31,6 +31,7 @@ record of it:
   second turning back from white, with an effect of each clip hidden
   from the user. Nothing moves.
 """
+from typing import Dict
 from typing import List
 from typing import NamedTuple
 from typing import Optional
@@ -573,6 +574,49 @@ def replace_asset(clip: GES.UriClip, asset: GES.Asset) -> bool:
         sync_pushes(layer)
     return True
 
+
+
+def _spl_metas(element: GES.MetaContainer) -> Optional[str]:
+    """Returns the metas of SPL of the element, serialized, if any."""
+    structure = Gst.Structure.new_from_string(element.metas_to_string())
+    if not structure:
+        return None
+    names = [structure.nth_field_name(index) for index in range(structure.n_fields())]
+    for name in names:
+        if not name.startswith("spl::"):
+            structure.remove_field(name)
+    return structure.to_string() if structure.n_fields() else None
+
+
+def _spl_metas_elements(clip: GES.Clip):
+    """Yields the clip and its children, with keys kept by a copy."""
+    yield "clip", clip
+    for index, effect in enumerate(clip.get_top_effects()):
+        yield ("effect", index), effect
+    for child in clip.get_children(False):
+        if isinstance(child, GES.Source) and child.get_track():
+            yield ("source", int(child.get_track().props.track_type)), child
+
+
+def get_spl_metas(clip: GES.Clip) -> Dict:
+    """Returns the metas of SPL of the clip and of its children.
+
+    GES copies a clip without them when pasting: the zoom, the blurred
+    fill and the pushes would be lost. See `set_spl_metas`.
+    """
+    metas = {}
+    for key, element in _spl_metas_elements(clip):
+        serialized = _spl_metas(element)
+        if serialized:
+            metas[key] = serialized
+    return metas
+
+
+def set_spl_metas(clip: GES.Clip, metas: Dict) -> None:
+    """Sets the metas of SPL got with `get_spl_metas` on the clip copied."""
+    for key, element in _spl_metas_elements(clip):
+        if key in metas:
+            element.add_metas_from_string(metas[key])
 
 def get_contacts(layer: GES.Layer) -> List[Contact]:
     """Returns where the visual clips of the layer meet or overlap."""

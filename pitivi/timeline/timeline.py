@@ -47,6 +47,7 @@ from pitivi.timeline.markers import MarkersBox
 from pitivi.timeline.previewers import Previewer
 from pitivi.timeline.ruler import TimelineScaleRuler
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.utils.blurfill import update_blur_fill
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.markers import GES_MARKERS_SNAPPABLE
 from pitivi.utils.misc import asset_get_duration
@@ -62,8 +63,10 @@ from pitivi.utils.timeline import Selection
 from pitivi.utils.timeline import TimelineError
 from pitivi.utils.timeline import UNSELECT
 from pitivi.utils.timeline import Zoomable
+from pitivi.utils.transitions import get_spl_metas
 from pitivi.utils.transitions import remove_transitions_of
 from pitivi.utils.transitions import replace_asset
+from pitivi.utils.transitions import set_spl_metas
 from pitivi.utils.transitions import sync_pushes
 from pitivi.utils.ui import EFFECT_TARGET_ENTRY
 from pitivi.utils.ui import LAYER_HEIGHT
@@ -1022,7 +1025,11 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         """Gets layer and position in the timeline where user clicked."""
         event_widget = Gtk.get_event_widget(event)
         layers_box = self.layout.layers_vbox if not mini else self.mini_layout.layers_vbox
-        x, y = event_widget.translate_coordinates(layers_box, event.x, event.y)
+        if event_widget:
+            x, y = event_widget.translate_coordinates(layers_box, event.x, event.y)
+        else:
+            # The clicked widget was destroyed meanwhile, as the clip split.
+            x, y = layers_box.get_pointer()
         clicked_layer = self.get_layer_at(y, mini=mini)[0]
         ratio = self.calc_best_zoom_ratio() if mini else None
         click_pos = max(0, self.pixel_to_ns(x, zoomratio=ratio))
@@ -1804,6 +1811,7 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
         self.state_restored = False
         self.ges_timeline = None
         self.__copied_group = None
+        self.__copied_metas = {}
 
         self._create_ui()
         self._create_actions()
@@ -2530,9 +2538,26 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
         try:
             self.__copied_group = group.copy(deep=True)
             self.__copied_group.props.serialize = False
+            # SPL: GES pastes the clips without the metas of SPL.
+            self.__copied_metas = {self.__copy_key(clip, group): get_spl_metas(clip)
+                                   for clip in self.__group_clips(group)}
         finally:
             group.ungroup(recursive=False)
         self.update_actions()
+
+    @staticmethod
+    def __group_clips(group):
+        for child in group.children:
+            if isinstance(child, GES.Group):
+                yield from TimelineContainer.__group_clips(child)
+            elif isinstance(child, GES.Clip):
+                yield child
+
+    @staticmethod
+    def __copy_key(clip, group):
+        """Returns what a clip and its copy pasted have in common."""
+        return (clip.props.start - group.props.start, clip.props.duration,
+                clip.get_layer().props.priority, clip.get_asset().props.id)
 
     def __paste_clips_cb(self, unused_action, unused_parameter):
         if not self.__copied_group:
@@ -2547,6 +2572,16 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
             if not pasted_group:
                 self.info("The paste is not possible at position: %s", position)
                 return
+
+            # SPL: the metas of SPL of the copied clips, then the fills and
+            # the zoom are set up as when made.
+            layers = set()
+            for clip in self.__group_clips(pasted_group):
+                set_spl_metas(clip, self.__copied_metas.get(self.__copy_key(clip, pasted_group), {}))
+                update_blur_fill(clip)
+                layers.add(clip.get_layer())
+            for layer in layers:
+                sync_pushes(layer)
 
             # Need to save this as the .ungroup() below changes the duration.
             duration = pasted_group.duration
@@ -2663,8 +2698,13 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
                                               clip_name=clip.get_name(),
                                               position=float(position / Gst.SECOND))
 
-                        clip.split(position)
+                        new_clip = clip.split(position)
                         splitted = True
+                        # SPL: the fill of the new part, copied by GES, is
+                        # set up as when made.
+                        if new_clip:
+                            update_blur_fill(new_clip)
+                            sync_pushes(layer)
                     finally:
                         layer.splitting_object = False
 

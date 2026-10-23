@@ -25,6 +25,9 @@ from gi.repository import Gtk
 
 from pitivi.undo.timeline import TimelineObserver
 from pitivi.undo.undo import UndoableActionLog
+from pitivi.utils.blurfill import get_active_blur_fill
+from pitivi.utils.blurfill import get_blur_sigma
+from pitivi.utils.blurfill import set_blur_fill
 from pitivi.utils.timeline import UNSELECT
 from pitivi.utils.ui import LAYER_HEIGHT
 from pitivi.utils.ui import SEPARATOR_HEIGHT
@@ -686,6 +689,42 @@ class TestEditing(common.TestCase):
         self.assertEqual(len(timeline.ges_timeline.get_layers()), 1,
                          "No new layer should have been created")
 
+
+    @common.setup_project_with_clips(assets_names=["flat_colour1_640x480.png"])
+    def test_split_and_copy_blur_fill(self):
+        """Checks the clips with a blurred fill are split and copied."""
+        clip, = self.layer.get_clips()
+        with self.action_log.started("blur fill", toplevel=True):
+            set_blur_fill(clip, True, sigma=12.0)
+        self.assertTrue(get_active_blur_fill(clip))
+
+        def split(at):
+            self.project.pipeline.get_position = mock.Mock(return_value=at)
+            self.timeline_container.split_action.activate()
+
+        split(clip.props.duration // 2)
+        self.assertEqual(len(self.layer.get_clips()), 2)
+        self.action_log.undo()
+        self.assertEqual(len(self.layer.get_clips()), 1)
+        self.action_log.redo()
+        clips = self.layer.get_clips()
+        self.assertEqual(len(clips), 2)
+
+        # Splitting the second part too, the copy of the copied fill.
+        split(clips[1].props.start + clips[1].props.duration // 2)
+        clips = self.layer.get_clips()
+        self.assertEqual(len(clips), 3)
+        self.assertTrue(all(get_active_blur_fill(part) for part in clips))
+
+        self.timeline_container.timeline.selection.select([clips[0]])
+        self.timeline_container.copy_action.activate()
+        self.project.pipeline.get_position = mock.Mock(return_value=self.layer.get_duration())
+        self.timeline_container.paste_action.activate()
+        clips = self.layer.get_clips()
+        self.assertEqual(len(clips), 4)
+        # With the metas of SPL, as the blur chosen.
+        self.assertTrue(get_active_blur_fill(clips[-1]))
+        self.assertEqual(get_blur_sigma(clips[-1].find_track_element(None, GES.VideoSource)), 12.0)
 
 class TestClipsSelection(common.TestCase):
 

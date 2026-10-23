@@ -1448,6 +1448,9 @@ class TransformationProperties(Gtk.Expander, Loggable):
         if not fill or not stream_info:
             # Titles and color clips always cover the whole frame.
             return position
+        if not self._project:
+            # Closing the project, the clip still shown.
+            return None
 
         return get_fill_position(position, self._project.videowidth, self._project.videoheight)
 

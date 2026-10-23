@@ -428,6 +428,8 @@ def initialize_modules():
     register_zoom_element()
     from pitivi.utils.blurfilter import register as register_blur_element
     register_blur_element()
+    from pitivi.utils.splittee import register as register_split_element
+    register_split_element()
 
     from pitivi.utils.misc import video_info_get_natural_height, video_info_get_natural_width, video_info_get_rotation
 
