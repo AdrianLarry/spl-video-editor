@@ -1018,7 +1018,7 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         if allow_seek and res and button == 1:
             if self.app.settings.leftClickAlsoSeeks:
                 if self.__next_seek_position is not None:
-                    self._project.pipeline.simple_seek(self.__next_seek_position)
+                    self._project.pipeline.seek_paused(self.__next_seek_position)
                     self.__next_seek_position = None
                 else:
                     event_widget = Gtk.get_event_widget(event)
@@ -1170,7 +1170,7 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
 
         ratio = self.calc_best_zoom_ratio() if mini else None
         position = max(0, self.pixel_to_ns(x, zoomratio=ratio))
-        self._project.pipeline.simple_seek(position)
+        self._project.pipeline.seek_paused(position)
 
     def __scroll(self, event):
         # determine how much to move the canvas

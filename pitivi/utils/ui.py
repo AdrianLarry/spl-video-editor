@@ -265,6 +265,15 @@ EDITOR_PERSPECTIVE_CSS = """
         opacity: 0.8;
     }
 
+    #preparing_spinner {
+        color: #D9531E;
+        background-color: rgba(255, 255, 255, 0.85);
+        border-radius: 999px;
+        padding: 10px;
+        min-width: 28px;
+        min-height: 28px;
+    }
+
     .LayerControlEntry:not(:focus) {
         border: 1px solid transparent;
         background: transparent;

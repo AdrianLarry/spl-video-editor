@@ -69,6 +69,16 @@ class OverlayStack(Gtk.Overlay, Loggable):
         self.safe_areas_overlay = SafeAreasOverlay(self)
         self.add_overlay(self.safe_areas_overlay)
 
+        # SPL: shown while playing waits for the clip edges to be prepared,
+        # only if it takes long enough to be noticed.
+        self.__preparing_id = 0
+        self.preparing_spinner = Gtk.Spinner(name="preparing_spinner",
+                                             halign=Gtk.Align.CENTER,
+                                             valign=Gtk.Align.CENTER)
+        self.preparing_spinner.set_no_show_all(True)
+        self.add_overlay(self.preparing_spinner)
+        self.set_overlay_pass_through(self.preparing_spinner, True)
+
         sink_widget.connect("size-allocate", self.__sink_widget_size_allocate_cb)
 
     def __size_allocate_cb(self, widget, rectangle):
@@ -163,6 +173,22 @@ class OverlayStack(Gtk.Overlay, Loggable):
 
         self.selected_overlay = self.__overlay_for_source(source)
         self.selected_overlay.queue_draw()
+
+    def set_preparing(self, preparing):
+        if self.__preparing_id:
+            GLib.source_remove(self.__preparing_id)
+            self.__preparing_id = 0
+        if preparing:
+            self.__preparing_id = GLib.timeout_add(150, self.__show_preparing_cb)
+        else:
+            self.preparing_spinner.stop()
+            self.preparing_spinner.hide()
+
+    def __show_preparing_cb(self):
+        self.__preparing_id = 0
+        self.preparing_spinner.show()
+        self.preparing_spinner.start()
+        return False
 
     def hide_overlays(self):
         if self.__hide_all_overlays:

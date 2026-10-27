@@ -581,7 +581,7 @@ class MultipleKeyframeCurve(KeyframeCurve):
                 if self._timeline.app.settings.leftClickAlsoSeeks:
                     self._timeline.set_next_seek_position(position)
                 else:
-                    self._project.pipeline.simple_seek(position)
+                    self._project.pipeline.seek_paused(position)
 
         super()._mpl_button_release_event_cb(event)
 
@@ -1536,8 +1536,8 @@ class Clip(Gtk.EventBox, Loggable):
         self.timeline.selection.set_selection(selection, mode)
 
         if mode == SELECT and isinstance(self.ges_clip, GES.SourceClip):
-            # SPL: the viewer shows the clip from its start.
-            self.app.project_manager.current_project.pipeline.simple_seek(self.ges_clip.props.start)
+            # SPL: select the clip and seek to the clicked timeline instant.
+            self.timeline._seek(event)
 
         return False
 

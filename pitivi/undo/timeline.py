@@ -162,7 +162,10 @@ class TimelineElementObserver(Loggable):
         if pspec.owner_type.name == "GstFramePositioner" and pspec.name == "zorder":
             return
 
-        if ges_timeline_element.get_control_binding(prop_name):
+        # SPL: the bindings are stored with the bare property name, the
+        # animated values played back are not changes made by the user.
+        if ges_timeline_element.get_control_binding(prop_name) or \
+                ges_timeline_element.get_control_binding(pspec.name):
             self.debug("Property %s controlled", prop_name)
             return
 

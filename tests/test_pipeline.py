@@ -196,6 +196,67 @@ class TestPipeline(common.TestCase):
                 pipe.toggle_playback()
             simple_seek.assert_called_with(pipe, 0)
 
+    def test_preview_audio_format_stays_stable(self):
+        """Changing source audio formats does not renegotiate the device."""
+        pipe = Pipeline(app=common.create_pitivi_mock())
+        audio = pipe.props.audio_sink
+        output_format = audio.get_by_name("spl-preview-audio-format")
+        device = output_format.get_static_pad("src").get_peer().get_parent_element()
+        output_format.unlink(device)
+        audio.remove(device)
+        sink = Gst.ElementFactory.make("appsink")
+        sink.props.sync = False
+        audio.add(sink)
+        self.assertTrue(output_format.link(sink))
+        pipeline = Gst.Pipeline()
+        src = Gst.ElementFactory.make("appsrc")
+        src.props.format = Gst.Format.TIME
+        pipeline.add(src)
+        pipeline.add(audio)
+        self.assertTrue(src.link(audio))
+        changes = []
+
+        def event_probe(unused_pad, info):
+            event = info.get_event()
+            if event.type == Gst.EventType.CAPS:
+                changes.append(event.parse_caps().copy())
+            return Gst.PadProbeReturn.OK
+
+        output_format.get_static_pad("src").add_probe(Gst.PadProbeType.EVENT_DOWNSTREAM, event_probe)
+        try:
+            pipeline.set_state(Gst.State.PLAYING)
+            # A mono music source, stereo video audio and a float mix.
+            formats = (("F32LE", 44100, 1, 4), ("S16LE", 48000, 2, 2),
+                       ("F64LE", 48000, 2, 8))
+            for index, (fmt, rate, channels, size) in enumerate(formats):
+                caps = Gst.Caps.from_string(
+                    "audio/x-raw,format=%s,layout=interleaved,rate=%d,channels=%d"
+                    % (fmt, rate, channels))
+                buffer = Gst.Buffer.new_allocate(None, rate // 10 * channels * size, None)
+                buffer.memset(0, 0, buffer.get_size())
+                buffer.pts = index * Gst.SECOND // 10
+                buffer.duration = Gst.SECOND // 10
+                sample = Gst.Sample.new(buffer, caps, None, None)
+                self.assertEqual(src.emit("push-sample", sample), Gst.FlowReturn.OK)
+            src.emit("end-of-stream")
+            samples = 0
+            while True:
+                sample = sink.emit("try-pull-sample", 5 * Gst.SECOND)
+                if sample is None:
+                    break
+                caps = sample.get_caps().get_structure(0)
+                self.assertEqual(caps.get_string("format"), "S16LE")
+                self.assertEqual(caps.get_string("layout"), "interleaved")
+                self.assertEqual(caps.get_int("rate"), (True, 48000))
+                self.assertEqual(caps.get_int("channels"), (True, 2))
+                samples += 1
+            self.assertGreaterEqual(samples, 3)
+            self.assertEqual(len(changes), 1)
+            self.assertIsNone(pipeline.get_bus().pop_filtered(Gst.MessageType.ERROR))
+        finally:
+            pipeline.set_state(Gst.State.NULL)
+            pipe.release()
+
     def test_preview_size(self):
         """Checks the viewer gets frames as big as shown, not as the project."""
         ges_timeline = GES.Timeline.new()

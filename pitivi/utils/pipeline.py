@@ -17,6 +17,7 @@
 """High-level pipelines."""
 import contextlib
 import os
+import time
 
 from gi.repository import GES
 from gi.repository import GLib
@@ -36,6 +37,8 @@ PIPELINE_SIGNALS = {
     "error": (GObject.SignalFlags.RUN_LAST, None, (GObject.TYPE_STRING, GObject.TYPE_STRING)),
     "died": (GObject.SignalFlags.RUN_LAST, None, ()),
     "async-done": (GObject.SignalFlags.RUN_LAST, None, ()),
+    # SPL: playing waits for the clip edges close ahead to be prepared.
+    "preparing": (GObject.SignalFlags.RUN_LAST, None, (GObject.TYPE_BOOLEAN,)),
 }
 
 MAX_RECOVERIES = 3
@@ -44,6 +47,16 @@ MAX_BRINGING_TO_PAUSED_DURATION = 5
 MAX_SET_STATE_DURATION = 1
 
 DEFAULT_POSITION_LISTENING_INTERVAL = 10
+
+# SPL: frames prepared ahead of the viewer, and how playing waits for the
+# clip edges close ahead to be prepared.
+AHEAD_MS = int(os.environ.get('SPL_AHEAD_MS', 3000))
+AHEAD_EDGE_WINDOW = (AHEAD_MS - 300) * Gst.MSECOND
+# The frames are as big as the viewer, this bounds a very big one.
+AHEAD_MAX_BYTES = 256 * 1024 * 1024
+AHEAD_EDGE_MARGIN = 150 * Gst.MSECOND
+AHEAD_POLL_MS = 20
+AHEAD_MAX_WAIT = 4
 
 
 class PipelineError(Exception):
@@ -558,7 +571,21 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         self._commit_wanted = False
         self._prevent_commits = 0
 
-        self.props.audio_sink = Gst.parse_bin_from_description("level ! audioconvert ! audioresample ! autoaudiosink", True)
+        # Where the video prepared ahead of the viewer reaches, see create_sink.
+        self._ahead_end = None
+        self._ahead_wait_id = 0
+        self._ahead_track = None
+        # Where the last seek goes, the position is known once it is done.
+        self._ahead_from = None
+
+        # Keep the device format stable when video audio joins or leaves
+        # the music mix. Renegotiating the sink interrupts its audio clock
+        # and briefly stops both the sound and the viewer at clip boundaries.
+        self.props.audio_sink = Gst.parse_bin_from_description(
+            "level ! audioconvert ! audioresample ! "
+            "capsfilter name=spl-preview-audio-format "
+            "caps=audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2 ! "
+            "autoaudiosink", True)
 
         if "watchdog" in os.environ.get("PITIVI_UNSTABLE_FEATURES", ''):
             watchdog = Gst.ElementFactory.make("watchdog", None)
@@ -621,14 +648,54 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         scale = Gst.ElementFactory.make("videoscale", None)
         size = Gst.ElementFactory.make("capsfilter", "spl-preview-size")
         convert = Gst.ElementFactory.make("videoconvert", None)
-        for element in (scale, size, convert, video_sink):
+        ahead = Gst.ElementFactory.make("queue", "spl-preview-ahead")
+        ahead.props.max_size_buffers = 0
+        ahead.props.max_size_bytes = AHEAD_MAX_BYTES
+        ahead.props.max_size_time = AHEAD_MS * Gst.MSECOND
+        for element in (scale, size, convert, ahead, video_sink):
             sink_bin.add(element)
         scale.link(size)
         size.link(convert)
-        convert.link(video_sink)
+        convert.link(ahead)
+        ahead.link(video_sink)
         sink_bin.add_pad(Gst.GhostPad.new("sink", scale.get_static_pad("sink")))
         widget.connect("size-allocate", self.__preview_size_allocate_cb, size)
         return sink_bin, widget
+
+    def set_timeline(self, timeline):
+        res = GES.Pipeline.set_timeline(self, timeline)
+        self.__watch_ahead()
+        return res
+
+    def __watch_ahead(self):
+        # Watched at the output of the track: past a clip edge, playsink
+        # holds the frames of the new sources until the audio plays.
+        self._ahead_end = None
+        self._ahead_track = None
+        for track in self.props.timeline.get_tracks() if self.props.timeline else []:
+            if track.props.track_type == GES.TrackType.VIDEO:
+                self._ahead_track = track
+                track.get_static_pad("src").add_probe(
+                    Gst.PadProbeType.BUFFER | Gst.PadProbeType.EVENT_FLUSH, self.__ahead_probe_cb, track)
+
+    def __forget_ahead(self):
+        # A commit builds the sources again, what was prepared is gone.
+        if self._ahead_end is not None:
+            self._ahead_end = 0
+
+    def __ahead_probe_cb(self, unused_pad, info, track):
+        if track is not self._ahead_track:
+            return Gst.PadProbeReturn.REMOVE
+
+        if not info.type & Gst.PadProbeType.BUFFER:
+            if info.get_event().type == Gst.EventType.FLUSH_STOP:
+                self._ahead_end = 0
+            return Gst.PadProbeReturn.OK
+        buffer = info.get_buffer()
+        if buffer.pts != Gst.CLOCK_TIME_NONE:
+            duration = buffer.duration if buffer.duration != Gst.CLOCK_TIME_NONE else 0
+            self._ahead_end = buffer.pts + duration
+        return Gst.PadProbeReturn.OK
 
     def __preview_size_allocate_cb(self, widget, allocation, size):
         frame_width, frame_height = 0, 0
@@ -664,10 +731,70 @@ class Pipeline(GES.Pipeline, SimplePipeline):
                 frame_duration = Gst.SECOND * denom // num
         return max(0, duration - frame_duration)
 
+    def pause(self):
+        self.__stop_waiting_ahead()
+        SimplePipeline.pause(self)
+
+    def seek_paused(self, position):
+        """Seeks and stops playing, as a click on the timeline does.
+
+        Playing again goes through toggle_playback, which waits for the
+        clip edges close ahead to be prepared.
+        """
+        if self.playing() or self._ahead_wait_id:
+            self.pause()
+        self.simple_seek(position)
+
+    def __stop_waiting_ahead(self):
+        if self._ahead_wait_id:
+            GLib.source_remove(self._ahead_wait_id)
+            self._ahead_wait_id = 0
+            self.emit("preparing", False)
+
+    def __must_prepare_ahead(self):
+        """Returns whether a clip edge close ahead is not prepared yet.
+
+        At the edges of the clips NLE builds the sources again, it takes
+        about a second. Played live, the viewer stops on the last frame
+        and the transition is not seen.
+        """
+        if self._ahead_end is None or self.rendering() or not self.props.timeline:
+            return False
+        if self._busy_async and self._ahead_from is not None:
+            position = self._ahead_from
+        else:
+            position = self._last_position
+        edges = []
+        for layer in self.props.timeline.get_layers():
+            for clip in layer.get_clips():
+                if clip.get_track_types() & GES.TrackType.VIDEO:
+                    edges.extend((clip.props.start, clip.props.start + clip.props.duration))
+        ahead = [edge for edge in edges if position < edge <= position + AHEAD_EDGE_WINDOW]
+        if not ahead:
+            return False
+        return self._ahead_end < min(ahead) + AHEAD_EDGE_MARGIN
+
+    def __wait_ahead_cb(self, started):
+        if time.monotonic() - started < AHEAD_MAX_WAIT and \
+                (self._busy_async or self.__must_prepare_ahead()):
+            return True
+        self._ahead_wait_id = 0
+        self.emit("preparing", False)
+        SimplePipeline.toggle_playback(self)
+        return False
+
     def toggle_playback(self):
+        if self._ahead_wait_id:
+            # Pressed again while getting ready: it stays paused.
+            self.__stop_waiting_ahead()
+            return
         if not self.playing() and self._last_position >= self.get_last_frame_position():
             # At the end, playing starts again.
             self.simple_seek(0)
+        if not self.playing() and self.__must_prepare_ahead():
+            self._ahead_wait_id = GLib.timeout_add(AHEAD_POLL_MS, self.__wait_ahead_cb, time.monotonic())
+            self.emit("preparing", True)
+            return
         SimplePipeline.toggle_playback(self)
 
     def simple_seek(self, position):
@@ -680,6 +807,7 @@ class Pipeline(GES.Pipeline, SimplePipeline):
 
         # SPL: the viewer shows the last frame, not the black after it.
         position = min(position, self.get_last_frame_position())
+        self._ahead_from = position
 
         st = Gst.Structure.new_empty("seek")
         if self.get_simple_state() == Gst.State.PLAYING:
@@ -707,6 +835,7 @@ class Pipeline(GES.Pipeline, SimplePipeline):
                 self._commit_wanted:
             self.debug("Committing now that ASYNC is DONE")
             self._add_waiting_for_async_done_timeout("_bus_message_cb: committing")
+            self.__forget_ahead()
             self.props.timeline.commit()
             self._commit_wanted = False
         else:
@@ -748,6 +877,7 @@ class Pipeline(GES.Pipeline, SimplePipeline):
                 # No ASYNC_DONE is emitted on empty timelines, waiting for
                 # it would end in resetting the pipeline again and again.
                 self._add_waiting_for_async_done_timeout("commit_timeline")
+            self.__forget_ahead()
             self.props.timeline.commit()
             self.debug("Committing right now")
             self._was_empty = is_empty

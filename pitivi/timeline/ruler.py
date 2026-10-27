@@ -202,7 +202,7 @@ class ScaleRuler(Gtk.DrawingArea, Loggable):
         if button in (1, 3):
             self.debug("button pressed at x:%d", event.x)
             position = self.pixel_to_ns(event.x + self.pixbuf_offset)
-            self._pipeline.simple_seek(position)
+            self._pipeline.seek_paused(position)
             self.__set_tooltip_text(position, True)
         return False
 
