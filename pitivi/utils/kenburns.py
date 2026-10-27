@@ -187,10 +187,12 @@ class ZoomFilter(GstBase.BaseTransform):
             # A photo is made smaller once, but another effect before this
             # one can change it, so a sample of its pixels tells whether it
             # changed.
-            step = max(1, mapinfo.size // SAMPLE_SIZE) | 1
-            key = (in_width, in_height, base_width, base_height,
-                   self.out_info.width, self.out_info.height, self.props_values["fill-sigma"],
-                   bytes(mapinfo.data[::step]))
+            key = None
+            if self.props_values["static"]:
+                step = max(1, mapinfo.size // SAMPLE_SIZE) | 1
+                key = (in_width, in_height, base_width, base_height,
+                       self.out_info.width, self.out_info.height, self.props_values["fill-sigma"],
+                       bytes(mapinfo.data[::step]))
             if self.props_values["static"] and self.__base_key == key and self.__base:
                 return self.__base
             data = bytearray(mapinfo.data)

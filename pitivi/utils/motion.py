@@ -40,6 +40,8 @@ from pitivi.utils.fades import set_keyframes
 from pitivi.utils.blurfill import get_blur_fill
 from pitivi.utils.blurfill import get_blur_sigma
 from pitivi.utils.blurfill import get_fit_rect
+from pitivi.utils.blurfill import get_blur_fill_position
+from pitivi.utils.blurfill import set_blur_fill_position
 from pitivi.utils.blurfill import is_blur_fill_needed
 from pitivi.utils.blurfill import set_blur_fill_active
 from pitivi.utils.kenburns import ELEMENT_NAME as ZOOM_ELEMENT_NAME
@@ -62,7 +64,7 @@ ANCHORS = {"top-left": (0, 0), "top": (0.5, 0), "top-right": (1, 0),
            "left": (0, 0.5), "center": (0.5, 0.5), "right": (1, 0.5),
            "bottom-left": (0, 1), "bottom": (0.5, 1), "bottom-right": (1, 1)}
 
-# The hidden effect which zooms the photos with sub-pixel precision, see
+# The hidden effect which zooms photos and videos with sub-pixel precision, see
 # the kenburns module. The source covers the frame and the effect places the
 # image in its rectangle, the base position, and zooms and slides it.
 ZOOM_EFFECT_META = "spl::zoom-effect"
@@ -121,7 +123,7 @@ def set_zoom(source: GES.VideoSource, zoom: Optional[Zoom]) -> None:
 
 
 def is_zoom_effect(effect: GES.TrackElement) -> bool:
-    """Whether the effect is the one zooming the photo."""
+    """Whether the effect provides the sub-pixel zoom."""
     if not isinstance(effect, GES.BaseEffect):
         return False
     res, value = effect.get_boolean(ZOOM_EFFECT_META)
@@ -129,7 +131,7 @@ def is_zoom_effect(effect: GES.TrackElement) -> bool:
 
 
 def get_zoom_effect(clip: Optional[GES.Clip]) -> Optional[GES.BaseEffect]:
-    """Returns the effect zooming the photo of the clip, if any."""
+    """Returns the effect zooming the clip, if any."""
     for effect in clip.get_top_effects() if clip else []:
         if is_zoom_effect(effect):
             return effect
@@ -137,22 +139,19 @@ def get_zoom_effect(clip: Optional[GES.Clip]) -> Optional[GES.BaseEffect]:
 
 
 def uses_zoom_effect(source: GES.VideoSource) -> bool:
-    """Whether the zoom of the source is made by the effect, for the photos.
-
-    The compositor places the sources in whole pixels, a slow zoom of a
-    photo shakes. The videos hide it.
-    """
+    """Whether the clip uses sub-pixel zoom instead of compositor scaling."""
     clip = source.get_parent()
     asset = clip.get_asset() if clip else None
-    return bool(get_zoom(source) and asset and asset.is_image())
+    return bool(get_zoom(source) and isinstance(source, GES.VideoUriSource) and asset)
 
 
-def zoom_effect_description(frame_size: Tuple[int, int], max_zoom: float) -> str:
-    """Returns the bin description of the effect zooming the photo."""
+def zoom_effect_description(frame_size: Tuple[int, int], max_zoom: float,
+                            static: bool = True) -> str:
+    """Returns the bin description of the sub-pixel zoom for photos or video."""
     return ("videoconvert ! video/x-raw,format=BGRA ! "
-            "%s name=spl-zoom static=true max-zoom=%.3f ! "
+            "%s name=spl-zoom static=%s max-zoom=%.3f ! "
             "capsfilter caps=video/x-raw,width=%d,height=%d ! videoconvert"
-            % ((ZOOM_ELEMENT_NAME, max_zoom) + tuple(frame_size)))
+            % ((ZOOM_ELEMENT_NAME, "true" if static else "false", max_zoom) + tuple(frame_size)))
 
 
 def is_moving(source: GES.VideoSource, property_name: str) -> bool:
@@ -179,7 +178,7 @@ def get_base_position(source: GES.VideoSource) -> Dict[str, int]:
     if effect:
         return {prop: round(effect.get_child_property(name)[1])
                 for prop, name in ZOOM_EFFECT_RECT.items()}
-    return _get_source_base(source)
+    return get_blur_fill_position(source.get_parent()) or _get_source_base(source)
 
 
 def _get_source_base(source: GES.VideoSource) -> Dict[str, int]:
@@ -194,7 +193,12 @@ def _get_source_base(source: GES.VideoSource) -> Dict[str, int]:
 
 def set_base_position(source: GES.VideoSource, position: Dict[str, int]) -> None:
     """Sets the position of the source when not moving. Call `sync_motion` after."""
-    effect = get_zoom_effect(source.get_parent())
+    clip = source.get_parent()
+    effect = get_zoom_effect(clip)
+    if get_blur_fill_position(clip) is not None:
+        set_blur_fill_position(clip, position)
+        if not effect:
+            return
     if effect:
         for prop, value in position.items():
             name = ZOOM_EFFECT_RECT[prop]
@@ -275,6 +279,18 @@ def motion_keyframes(base: Dict[str, int], zoom: Optional[Zoom], pushes: Dict[st
     return keyframes
 
 
+def restore_motion(timeline: GES.Timeline) -> None:
+    """Reconnects zooms and upgrades video zooms saved with compositor scaling."""
+    from pitivi.utils.transitions import sync_pushes  # pylint: disable=import-outside-toplevel
+
+    for layer in timeline.get_layers():
+        for clip in layer.get_clips():
+            source = clip.find_track_element(None, GES.VideoSource)
+            if source and get_zoom(source):
+                sync_pushes(layer)
+                break
+
+
 def sync_motion(source: GES.VideoSource, pushes: Dict[str, List[Segment]]) -> None:
     """Animates the position of the source for its zoom and its pushes."""
     if not source.get_track():
@@ -285,10 +301,13 @@ def sync_motion(source: GES.VideoSource, pushes: Dict[str, List[Segment]]) -> No
         _sync_zoom_effect(source, effect, pushes)
         return
     if effect:
-        # The photo is placed by the source again.
+        # The image is placed by the source again.
         base = get_base_position(source)
         clip.remove(effect)
-        _set_source_base(source, base)
+        if get_blur_fill_position(clip) is not None:
+            set_blur_fill_position(clip, base)
+        else:
+            _set_source_base(source, base)
     if get_blur_fill(clip):
         # The effect of the blurred fill makes the frame again, if needed.
         set_blur_fill_active(clip, is_blur_fill_needed(clip))
@@ -297,11 +316,12 @@ def sync_motion(source: GES.VideoSource, pushes: Dict[str, List[Segment]]) -> No
 
 def _sync_zoom_effect(source: GES.VideoSource, effect: Optional[GES.BaseEffect],
                       pushes: Dict[str, List[Segment]]) -> None:
-    """Zooms and slides the photo with the effect, the source covers the frame."""
+    """Zooms and slides the image; the source covers the frame."""
     clip = source.get_parent()
     zoom = get_zoom(source)
     frame_size = get_frame_size(source)
-    description = zoom_effect_description(frame_size, zoom.scale)
+    is_image = clip.get_asset().is_image()
+    description = zoom_effect_description(frame_size, zoom.scale, static=is_image)
     if not effect or effect.props.bin_description != description:
         base = get_base_position(source)
         if effect:
@@ -317,15 +337,22 @@ def _sync_zoom_effect(source: GES.VideoSource, effect: Optional[GES.BaseEffect],
     if clip.get_top_effect_index(effect) != 0:
         # After the other effects, the blurred fill making the frame.
         clip.set_top_effect_index(effect, 0)
-    if get_blur_fill(clip):
+    if get_blur_fill(clip) and is_image:
         # Its effect remakes the fill in every frame, too slow with the zoom.
         # This effect makes it once, behind the photo fitting the frame.
         set_blur_fill_active(clip, False)
         sigma = get_blur_sigma(source) if is_blur_fill_needed(clip) else 0.0
-        rect = dict(zip(("posx", "posy", "width", "height"), get_fit_rect(clip)))
+        rect = get_blur_fill_position(clip) or dict(zip(("posx", "posy", "width", "height"), get_fit_rect(clip)))
     else:
         sigma = 0.0
         rect = None
+        if get_blur_fill(clip):
+            # A video needs a new background in every frame. Let the native
+            # fill pipeline build it, then zoom the completed frame.
+            needed = is_blur_fill_needed(clip)
+            set_blur_fill_active(clip, needed)
+            if needed:
+                rect = {"posx": 0, "posy": 0, "width": width, "height": height}
     if effect.get_child_property("fill-sigma")[1] != sigma:
         effect.set_child_property("fill-sigma", sigma)
     for prop, name in ZOOM_EFFECT_RECT.items() if rect else ():
@@ -336,7 +363,11 @@ def _sync_zoom_effect(source: GES.VideoSource, effect: Optional[GES.BaseEffect],
         if effect.get_child_property(name)[1] != value:
             effect.set_child_property(name, float(value))
 
-    start, end = get_source_range(source)
+    # The zoom runs after time effects: use its own internal coordinates,
+    # which GES translates when playback speed or the media in-point changes.
+    start, end = get_source_range(effect)
+    source_start, unused_end = get_source_range(source)
+    time_offset = start - source_start
     zoom_keyframes = []
     for timestamp in (start, end):
         progress = (timestamp - start) / (end - start) if end > start else 0
@@ -345,7 +376,9 @@ def _sync_zoom_effect(source: GES.VideoSource, effect: Optional[GES.BaseEffect],
         zoom_keyframes.append((timestamp, 1 + (zoom.scale - 1) * progress))
     _set_effect_keyframes(effect, "zoom", zoom_keyframes)
     for prop, name in (("posx", "offset-x"), ("posy", "offset-y")):
-        segments = pushes.get(prop, [])
+        segments = [(segment_start + time_offset, start_value,
+                     segment_end + time_offset, end_value)
+                    for segment_start, start_value, segment_end, end_value in pushes.get(prop, [])]
         timestamps = {start, end}
         for segment_start, unused, segment_end, unused in segments:
             timestamps.update((segment_start, segment_end))

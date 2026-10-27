@@ -430,6 +430,8 @@ def initialize_modules():
     register_blur_element()
     from pitivi.utils.splittee import register as register_split_element
     register_split_element()
+    from pitivi.utils.speedfilter import register as register_speed_element
+    register_speed_element()
 
     from pitivi.utils.misc import video_info_get_natural_height, video_info_get_natural_width, video_info_get_rotation
 

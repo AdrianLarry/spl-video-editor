@@ -44,6 +44,8 @@ from pitivi.timeline.previewers import Previewer
 from pitivi.timeline.previewers import ThumbnailCache
 from pitivi.undo.project import AssetAddedIntention
 from pitivi.undo.project import AssetProxiedIntention
+from pitivi.utils.blurfill import restore_blur_fills
+from pitivi.utils.motion import restore_motion
 from pitivi.utils.formats import get_closest_format
 from pitivi.utils.formats import SIZES
 from pitivi.utils.loggable import Loggable
@@ -1541,6 +1543,8 @@ class Project(Loggable, GES.Project):
                 break
 
         self._load_encoder_settings(profiles)
+        restore_blur_fills(self.ges_timeline)
+        restore_motion(self.ges_timeline)
 
     def set_container_profile(self, container_profile: GstPbutils.EncodingContainerProfile) -> bool:
         """Sets the specified container profile as new profile if usable.

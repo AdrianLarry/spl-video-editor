@@ -704,6 +704,8 @@ class TestEditing(common.TestCase):
 
         split(clip.props.duration // 2)
         self.assertEqual(len(self.layer.get_clips()), 2)
+        right = max(self.layer.get_clips(), key=lambda part: part.props.start)
+        self.assertIs(self.timeline_container.timeline.selection.get_single_clip(), right)
         self.action_log.undo()
         self.assertEqual(len(self.layer.get_clips()), 1)
         self.action_log.redo()
@@ -1025,17 +1027,37 @@ class TestDragFromOutside(common.TestCase):
                 self.assertIsNone(timeline_ui.dragging_element)
                 self.assertFalse(timeline_ui.dropping_clips)
 
-    def test_adding_overlap_clip(self):
-        """Checks asset drag&drop on top of an existing clip."""
-        asset = GES.UriClipAsset.request_sync(
-            common.get_sample_uri("tears_of_steel.webm"))
-
-        layer, = self.ges_timeline.get_layers()
-        layer.add_asset(asset, 0, 0, 10, GES.TrackType.UNKNOWN)
-        clips = layer.get_clips()
-
-        self.check_drag_assets_to_timeline(self.ges_timeline.ui, [asset])
-        self.assertEqual(layer.get_clips(), clips)
+    def test_drag_video_between_images(self):
+        """A new video makes room between two adjacent images."""
+        timeline = self.ges_timeline.ui
+        layer = self.ges_timeline.append_layer()
+        image = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
+        video = GES.UriClipAsset.request_sync(common.get_sample_uri("tears_of_steel.webm"))
+        first = layer.add_asset(image, 0, 0, Gst.SECOND, GES.TrackType.UNKNOWN)
+        second = layer.add_asset(image, Gst.SECOND, 0, Gst.SECOND, GES.TrackType.UNKNOWN)
+        timeline.drop_data = [video.props.id]
+        timeline._project.assets_for_uris = mock.Mock(return_value=[video])
+        self.ges_timeline.set_snapping_distance(0)
+        x = timeline.ns_to_pixel(Gst.SECOND)
+        timeline._Timeline__create_clips(x, SEPARATOR_HEIGHT)
+        self.assertIsNotNone(timeline.dragging_element)
+        timeline.get_layer_at = mock.Mock(return_value=(layer, []))
+        timeline._Timeline__drag_update(x, SEPARATOR_HEIGHT)
+        inserted = timeline.dragging_element.ges_clip
+        self.assertEqual(first.props.start, 0)
+        self.assertEqual(inserted.props.start, Gst.SECOND)
+        self.assertEqual(second.props.start, Gst.SECOND + inserted.props.duration)
+        target = mock.Mock()
+        target.name.return_value = URI_TARGET_ENTRY.target
+        timeline.drag_dest_find_target = mock.Mock(return_value=target)
+        timeline._drag_leave_cb(None, mock.Mock(), 0)
+        self.assertEqual(layer.get_clips(), [first, second])
+        self.assertEqual(second.props.start, Gst.SECOND)
+        with mock.patch.object(Gtk, "drag_finish"):
+            self.assertTrue(timeline._drag_drop_cb(None, mock.Mock(), x, SEPARATOR_HEIGHT, 0))
+        self.assertEqual(inserted.props.start, Gst.SECOND)
+        self.assertEqual(second.props.start, Gst.SECOND + inserted.props.duration)
+        self.assertEqual(layer.get_clips(), [first, inserted, second])
 
     def test_dragging_multiple_clips_over_timeline(self):
         """Checks drag&drop two assets when only the first one can be placed."""

@@ -601,6 +601,41 @@ EDITOR_PERSPECTIVE_CSS = """
         background-color: rgba(0, 0, 0, 0.3);
     }
 
+    /* Small accents distinguish removal, organization and editing pages. */
+    .spl-panel .spl-library-trash {
+        background-image: none;
+        background-color: #513541;
+        color: #ffd1c6;
+        border: 1px solid #ba746e;
+        border-radius: 12px;
+        padding: 8px 12px;
+    }
+    .spl-panel .spl-library-trash:hover, .spl-panel .spl-library-trash:drop(active) {
+        background-color: #82504f;
+        color: #ffffff;
+        border-color: #ffa58c;
+    }
+    .spl-panel .spl-library-trash:disabled { color: #b69b9e; border-color: #695058; }
+    .spl-panel .spl-library-tags { background-image: none; background-color: #34312a; color: #e4c778; border-radius: 9px; }
+    .spl-panel .spl-property-pages button {
+        min-width: 0;
+        font-size: 12px;
+        background-image: none;
+        background-color: #242b34;
+        color: #c6d1df;
+        border: 1px solid #404b5b;
+        border-radius: 7px;
+        padding: 5px 6px;
+        box-shadow: none;
+    }
+    .spl-panel .spl-property-pages button:checked {
+        background-image: none;
+        background-color: #285666;
+        color: #baf3ee;
+        border-color: #55b9b1;
+    }
+    .spl-panel .spl-property-pages button:hover { color: #a4e5df; }
+
     /* The button adding a file to the timeline, as in the mockup. */
     .spl-lib-add {
         background-image: none;

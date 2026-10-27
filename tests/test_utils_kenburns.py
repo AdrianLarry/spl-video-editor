@@ -16,6 +16,7 @@
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 """Tests for the pitivi.utils.kenburns module."""
 from gi.repository import Gst
+from gi.repository import GstController
 
 from pitivi.utils.kenburns import ELEMENT_NAME
 from pitivi.utils.kenburns import register
@@ -98,3 +99,43 @@ class ZoomFilterTest(common.TestCase):
             pipeline.set_state(Gst.State.NULL)
         # Red twice, kept, then blue, made again.
         self.assertEqual(colors, [b"\x00\x00\xff\xff", b"\x00\x00\xff\xff", b"\xff\x00\x00\xff"])
+
+    def test_video_frames_and_subpixel_motion(self):
+        """Every decoded frame changes while the rectangle moves smoothly."""
+        self.assertTrue(register())
+        pipeline = Gst.parse_launch(
+            "appsrc name=src caps=video/x-raw,format=BGRA,width=40,height=30,framerate=30/1 format=time ! "
+            "%s name=zoom static=false rect-x=10 rect-y=5 rect-width=40 rect-height=30 ! "
+            "video/x-raw,width=100,height=50 ! appsink name=sink" % ELEMENT_NAME)
+        zoom = pipeline.get_by_name("zoom")
+        control = GstController.InterpolationControlSource()
+        control.props.mode = GstController.InterpolationMode.LINEAR
+        control.set(0, 1.0)
+        control.set(10 * Gst.SECOND // 30, 1.02)
+        binding = GstController.DirectControlBinding.new_absolute(zoom, "zoom", control)
+        zoom.add_control_binding(binding)
+        src = pipeline.get_by_name("src")
+        sink = pipeline.get_by_name("sink")
+        pipeline.set_state(Gst.State.PLAYING)
+        edges = []
+        colors = []
+        try:
+            for index in range(11):
+                red = 20 + 20 * index
+                buffer = Gst.Buffer.new_wrapped(bytes((0, 0, red, 255)) * 40 * 30)
+                buffer.pts = index * Gst.SECOND // 30
+                buffer.duration = Gst.SECOND // 30
+                self.assertEqual(src.emit("push-buffer", buffer), Gst.FlowReturn.OK)
+                sample = sink.emit("try-pull-sample", 5 * Gst.SECOND)
+                self.assertIsNotNone(sample)
+                data = sample.get_buffer().extract_dup(0, 100 * 50 * 4)
+                colors.append(data[(20 * 100 + 25) * 4 + 2])
+                edge = 30 - sum(data[(20 * 100 + x) * 4 + 3] / 255 for x in range(30))
+                expected = 50 + (10 - 50) * (1 + 0.002 * index)
+                self.assertAlmostEqual(edge, expected, delta=0.02)
+                edges.append(edge)
+        finally:
+            pipeline.set_state(Gst.State.NULL)
+        self.assertEqual(colors, [20 + 20 * index for index in range(11)])
+        for before, after in zip(edges, edges[1:]):
+            self.assertAlmostEqual(before - after, 0.08, delta=0.02)

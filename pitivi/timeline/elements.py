@@ -814,6 +814,10 @@ class TimelineElement(Gtk.Layout, Zoomable, Loggable):
     def __create_keyframe_curve(self, bindings=None):
         """Creates required keyframe curve."""
         self.__remove_keyframes()
+        if not bindings and self.__controlled_property.name == "alpha":
+            # Opacity is edited in Properties; keep the binding for fades,
+            # without drawing an interactive curve over the thumbnails.
+            return
         if not bindings:
             bindings = [self._ges_elem.get_control_binding(self.__controlled_property.name)]
 

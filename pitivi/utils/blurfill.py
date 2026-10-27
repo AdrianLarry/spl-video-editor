@@ -23,7 +23,9 @@ fitting the frame over it. The source covers the frame.
 The effect makes new buffers, which lose the position and the alpha GES
 gives the source, so the effect does them: its last element slides the
 frame for the pushes, and the alpha element after it has the alpha of the
-source, sharing its control source. The alpha of videobox is ignored when
+source, sharing its control source. A final framepositioner restores the
+composition metadata required by GES transitions and layer stacking.
+The alpha of videobox is ignored when
 it does not box anything.
 """
 from typing import Optional
@@ -69,6 +71,26 @@ def get_blur_fill(clip: GES.Clip) -> Optional[GES.BaseEffect]:
     return None
 
 
+def get_blur_fill_position(clip):
+    """Returns the editable foreground rectangle of a photo fill, if present."""
+    effect = get_blur_fill(clip)
+    if not effect or "name=spl-foreground" not in effect.props.bin_description:
+        return None
+    return {prop: effect.get_child_property(name)[1] for prop, name in
+            (("posx", "rect-x"), ("posy", "rect-y"),
+             ("width", "rect-width"), ("height", "rect-height"))}
+
+
+def set_blur_fill_position(clip, position):
+    """Changes the foreground, leaving the blurred background full-frame."""
+    effect = get_blur_fill(clip)
+    if not effect or "name=spl-foreground" not in effect.props.bin_description:
+        return
+    names = {"posx": "rect-x", "posy": "rect-y", "width": "rect-width", "height": "rect-height"}
+    for prop, value in position.items():
+        effect.set_child_property(names[prop], float(value))
+
+
 def get_active_blur_fill(clip: GES.Clip) -> Optional[GES.BaseEffect]:
     """Returns the effect making the blurred fill of the clip, if active."""
     effect = get_blur_fill(clip)
@@ -94,7 +116,12 @@ def is_blur_fill_needed(clip: GES.Clip) -> bool:
     source = clip.find_track_element(None, GES.VideoSource)
     if not source or not source.get_track():
         return False
-    return is_fill_needed(get_image_size(clip), _frame_size(source))
+    frame_size = _frame_size(source)
+    position = get_blur_fill_position(clip)
+    if position is not None:
+        full = dict(zip(("posx", "posy", "width", "height"), (0, 0, *frame_size)))
+        return any(abs(position[prop] - value) > FITS_MARGIN for prop, value in full.items())
+    return is_fill_needed(get_image_size(clip), frame_size)
 
 
 def set_blur_fill_active(clip: GES.Clip, active: bool) -> None:
@@ -172,7 +199,7 @@ def get_image_size(clip: GES.Clip) -> Optional[Tuple[int, int]]:
 
 
 def blur_fill_description(image_size: Tuple[int, int], frame_size: Tuple[int, int],
-                          sigma: float = DEFAULT_BLUR_SIGMA) -> str:
+                          sigma: float = DEFAULT_BLUR_SIGMA, foreground: bool = False) -> str:
     """Returns the bin description of the effect making the blurred fill."""
     image_width, image_height = image_size
     frame_width, frame_height = frame_size
@@ -194,7 +221,7 @@ def blur_fill_description(image_size: Tuple[int, int], frame_size: Tuple[int, in
 
     # The split of the frames is splsplit and not a tee: GES copies the
     # properties when splitting or pasting the clip, see splittee.
-    return ("splsplit name=spl-split "
+    description = ("videoconvert ! splsplit name=spl-split "
             "spl-split. ! queue ! videoscale ! capsfilter caps=video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1 ! "
             "videocrop left=%d right=%d top=%d bottom=%d ! gaussianblur sigma=%d ! videoscale ! "
             "capsfilter caps=video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1 ! spl-mix.sink_0 "
@@ -203,13 +230,29 @@ def blur_fill_description(image_size: Tuple[int, int], frame_size: Tuple[int, in
             "compositor name=spl-mix background=black sink_1::xpos=%d sink_1::ypos=%d ! "
             "capsfilter caps=video/x-raw,width=%d,height=%d ! "
             "videobox border-alpha=0 ! alpha name=spl-alpha ! "
-            "capsfilter caps=video/x-raw,format=AYUV,width=%d,height=%d"
+            "framepositioner name=spl-positioner ! "
+            "capsfilter caps=video/x-raw,format=AYUV,width=%d,height=%d ! videoconvert"
             % (cover_width, cover_height,
                crop_x // 2, crop_x - crop_x // 2, crop_y // 2, crop_y - crop_y // 2, round(sigma),
                frame_width, frame_height,
                fit_width, fit_height,
                (frame_width - fit_width) // 2, (frame_height - fit_height) // 2,
                frame_width, frame_height, frame_width, frame_height))
+    if foreground:
+        original = ("spl-split. ! queue ! videoscale ! "
+                    "capsfilter caps=video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1 ! spl-mix.sink_1"
+                    % (fit_width, fit_height))
+        editable = ("spl-split. ! queue ! videoconvert ! video/x-raw,format=BGRA ! "
+                    "splzoom name=spl-foreground static=true max-zoom=1 "
+                    "rect-x=%d rect-y=%d rect-width=%d rect-height=%d ! "
+                    "capsfilter caps=video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1 ! "
+                    "videoconvert ! spl-mix.sink_1"
+                    % ((frame_width - fit_width) // 2, (frame_height - fit_height) // 2,
+                       fit_width, fit_height, frame_width, frame_height))
+        description = description.replace(original, editable).replace(
+            "sink_1::xpos=%d sink_1::ypos=%d" % ((frame_width - fit_width) // 2, (frame_height - fit_height) // 2),
+            "sink_1::xpos=0 sink_1::ypos=0")
+    return description
 
 
 def _frame_size(source: GES.VideoSource) -> Tuple[int, int]:
@@ -234,18 +277,47 @@ def link_alpha(effect: GES.BaseEffect, source: GES.VideoSource) -> None:
     effect.set_control_source(control_source, ALPHA_PROPERTY, "direct")
 
 
+def _sync_composition_priority(effect, unused_pspec=None):
+    # Match GESVideoSource's framepositioner: smaller timeline priorities
+    # are drawn above larger ones. Keep this current when layers move.
+    effect.set_child_property("GstFramePositioner::zorder",
+                              0xffffffff - effect.props.priority)
+
+
+def _configure_composition(effect):
+    if not effect.handler_is_connected(getattr(effect, "_blur_priority_handler", 0)):
+        effect._blur_priority_handler = effect.connect(
+            "notify::priority", _sync_composition_priority)
+    _sync_composition_priority(effect)
+
+
+def restore_blur_fills(timeline):
+    """Upgrades saved fills and reconnects their runtime synchronization."""
+    from pitivi.utils.transitions import sync_pushes  # pylint: disable=import-outside-toplevel
+
+    for layer in timeline.get_layers():
+        fills = [clip for clip in layer.get_clips() if get_blur_fill(clip)]
+        for clip in fills:
+            set_blur_fill(clip, True)
+        if fills:
+            sync_pushes(layer)
+
+
 def set_blur_fill(clip: GES.Clip, enabled: bool, sigma: Optional[float] = None) -> Optional[GES.BaseEffect]:
     """Adds or removes the blurred fill of the clip, returns the effect.
 
     Call `sync_pushes` on the layer after it, for the pushes.
     """
-    from pitivi.utils.motion import set_base_position  # pylint: disable=import-outside-toplevel
+    from pitivi.utils.motion import _set_source_base  # pylint: disable=import-outside-toplevel
 
     source = clip.find_track_element(None, GES.VideoSource)
     effect = get_blur_fill(clip)
     if not enabled:
         if effect:
+            position = get_blur_fill_position(clip)
             clip.remove(effect)
+            if position:
+                _set_source_base(source, position)
         return None
     if not source or not source.get_track():
         return None
@@ -256,13 +328,17 @@ def set_blur_fill(clip: GES.Clip, enabled: bool, sigma: Optional[float] = None) 
 
     frame_size = _frame_size(source)
     image_size = get_image_size(clip)
-    description = blur_fill_description(image_size, frame_size, sigma)
+    description = blur_fill_description(image_size, frame_size, sigma, foreground=clip.get_asset().is_image())
     # Kept for when the frame changes again, but the image covers it.
-    needed = is_fill_needed(image_size, frame_size)
     if effect and effect.props.bin_description == description:
         effect.set_child_property("sigma", float(sigma))
-        _set_needed(effect, needed)
+        _configure_composition(effect)
+        link_alpha(effect, source)
+        _set_needed(effect, is_blur_fill_needed(clip))
         return effect
+    position = get_blur_fill_position(clip)
+    if (source.get_child_property("width")[1], source.get_child_property("height")[1]) != frame_size:
+        position = None
     if effect:
         clip.remove(effect)
     effect = GES.Effect.new(description)
@@ -273,10 +349,13 @@ def set_blur_fill(clip: GES.Clip, enabled: bool, sigma: Optional[float] = None) 
     clip.add(effect)
     # After the other effects, rotating the image or changing its colors.
     clip.set_top_effect_index(effect, 0)
+    _configure_composition(effect)
     width, height = frame_size
-    set_base_position(source, {"posx": 0, "posy": 0, "width": width, "height": height})
+    _set_source_base(source, {"posx": 0, "posy": 0, "width": width, "height": height})
+    if position:
+        set_blur_fill_position(clip, position)
     link_alpha(effect, source)
-    _set_needed(effect, needed)
+    _set_needed(effect, is_blur_fill_needed(clip))
     return effect
 
 

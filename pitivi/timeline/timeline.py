@@ -1239,6 +1239,11 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
             if not placement:
                 ratio = self.calc_best_zoom_ratio() if mini else None
                 placement = max(0, self.pixel_to_ns(x, zoomratio=ratio))
+                if len(assets) == 1:
+                    # Create the preview outside occupied space first. The
+                    # editing context then inserts it at the pointer and
+                    # pushes following clips, just like an existing clip.
+                    placement = max(placement, self.ges_timeline.get_duration())
 
             self.debug("Adding %s at %s on layer %s", asset.props.id, Gst.TIME_ARGS(placement), ges_layer)
             self.app.action_log.begin("Add one clip")
@@ -1304,6 +1309,9 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
         if self.dragging_element:
             self.__last_clips_on_leave = [(clip.get_layer(), clip)
                                           for clip in self.dragging_group.get_children(False)]
+            # Restoring pushed clips also moves the preview out of the way.
+            # Keep its intended position for the subsequent drop event.
+            self.__drop_position = self.dragging_element.ges_clip.props.start
             self.drop_data_ready = False
             if self.dropping_clips:
                 if self.editing_context:
@@ -1360,7 +1368,7 @@ class Timeline(Gtk.EventBox, Zoomable, Loggable):
                         # Make room for the clip again.
                         layer, clip = self.__last_clips_on_leave[0]
                         self.editing_context.set_making_room(True)
-                        self.editing_context.edit_to(clip.props.start, layer)
+                        self.editing_context.edit_to(self.__drop_position, layer)
 
                 if zoom_was_fitted:
                     self.set_best_zoom_ratio()
@@ -1974,12 +1982,17 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
         return position
 
     def purge_asset(self, asset_id):
-        """Removes all instances of an asset from the timeline."""
-        layers = self.ges_timeline.get_layers()
+        """Removes all instances of an asset and their shared transitions."""
+        clips = [clip for layer in self.ges_timeline.get_layers()
+                 for clip in layer.get_clips() if clip.get_id() == asset_id]
+        layers = {clip.get_layer() for clip in clips}
+        # Contacts must still exist when clearing the surviving neighbours'
+        # fades. Removing the clips first loses that relationship.
+        remove_transitions_of(clips)
+        for clip in clips:
+            clip.get_layer().remove_clip(clip)
         for layer in layers:
-            for clip in layer.get_clips():
-                if asset_id == clip.get_id():
-                    layer.remove_clip(clip)
+            sync_pushes(layer)
         self._project.pipeline.commit_timeline()
 
     def scroll_to_pixel(self, x):
@@ -2728,6 +2741,7 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
         position = self._project.pipeline.get_position()
         position = self.ges_timeline.get_frame_time(self.ges_timeline.get_frame_at(position))
         splitted = False
+        right_parts = []
         with self._project.pipeline.commit_timeline_after():
             for clip in clips:
                 start = clip.get_start()
@@ -2745,11 +2759,14 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
                         # SPL: the fill of the new part, copied by GES, is
                         # set up as when made.
                         if new_clip:
+                            right_parts.append(new_clip)
                             update_blur_fill(new_clip)
                             sync_pushes(layer)
                     finally:
                         layer.splitting_object = False
 
+        if right_parts:
+            self.timeline.selection.set_selection(right_parts, SELECT)
         if not splitted and splitting_selection:
             self._split_elements()
 

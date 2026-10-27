@@ -605,10 +605,10 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         self.search_entry.set_completion(search_completion)
 
         bottom_toolbar_container = builder.get_object("medialibrary_bottom_toolbar_container")
-        bottom_toolbar = builder.get_object("medialibrary_bottom_toolbar")
-        bg_color = bottom_toolbar_container.get_style_context().get_background_color(Gtk.StateFlags.NORMAL)
-        bottom_toolbar.override_background_color(Gtk.StateFlags.NORMAL, bg_color)
-        self._clipprops_button = builder.get_object("media_props_button")
+        self.trash_button = builder.get_object("media_remove_button")
+        self.trash_button.drag_dest_set(
+            Gtk.DestDefaults.ALL, [URI_TARGET_ENTRY], Gdk.DragAction.COPY)
+        self.trash_button.connect("drag-data-received", self._trash_data_received_cb)
         self.tags_button = builder.get_object("tags_button")
 
         self.scrollwin = Gtk.ScrolledWindow()
@@ -880,7 +880,41 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
 
     def _remove_assets_cb(self, unused_action, unused_parameter):
         """Removes the selected assets from the project."""
-        assets = self.get_selected_assets()
+        self._confirm_remove_assets(self.get_selected_assets())
+
+    def _trash_data_received_cb(self, unused_widget, context, unused_x, unused_y,
+                                selection, unused_info, timestamp):
+        # Only this library can supply removal candidates. External file
+        # drops continue to import through the library's normal drop target.
+        if Gtk.drag_get_source_widget(context) is not self.flowbox:
+            Gtk.drag_finish(context, False, False, timestamp)
+            return
+        uris = set(selection.get_uris() or [])
+        assets = [item.asset for item in self.store if item.uri in uris]
+        Gtk.drag_finish(context, bool(assets), False, timestamp)
+        self._confirm_remove_assets(assets)
+
+    def _confirm_remove_assets(self, assets):
+        """Confirms removal of a snapshot of assets, including timeline uses."""
+        if not assets or not self._project:
+            return
+        title = (_("¿Quitar este archivo del proyecto?") if len(assets) == 1 else
+                 _("¿Quitar estos %d archivos del proyecto?") % len(assets))
+        dialog = Gtk.MessageDialog(
+            transient_for=self.app.gui, modal=True,
+            message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.NONE,
+            text=title)
+        dialog.format_secondary_text(
+            _("También se quitarán de la línea de tiempo los clips que usan estos archivos. "
+              "Los archivos originales permanecerán en el disco."))
+        dialog.add_button(_("Cancelar"), Gtk.ResponseType.CANCEL)
+        remove = dialog.add_button(_("Quitar del proyecto"), Gtk.ResponseType.OK)
+        remove.get_style_context().add_class("destructive-action")
+        dialog.set_default_response(Gtk.ResponseType.CANCEL)
+        response = dialog.run()
+        dialog.destroy()
+        if response != Gtk.ResponseType.OK:
+            return
 
         with self.app.action_log.started("assets-removal", toplevel=True):
             for asset in assets:
@@ -1709,8 +1743,7 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         self.remove_assets_action.set_enabled(selected_count)
         self.insert_at_end_action.set_enabled(selected_count)
         self.tags_button.set_sensitive(selected_count)
-        # Some actions can only be done on a single item at a time:
-        self._clipprops_button.set_sensitive(selected_count == 1)
+
 
     def _flowbox_child_activated_cb(self, unused_flowbox, child):
         """Plays the asset identified by the specified path.

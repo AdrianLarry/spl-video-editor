@@ -72,11 +72,7 @@ class ZoomProperties(Gtk.Expander, Loggable):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
         box.props.border_width = SPACING
 
-        hint = Gtk.Label(label=_("The image moves slowly from the start to the end of the clip."),
-                         xalign=0)
-        hint.set_line_wrap(True)
-        hint.get_style_context().add_class("dim-label")
-        box.pack_start(hint, False, False, 0)
+        self.set_tooltip_text(_("The image moves slowly from the start to the end of the clip."))
 
         kinds = Gtk.Box()
         kinds.get_style_context().add_class("linked")

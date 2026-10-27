@@ -411,8 +411,8 @@ def get_blur_bin_description(clip: GES.Clip) -> str:
     size = _get_clip_media_size(clip)
     source = clip.find_track_element(None, GES.VideoSource)
     if source and source.get_track():
-        if get_zoom_effect(clip):
-            # After the effect zooming the photo, it blurs the frame.
+        if get_zoom_effect(clip) or get_active_blur_fill(clip):
+            # After zoom or blurred fill, it blurs the completed frame.
             size = get_frame_size(source)
         elif size:
             shown = get_base_position(source)
@@ -526,18 +526,19 @@ def set_blur_fades(clip: GES.Clip, fade_in: Optional[int] = None,
 
 
 def order_effects(clip: GES.Clip) -> None:
-    """Puts the effects of the transitions after the one zooming the photo.
+    """Applies transition effects after the fill and zoom build the frame.
 
-    The effect zooming the photo makes it smaller once, from a still image:
-    the blurs and the fades to white change it, they apply to the frame it
-    makes.
+    Lower top-effect indices run later. The fill must receive the original
+    image, before a transition resizes or blurs the completed frame.
     """
-    zoom_effect = get_zoom_effect(clip)
-    if not zoom_effect:
-        return
+    frame_effects = [effect for effect in
+                     (get_zoom_effect(clip), get_active_blur_fill(clip)) if effect]
+    frame_effects.extend(effect for effect in clip.get_top_effects()
+                         if effect.get_meta("ptv::time-effect"))
     for effect in clip.get_top_effects():
-        if (is_blur_effect(effect) or is_white_effect(effect)) and \
-                clip.get_top_effect_index(effect) > clip.get_top_effect_index(zoom_effect):
+        if (is_blur_effect(effect) or is_white_effect(effect)) and any(
+                clip.get_top_effect_index(effect) > clip.get_top_effect_index(frame_effect)
+                for frame_effect in frame_effects):
             clip.set_top_effect_index(effect, 0)
 
 

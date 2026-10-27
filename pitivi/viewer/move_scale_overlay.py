@@ -21,6 +21,8 @@ import numpy
 
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.misc import disconnect_all_by_func
+from pitivi.utils.blurfill import get_blur_fill_position
+from pitivi.utils.motion import get_zoom_effect
 from pitivi.utils.motion import get_base_position
 from pitivi.utils.motion import is_moving
 from pitivi.utils.motion import set_base_position
@@ -190,26 +192,34 @@ class Handle:
         self.__size = Handle.INITIAL_SIZE
 
     def draw(self, cr):
-        src_x, src_y = self.get_window_position()
-        x = src_x - (self.__size / 2)
-        y = src_y - (self.__size / 2)
-
+        center_x, center_y = self.get_window_position()
+        scale = max(0.6, self.__size / Handle.INITIAL_SIZE)
+        if len(self.placement) == 2:
+            width, height = 10 * scale, 10 * scale
+        elif self.placement in ((Edge.top,), (Edge.bottom,)):
+            width, height = 22 * scale, 6 * scale
+        else:
+            width, height = 6 * scale, 22 * scale
+        x, y = center_x - width / 2, center_y - height / 2
+        radius = min(3, width / 2, height / 2)
+        cr.save()
         if self.hovered:
-            cr.set_source_rgba(1, 1, 1, 0.25)
-            cr.rectangle(x, y, self.__size, self.__size)
+            cr.set_source_rgba(0.25, 0.78, 0.95, 0.22)
+            cr.arc(center_x, center_y, self.__size / 2 + 3, 0, 2 * numpy.pi)
             cr.fill()
-
-        # Black outline around the box
-        cr.set_source_rgb(0, 0, 0)
+        cr.new_sub_path()
+        for cx, cy, angle in ((x + width - radius, y + radius, -numpy.pi / 2),
+                              (x + width - radius, y + height - radius, 0),
+                              (x + radius, y + height - radius, numpy.pi / 2),
+                              (x + radius, y + radius, numpy.pi)):
+            cr.arc(cx, cy, radius, angle, angle + numpy.pi / 2)
+        cr.close_path()
+        cr.set_source_rgba(0.06, 0.08, 0.10, 0.9)
         cr.set_line_width(3)
-        cr.rectangle(x, y, self.__size + 1, self.__size + 1)
-        cr.stroke()
-
-        # Inner white line
-        cr.set_source_rgb(1, 1, 1)
-        cr.set_line_width(1)
-        cr.rectangle(x, y, self.__size + 1, self.__size + 1)
-        cr.stroke()
+        cr.stroke_preserve()
+        cr.set_source_rgb(*((0.35, 0.84, 1.0) if self.hovered else (0.98, 0.98, 1.0)))
+        cr.fill()
+        cr.restore()
 
 
 class CornerHandle(Handle):
@@ -326,6 +336,9 @@ class MoveScaleOverlay(Overlay):
         self.update_from_source()
 
     def __get_source_property(self, prop):
+        clip = self._source.get_parent()
+        if get_zoom_effect(clip) or get_blur_fill_position(clip) is not None:
+            return True, get_base_position(self._source)[prop]
         if self.__source_property_keyframed(prop):
             binding = self._source.get_control_binding(prop)
             res, position = self.__get_pipeline_position()
@@ -343,7 +356,8 @@ class MoveScaleOverlay(Overlay):
         return self._source.get_child_property(prop)
 
     def __set_source_property(self, prop, value):
-        if is_moving(self._source, prop):
+        if (is_moving(self._source, prop) or get_zoom_effect(self._source.get_parent()) or
+                get_blur_fill_position(self._source.get_parent()) is not None):
             # The zoom or a push animate the property: the whole motion
             # moves, from where the source is when not moving.
             res, current = self.__get_source_property(prop)

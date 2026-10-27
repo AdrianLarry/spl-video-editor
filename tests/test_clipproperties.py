@@ -16,6 +16,7 @@
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 """Tests for the pitivi.clipproperties module."""
 # pylint: disable=protected-access,import-outside-toplevel,no-member
+import os
 import tempfile
 from unittest import mock
 
@@ -39,6 +40,67 @@ from tests import common
 
 class TransformationPropertiesTest(common.TestCase):
     """Tests for the TransformationProperties widget."""
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_opacity_changes_do_not_recommit_timeline(self):
+        timeline = self.timeline_container.timeline
+        clip, = self.add_clips_simple(timeline, 1)
+        timeline.selection.select([clip])
+        box = self.clipproperties.opacity_expander
+        pipeline = self.project.pipeline
+        with mock.patch.object(pipeline, "commit_timeline") as commit, \
+                mock.patch.object(pipeline, "flush_seek") as refresh:
+            box.adjustment.set_value(90)
+            commit.assert_called_once_with()
+            for value in (80, 70, 60, 50):
+                box.adjustment.set_value(value)
+            self.assertEqual(commit.call_count, 1)
+            self.assertEqual(refresh.call_count, 4)
+            self.action_log.undo()
+            self.assertEqual(commit.call_count, 1)
+            self.action_log.undo()
+            self.assertEqual(commit.call_count, 2)
+            self.action_log.redo()
+            self.assertGreater(commit.call_count, 2)
+            commits_after_creation = commit.call_count
+            self.action_log.redo()
+            self.assertEqual(commit.call_count, commits_after_creation)
+        self.assertEqual(box.adjustment.get_value(), 50)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_simple_opacity_preserves_fades(self):
+        from pitivi.clip_properties.opacity import get_opacity_effect
+        timeline = self.timeline_container.timeline
+        clip, = self.add_clips_simple(timeline, 1)
+        timeline.selection.select([clip])
+        box = self.clipproperties.opacity_expander
+        source = box.source
+        control = source.get_control_binding("alpha").props.control_source
+        control.set(source.props.in_point, 0)
+        control.set(source.props.in_point + source.props.duration // 3, 1)
+        before = [(point.timestamp, point.value) for point in control.get_all()]
+        self.assertIsNone(source.ui.keyframe_curve)
+        box.adjustment.set_value(50)
+        effect = get_opacity_effect(clip)
+        self.assertIsNotNone(effect)
+        self.assertAlmostEqual(effect.get_child_property("alpha")[1], 0.5)
+        self.action_log.undo()
+        self.assertIsNone(get_opacity_effect(clip))
+        self.assertEqual(box.adjustment.get_value(), 100)
+        self.action_log.redo()
+        effect = get_opacity_effect(clip)
+        self.assertAlmostEqual(effect.get_child_property("alpha")[1], 0.5)
+        self.assertEqual(box.adjustment.get_value(), 50)
+        box.adjustment.set_value(0)
+        box.adjustment.set_value(100)
+        self.assertAlmostEqual(effect.get_child_property("alpha")[1], 1)
+        self.assertEqual(before, [(point.timestamp, point.value) for point in control.get_all()])
+        box.set_source(None)
+        box.set_source(source)
+        self.assertEqual(box.adjustment.get_value(), 100)
+        self.assertIsNone(self.clipproperties.effect_expander._create_effect_row(effect))
 
     @common.setup_timeline
     @common.setup_clipproperties
@@ -74,14 +136,13 @@ class TransformationPropertiesTest(common.TestCase):
     def test_zoom_offered(self):
         """Checks the automatic zoom is offered for the photos and the videos.
 
-        With the blurred fill, only for the photos: the effect zooming
-        them zooms the fill too.
+        The sub-pixel effect also zooms the blurred fill on either media type.
         """
         zoom_box = self.clipproperties.zoom_expander
         transformation_box = self.clipproperties.transformation_expander
         layer = self.timeline_container.timeline.ges_timeline.get_layers()[0]
         for sample, offered_with_fill in (("flat_colour1_640x480.png", True),
-                                          ("one_fps_numeroted_blue.mkv", False)):
+                                          ("one_fps_numeroted_blue.mkv", True)):
             asset = GES.UriClipAsset.request_sync(common.get_sample_uri(sample))
             clip = layer.add_asset(asset, layer.get_duration(), 0, Gst.SECOND, GES.TrackType.UNKNOWN)
             self.timeline_container.timeline.selection.select([clip])
@@ -90,6 +151,43 @@ class TransformationPropertiesTest(common.TestCase):
             self.timeline_container.timeline.selection.select([])
             self.timeline_container.timeline.selection.select([clip])
             self.assertEqual(zoom_box.get_visible(), offered_with_fill, sample)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_resize_photo_with_blurred_fill(self):
+        from pitivi.utils.motion import get_base_position
+
+        layer = self.timeline_container.timeline.ges_timeline.get_layers()[0]
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
+        clip = layer.add_asset(asset, 0, 0, Gst.SECOND, GES.TrackType.UNKNOWN)
+        self.timeline_container.timeline.selection.select([clip])
+        box = self.transformation_box
+        box.blur_fill_button.clicked()
+        box.spin_buttons["width"].set_value(800)
+        self.assertEqual(get_base_position(box.source)["width"], 800)
+        self.assertEqual(box.source.get_child_property("width")[1], 1920)
+        self.timeline_container.timeline.selection.select([])
+        self.timeline_container.timeline.selection.select([clip])
+        self.assertEqual(box.spin_buttons["width"].get_value(), 800)
+        self.action_log.undo()
+        self.assertEqual(get_base_position(box.source)["width"], 1440)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_settings_pages_follow_media_type(self):
+        layer = self.timeline_container.timeline.ges_timeline.get_layers()[0]
+        for sample, pages, active in (
+                ("flat_colour1_640x480.png", {"image", "zoom"}, None),
+                ("mp3_sample.mp3", {"speed", "sound"}, "sound"),
+                ("flat_colour1_640x480.png", {"image", "zoom"}, "image")):
+            asset = GES.UriClipAsset.request_sync(common.get_sample_uri(sample))
+            clip = layer.add_asset(asset, layer.get_duration(), 0, Gst.SECOND, GES.TrackType.UNKNOWN)
+            self.timeline_container.timeline.selection.select([clip])
+            box = self.clipproperties
+            self.assertEqual({name for name, page in box.settings_pages.items()
+                              if page.get_visible()}, pages)
+            if active:
+                self.assertEqual(box.settings_stack.get_visible_child_name(), active)
 
     @common.setup_timeline
     @common.setup_clipproperties
@@ -914,12 +1012,83 @@ class ClipPropertiesTest(common.TestCase):
 class SpeedPropertiesTest(common.TestCase):
     """Tests for the TransformationProperties widget."""
 
+    @common.setup_project_with_clips(assets_names=["30fps_numeroted_frames_blue.webm"])
+    @common.setup_clipproperties
+    def test_speed_with_incoming_transition(self):
+        from pitivi.utils.transitions import BLUR
+        from pitivi.utils.transitions import get_blur_fades
+        from pitivi.utils.transitions import get_contacts
+        from pitivi.utils.transitions import set_transition
+        clip, = self.layer.get_clips()
+        clip.props.duration = Gst.SECOND
+        clip.props.start = 3 * Gst.SECOND
+        photo_path = os.path.join(os.path.dirname(__file__), "samples", "flat_colour1_640x480.png")
+        asset = GES.UriClipAsset.request_sync(Gst.filename_to_uri(photo_path))
+        self.layer.add_asset(asset, 0, 0, 3 * Gst.SECOND, GES.TrackType.VIDEO)
+        with self.action_log.started("transition", toplevel=True):
+            set_transition(get_contacts(self.layer)[0], BLUR, 3 * Gst.SECOND // 10)
+        self.timeline_container.timeline.selection.select([clip])
+        original_duration = clip.props.duration
+        for rate in (2.0, 0.5, 1.0):
+            self.speed_box.props.rate = rate
+            self.assertAlmostEqual(clip.props.duration, original_duration / rate, delta=Gst.USECOND)
+            self.assertEqual(get_contacts(self.layer)[0].duration, 3 * Gst.SECOND // 10)
+            self.assertEqual(get_blur_fades(clip).fade_in, 3 * Gst.SECOND // 10)
+
+    @common.setup_project_with_clips(assets_names=["30fps_numeroted_frames_blue.webm"])
+    @common.setup_clipproperties
+    def test_speed_with_video_zoom(self):
+        from pitivi.utils.motion import get_zoom_effect, set_zoom, Zoom, ZOOM_IN
+        from pitivi.utils.fades import get_keyframes
+        from pitivi.utils.transitions import sync_pushes
+        clip, = self.layer.get_clips()
+        clip.set_start(3 * Gst.SECOND)
+        clip.set_inpoint(Gst.SECOND // 2)
+        clip.set_duration(Gst.SECOND)
+        source = clip.find_track_element(None, GES.VideoSource)
+        with self.action_log.started("zoom", toplevel=True):
+            set_zoom(source, Zoom(ZOOM_IN, "center", 1.2))
+            sync_pushes(self.layer)
+        self.timeline_container.timeline.selection.select([clip])
+        for rate in (2.0, 0.5, 1.0):
+            self.speed_box.props.rate = rate
+            effect = get_zoom_effect(clip)
+            binding = effect.get_control_binding("zoom")
+            points = get_keyframes(binding.props.control_source)
+            start = clip.get_internal_time_from_timeline_time(effect, clip.props.start)
+            end = clip.get_internal_time_from_timeline_time(effect, clip.props.start + clip.props.duration)
+            self.assertEqual([(t, round(value, 5)) for t, value in points], [(start, 1.0), (end, 1.2)])
+            time_effect = next(effect for effect in clip.get_top_effects()
+                               if effect.get_meta("ptv::time-effect"))
+            self.assertLess(clip.get_top_effect_index(effect), clip.get_top_effect_index(time_effect))
+
+    @common.setup_project_with_clips(assets_names=["30fps_numeroted_frames_blue.webm"])
+    @common.setup_clipproperties
+    def test_upgrade_legacy_speed(self):
+        clip, = self.layer.get_clips()
+        with self.action_log.started("legacy speed", toplevel=True):
+            effect = GES.Effect.new("videorate")
+            effect.set_meta("ptv::time-effect", True)
+            clip.add_top_effect(effect, 0)
+            effect.set_child_property("rate", 2.0)
+            clip.set_duration(Gst.SECOND // 2)
+        self.timeline_container.timeline.selection.select([clip])
+        self.speed_box.props.rate = 2.0
+        self.assert_applied_rate(1, 2.0, Gst.SECOND // 2)
+        self.assertIn("splspeed", clip.get_top_effects()[0].props.bin_description)
+        self.action_log.undo()
+        self.assertEqual(clip.get_top_effects()[0].props.bin_description, "videorate")
+        self.assertEqual(self.speed_box.props.rate, 2.0)
+        self.action_log.redo()
+        self.assertIn("splspeed", clip.get_top_effects()[0].props.bin_description)
+        self.assert_applied_rate(1, 2.0, Gst.SECOND // 2)
+
     def assert_applied_rate(self, sources_count, rate, duration):
         self.assertEqual(len(self.speed_box._time_effects), sources_count)
         self.assertAlmostEqual(self.speed_box.props.rate, rate)
         self.assertEqual(self.speed_box._clip.props.duration, duration)
         for effect, propname in self.speed_box._time_effects.values():
-            self.assertTrue(propname in ["rate", "tempo"], propname)
+            self.assertTrue(propname in ["rate", "tempo", "SPLSpeedFilter::rate"], propname)
             self.assertAlmostEqual(effect.get_child_property(propname).value, rate)
 
         self.assertAlmostEqual(self.speed_box._speed_adjustment.props.value, rate)
@@ -928,7 +1097,7 @@ class SpeedPropertiesTest(common.TestCase):
         if audio:
             self.assertEqual(clip.get_child_property("tempo").value, value)
         if video:
-            self.assertEqual(clip.get_child_property("GstVideoRate::rate").value, value)
+            self.assertEqual(clip.get_child_property("SPLSpeedFilter::rate").value, value)
 
     def _check_clip_speed(self, audio=False, video=False):
         sources_count = len([source for source in [audio, video] if source])
@@ -1000,6 +1169,9 @@ class SpeedPropertiesTest(common.TestCase):
         self.assertEqual(clip2.props.start, duration)
         self.assertEqual(clip2.props.duration, total_duration - duration)
         self.assertEqual(self.project.ges_timeline.props.snapping_distance, duration)
+
+        self.assertIs(self.timeline_container.timeline.selection.get_single_clip(), clip2)
+        self.timeline_container.timeline.selection.select([clip1])
 
         # SPL: slower, clip1 pushes clip2 instead of overlapping it.
         self.speed_box._speed_adjustment.props.value = 0.1

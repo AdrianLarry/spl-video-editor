@@ -41,6 +41,8 @@ from pitivi.clip_properties.alignment import AlignmentEditor
 from pitivi.clip_properties.color import ColorProperties
 from pitivi.clip_properties.compositing import CompositingProperties
 from pitivi.clip_properties.markers import ClipMarkersProperties
+from pitivi.clip_properties.opacity import OpacityProperties
+from pitivi.clip_properties.opacity import is_opacity_effect
 from pitivi.clip_properties.orientation import get_orientation
 from pitivi.clip_properties.orientation import Orientation
 from pitivi.clip_properties.orientation import set_orientation
@@ -58,6 +60,7 @@ from pitivi.trackerperspective import CoverObjectPopover
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.blurfill import BLUR_SIGMA_META
 from pitivi.utils.blurfill import get_blur_fill
+from pitivi.utils.blurfill import get_blur_fill_position
 from pitivi.utils.blurfill import is_blur_fill_needed
 from pitivi.utils.blurfill import get_blur_sigma
 from pitivi.utils.blurfill import is_blur_fill_effect
@@ -74,7 +77,6 @@ from pitivi.utils.motion import get_zoom_effect
 from pitivi.utils.motion import has_motion
 from pitivi.utils.motion import is_zoom_effect
 from pitivi.utils.motion import set_base_position
-from pitivi.utils.motion import set_zoom
 from pitivi.utils.pipeline import PipelineError
 from pitivi.utils.timeline import EditingContext
 from pitivi.utils.timeline import SELECT
@@ -135,7 +137,7 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
 
         viewport = Gtk.Viewport()
-        viewport.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
+        viewport.set_shadow_type(Gtk.ShadowType.NONE)
         viewport.show()
         self.add(viewport)
 
@@ -148,33 +150,58 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.clips_box.show()
         vbox.pack_start(self.clips_box, False, False, 0)
 
+        # Keep sound one click away instead of below every visual control.
+        self.settings_stack = Gtk.Stack()
+        self.settings_stack.set_homogeneous(False)
+        self.settings_stack.set_transition_type(Gtk.StackTransitionType.NONE)
+        self.settings_switcher = Gtk.StackSwitcher(stack=self.settings_stack)
+        self.settings_switcher.set_homogeneous(False)
+        self.settings_switcher.set_halign(Gtk.Align.FILL)
+        self.settings_switcher.get_style_context().add_class("spl-property-pages")
+        vbox.pack_start(self.settings_switcher, False, False, 0)
+        vbox.pack_start(self.settings_stack, False, False, 0)
+        self.settings_pages = {}
+        for name, label in (("image", _("Imagen")), ("zoom", _("Zoom")),
+                            ("speed", _("Velocidad")), ("sound", _("Sonido"))):
+            page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PADDING)
+            self.settings_pages[name] = page
+            self.settings_stack.add_titled(page, name, label)
+            page.show()
+        for button in self.settings_switcher.get_children():
+            button.get_style_context().add_class("spl-seg-button")
+        self.settings_stack.show()
+        self.settings_switcher.show()
+
         self.transformation_expander = TransformationProperties(app)
         self.transformation_expander.set_vexpand(False)
-        vbox.pack_start(self.transformation_expander, False, False, 0)
+        self.settings_pages["image"].pack_start(self.transformation_expander, False, False, 0)
 
         self.zoom_expander = ZoomProperties(app)
         self.zoom_expander.set_vexpand(False)
-        vbox.pack_start(self.zoom_expander, False, False, 0)
+        self.settings_pages["zoom"].pack_start(self.zoom_expander, False, False, 0)
 
         self.speed_expander = TimeProperties(app)
         self.speed_expander.set_vexpand(False)
-        vbox.pack_start(self.speed_expander, False, False, 0)
+        self.settings_pages["speed"].pack_start(self.speed_expander, False, False, 0)
 
         self.title_expander = TitleProperties(app)
         self.title_expander.set_vexpand(False)
-        vbox.pack_start(self.title_expander, False, False, 0)
+        self.settings_pages["image"].pack_start(self.title_expander, False, False, 0)
 
         self.color_expander = ColorProperties(app)
         self.color_expander.set_vexpand(False)
-        vbox.pack_start(self.color_expander, False, False, 0)
+        self.settings_pages["image"].pack_start(self.color_expander, False, False, 0)
+
+        self.opacity_expander = OpacityProperties(app)
+        self.settings_pages["image"].pack_start(self.opacity_expander, False, False, 0)
 
         self.compositing_expander = CompositingProperties(app)
         self.compositing_expander.set_vexpand(False)
-        vbox.pack_start(self.compositing_expander, False, False, 0)
+        self.settings_pages["image"].pack_start(self.compositing_expander, False, False, 0)
 
         self.sound_expander = SoundProperties(app)
         self.sound_expander.set_vexpand(False)
-        vbox.pack_start(self.sound_expander, False, False, 0)
+        self.settings_pages["sound"].pack_start(self.sound_expander, False, False, 0)
 
         self.summary = ClipSummary()
 
@@ -197,8 +224,11 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.speed_expander.set_clip(None)
         self.title_expander.set_source(None)
         self.color_expander.set_source(None)
+        self.opacity_expander.set_source(None)
         self.compositing_expander.set_source(None)
         self.sound_expander.set_source(None)
+        self.settings_switcher.hide()
+        self.settings_stack.hide()
         self.effect_expander.set_clip(None)
         self.marker_expander.set_clip(None)
 
@@ -296,13 +326,9 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
                     color_clip_source = child
 
         self.transformation_expander.set_source(video_source)
-        # The photos zoom with the effect drawing them with sub-pixel
-        # precision, also with the blurred fill, which it zooms.
+        # Photos and videos zoom with sub-pixel precision, including their
+        # blurred fill when enabled.
         is_visual = isinstance(video_source, GES.VideoUriSource)
-        is_image = is_visual and ges_clip.get_asset().is_image()
-        if is_visual and not is_image and get_blur_fill(ges_clip):
-            # The blurred fill covers the source of the video, which zooms.
-            is_visual = False
         self.zoom_expander.set_source(video_source if is_visual else None)
         is_video = (isinstance(video_source, GES.VideoUriSource) and
                     not ges_clip.get_asset().is_image())
@@ -312,10 +338,22 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.speed_expander.set_clip(ges_clip if is_video or is_sound else None)
         self.title_expander.set_source(title_source)
         self.color_expander.set_source(color_clip_source)
+        self.opacity_expander.set_source(video_source)
         self.compositing_expander.set_source(video_source)
         self.sound_expander.set_source(audio_source)
         self.effect_expander.set_clip(ges_clip)
         self.marker_expander.set_clip(ges_clip)
+
+        self.settings_pages["image"].set_visible(video_source is not None)
+        self.settings_pages["zoom"].set_visible(is_visual)
+        self.settings_pages["speed"].set_visible(is_video or is_sound)
+        self.settings_pages["sound"].set_visible(audio_source is not None)
+        self.settings_switcher.set_visible(ges_clip is not None)
+        self.settings_stack.set_visible(ges_clip is not None)
+        if audio_source and not video_source:
+            self.settings_stack.set_visible_child_name("sound")
+        elif video_source and self.settings_stack.get_visible_child_name() == "sound" and not audio_source:
+            self.settings_stack.set_visible_child_name("image")
 
         self.app.gui.editor.viewer.overlay_stack.select(video_source)
 
@@ -333,7 +371,7 @@ class TimeProperties(Gtk.Expander, Loggable):
 
     TIME_EFFECT_META = "ptv::time-effect"
     TIME_EFFECTS_DEF = {
-        GES.TrackType.VIDEO: ("videorate", "rate"),
+        GES.TrackType.VIDEO: ("splspeed ! videorate", "SPLSpeedFilter::rate"),
         GES.TrackType.AUDIO: ("pitch", "tempo"),
     }
 
@@ -497,6 +535,8 @@ class TimeProperties(Gtk.Expander, Loggable):
         return res
 
     def _current_rate(self) -> float:
+        # Undo can replace a migrated legacy effect while the clip stays selected.
+        self._time_effects = self.__get_time_effects(self._clip)
         for effect, propname in self._time_effects.values():
             return effect.get_child_property(propname).value
         return 1
@@ -552,7 +592,10 @@ class TimeProperties(Gtk.Expander, Loggable):
             self.__ensure_effects()
 
         prev_rate = self._current_rate()
-        if math.isclose(prev_rate, value, rel_tol=1e-6):
+        legacy_video_speed = any(
+            track.props.track_type == GES.TrackType.VIDEO and "splspeed" not in effect.props.bin_description
+            for track, (effect, unused_prop) in self._time_effects.items())
+        if math.isclose(prev_rate, value, rel_tol=1e-6) and not legacy_video_speed:
             return
 
         self.info("Setting speed to %s", value)
@@ -579,10 +622,24 @@ class TimeProperties(Gtk.Expander, Loggable):
             # transition.
             attached = bool(following) and following[0].props.start <= old_end
 
+            # Remember transitions and automation before GES changes their
+            # internal time coordinates with the rate.
+            context = EditingContext(self._clip, project.ges_timeline, GES.EditMode.EDIT_TRIM,
+                                     GES.Edge.EDGE_END, self.app, log_actions=False)
             source, source_end = self.__get_source_end()
-            for effect, propname in self._time_effects.values():
-                res = effect.set_child_property(propname, value)
-                assert res
+            for track, (effect, propname) in list(self._time_effects.items()):
+                if track.props.track_type == GES.TrackType.VIDEO and "splspeed" not in effect.props.bin_description:
+                    index = self._clip.get_top_effect_index(effect)
+                    self._clip.remove(effect)
+                    description, propname = self.TIME_EFFECTS_DEF[GES.TrackType.VIDEO]
+                    effect = GES.Effect.new(description)
+                    effect.set_meta(self.TIME_EFFECT_META, True)
+                    effect.set_child_property(propname, value)
+                    self._clip.add_top_effect(effect, index)
+                    self._time_effects[track] = (effect, propname)
+                else:
+                    res = effect.set_child_property(propname, value)
+                    assert res
 
             new_end = self._clip.get_timeline_time_from_internal_time(source, source_end)
 
@@ -590,8 +647,6 @@ class TimeProperties(Gtk.Expander, Loggable):
             project.ges_timeline.props.snapping_distance = 0
             # SPL: as when trimming, the following clips are pushed instead
             # of overlapped, and the transitions and the fades are kept.
-            context = EditingContext(self._clip, project.ges_timeline, GES.EditMode.EDIT_TRIM,
-                                     GES.Edge.EDGE_END, self.app, log_actions=False)
             # The exact end, not on a frame, else each change of the speed
             # would lose a piece of the media.
             context.with_video = False
@@ -636,7 +691,7 @@ class TimeProperties(Gtk.Expander, Loggable):
         if self.__setting_rate or not isinstance(obj, Gst.Element):
             return
 
-        time_effect_factory_names = [d[0] for d in self.TIME_EFFECTS_DEF.values()]
+        time_effect_factory_names = ["splspeed", "videorate", "pitch"]
         if not obj.get_factory().get_name() in time_effect_factory_names:
             return
 
@@ -695,7 +750,11 @@ class TimeProperties(Gtk.Expander, Loggable):
                 self.error("Something is wrong as we have several %s time effects", track)
                 continue
 
-            time_effects[track] = (effect, self.TIME_EFFECTS_DEF[track.props.track_type][1])
+            propname = self.TIME_EFFECTS_DEF[track.props.track_type][1]
+            if track.props.track_type == GES.TrackType.VIDEO and "splspeed" not in effect.props.bin_description:
+                # Projects saved before the absolute timestamp mapper.
+                propname = "rate"
+            time_effects[track] = (effect, propname)
 
         return time_effects
 
@@ -816,7 +875,7 @@ class EffectProperties(Gtk.Expander, Loggable):
     def _create_effect_row(self, effect):
         if is_time_effect(effect) or effect.props.bin_description in HIDDEN_EFFECTS or \
                 is_white_effect(effect) or is_blur_effect(effect) or is_blur_fill_effect(effect) or \
-                is_zoom_effect(effect):
+                is_zoom_effect(effect) or is_opacity_effect(effect):
             # The fades to white or blurred of a transition, the blurred fill
             # and the automatic zoom are not effects for the user.
             return None
@@ -1000,7 +1059,7 @@ class EffectProperties(Gtk.Expander, Loggable):
         self.emit("effects-changed")
 
     def _track_element_added_cb(self, unused_clip, track_element):
-        if isinstance(track_element, GES.BaseEffect):
+        if isinstance(track_element, GES.BaseEffect) and not is_time_effect(track_element):
             self._connect_to_track_element(track_element)
             self._add_effect_row(track_element)
 
@@ -1034,7 +1093,7 @@ class EffectProperties(Gtk.Expander, Loggable):
             self._move_effect_row(track_element, index)
 
     def _track_element_removed_cb(self, unused_clip, track_element):
-        if isinstance(track_element, GES.BaseEffect):
+        if isinstance(track_element, GES.BaseEffect) and not is_time_effect(track_element):
             self._disconnect_from_track_element(track_element)
             self._remove_effect_row(track_element)
 
@@ -1349,21 +1408,12 @@ class TransformationProperties(Gtk.Expander, Loggable):
                                          finalizing_action=CommitTimelineFinalizingAction(
                                              self._project.pipeline),
                                          toplevel=True):
-            is_image = clip.get_asset().is_image()
-            if not is_image:
-                # The zoom of a video moves the source, which the blurred
-                # fill covers. The zoom of a photo zooms the fill too.
-                set_zoom(self.source, None)
             set_blur_fill(clip, True)
             layer = clip.get_layer()
             if layer:
                 sync_pushes(layer)
         self.__update_keyframes_ui()
         self.__update_framing_buttons()
-        zoom_expander = getattr(self.app.gui.editor.clipconfig, "zoom_expander", None) \
-            if hasattr(self.app.gui, "editor") else None
-        if isinstance(zoom_expander, Gtk.Widget) and not is_image:
-            zoom_expander.set_source(None)
 
     def __create_orientation_buttons(self):
         """Creates the buttons to rotate and mirror the clip."""
@@ -1678,13 +1728,15 @@ class TransformationProperties(Gtk.Expander, Loggable):
                 self.__remove_control_bindings()
 
             for prop in ["posx", "posy", "width", "height"]:
-                self.source.set_child_property(
-                    prop, self.source.ui.default_position[prop])
+                self.__set_prop(prop, self.source.ui.default_position[prop])
 
         self.__update_keyframes_ui()
         self.__update_framing_buttons()
 
     def __get_source_property(self, prop):
+        clip = self.source.get_parent()
+        if get_zoom_effect(clip) or get_blur_fill_position(clip) is not None:
+            return True, get_base_position(self.source)[prop]
         if self.__source_uses_keyframes():
             try:
                 position = self._project.pipeline.get_position()
@@ -1746,6 +1798,12 @@ class TransformationProperties(Gtk.Expander, Loggable):
 
     def __set_prop(self, prop, value):
         assert self.source
+
+        clip = self.source.get_parent()
+        if get_zoom_effect(clip) or get_blur_fill_position(clip) is not None:
+            set_base_position(self.source, {prop: value})
+            sync_pushes(clip.get_layer())
+            return
 
         if self.__source_uses_keyframes():
             try:

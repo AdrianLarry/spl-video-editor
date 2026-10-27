@@ -18,6 +18,7 @@
 from gi.repository import GES
 from gi.repository import Gst
 
+from pitivi.utils.blurfill import get_blur_fill
 from pitivi.utils.blurfill import set_blur_fill
 from pitivi.utils.fades import get_keyframes
 from pitivi.utils.timeline import EditingContext
@@ -40,6 +41,7 @@ from pitivi.utils.transitions import TOP
 from pitivi.utils.transitions import get_white_fades
 from pitivi.utils.transitions import is_white_effect
 from pitivi.utils.transitions import remove_transition
+from pitivi.utils.transitions import set_image_fades
 from pitivi.utils.transitions import set_blur_fades
 from pitivi.utils.transitions import set_transition
 from pitivi.utils.transitions import wipes_work
@@ -55,6 +57,33 @@ SECOND = Gst.SECOND
 
 class TransitionsTest(common.TestCase):
     """Tests for adding and removing transitions where clips meet."""
+
+    @common.setup_timeline
+    def test_blur_transition_with_fill(self):
+        self._wait_until_project_loaded()
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
+        self.layer.add_asset(asset, 0, 0, 3 * SECOND, GES.TrackType.VIDEO)
+        clip_b = self.layer.add_asset(asset, 3 * SECOND, 0, 3 * SECOND, GES.TrackType.VIDEO)
+        self.layer.add_asset(asset, 6 * SECOND, 0, 3 * SECOND, GES.TrackType.VIDEO)
+        for fill_first in (False, True):
+            with self.subTest(fill_first=fill_first):
+                with self.action_log.started("blur and fill", toplevel=True):
+                    if fill_first:
+                        set_blur_fill(clip_b, True)
+                    set_transition(get_contacts(self.layer)[0], BLUR, SECOND)
+                    if not fill_first:
+                        set_blur_fill(clip_b, True)
+                    sync_pushes(self.layer)
+                fill = get_blur_fill(clip_b)
+                blur = next(effect for effect in clip_b.get_top_effects() if is_blur_effect(effect))
+                self.assertLess(clip_b.get_top_effect_index(blur), clip_b.get_top_effect_index(fill))
+                self.assertIn("width=1920,height=1080", blur.props.bin_description)
+                self.assertEqual(get_blur_fades(clip_b).fade_in, SECOND)
+                with self.action_log.started("remove fill", toplevel=True):
+                    set_blur_fill(clip_b, False)
+                    sync_pushes(self.layer)
+                blur = next(effect for effect in clip_b.get_top_effects() if is_blur_effect(effect))
+                self.assertIn("width=640,height=480", blur.props.bin_description)
 
     def _add_clip(self, start, duration=4, layer=None):
         asset = GES.UriClipAsset.request_sync(common.get_sample_uri("one_fps_numeroted_blue.mkv"))
@@ -451,6 +480,35 @@ class TransitionsTest(common.TestCase):
         self.action_log.undo()
         self.assertEqual([contact.kind for contact in get_contacts(self.layer)],
                          [FADE_TO_BLACK, PUSH])
+
+    @common.setup_timeline
+    def test_purging_video_removes_neighbour_transitions(self):
+        """Removing a library video clears both shared ends, undoably."""
+        self._wait_until_project_loaded()
+        clip_a = self._add_clip(0)
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("1sec_simpsons_trailer.mp4"))
+        clip_b = self.layer.add_asset(asset, 4 * SECOND, 0, SECOND, GES.TrackType.UNKNOWN)
+        clip_c = self._add_clip(5)
+        with self.action_log.started("transitions", toplevel=True):
+            contact_ab, contact_bc = get_contacts(self.layer)
+            set_transition(contact_ab, BLUR, SECOND // 2)
+            set_transition(contact_bc, FADE_TO_WHITE, SECOND // 2)
+            set_image_fades(clip_a, fade_in=SECOND // 4)
+        self.assertGreater(get_blur_fades(clip_a).fade_out, 0)
+        with self.action_log.started("assets-removal", toplevel=True):
+            self.timeline_container.purge_asset(asset.props.id)
+        self.assertNotIn(clip_b, self.layer.get_clips())
+        self.assertEqual(get_blur_fades(clip_a).fade_out, 0)
+        self.assertEqual(get_image_fades(clip_a).fade_out, 0)
+        self.assertEqual(get_image_fades(clip_a).fade_in, SECOND // 4)
+        self.assertEqual(get_white_fades(clip_c).fade_in, 0)
+        self.action_log.undo()
+        self.assertIn(clip_b, self.layer.get_clips())
+        self.assertEqual([contact.kind for contact in get_contacts(self.layer)],
+                         [BLUR, FADE_TO_WHITE])
+        self.action_log.redo()
+        self.assertEqual(get_blur_fades(clip_a).fade_out, 0)
+        self.assertEqual(get_white_fades(clip_c).fade_in, 0)
 
     @common.setup_timeline
     def test_moving_a_clip_away_removes_its_fades(self):

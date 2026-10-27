@@ -505,6 +505,28 @@ class TestVideoSource(common.TestCase):
 
 
 class TestClip(common.TestCase):
+
+    @common.setup_timeline
+    def test_click_seeks_to_clicked_time(self):
+        """A clip click seeks inside it instead of jumping to its start."""
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
+        clip = self.layer.add_asset(asset, Gst.SECOND, 0, 3 * Gst.SECOND, GES.TrackType.VIDEO)
+        timeline = self.timeline_container.timeline
+        timeline.app.settings.leftClickAlsoSeeks = False
+        clicked_x = timeline.ns_to_pixel(2 * Gst.SECOND)
+        expected = timeline.pixel_to_ns(clicked_x)
+        event = mock.Mock(spec=Gdk.EventButton)
+        event.x, event.y = 20, 10
+        event.get_button.return_value = (True, 1)
+        with mock.patch.object(Gtk, "get_event_widget", return_value=clip.ui), \
+                mock.patch.object(clip.ui, "translate_coordinates", return_value=(clicked_x, 0)), \
+                mock.patch.object(self.project.pipeline, "simple_seek") as seek:
+            clip.ui._button_release_event_cb(None, event)
+        self.assert_clip_selected(clip, True)
+        seek.assert_called_once_with(expected)
+        self.assertGreater(expected, clip.props.start)
+        self.assertLess(expected, clip.props.start + clip.props.duration)
+
     """Tests for the Clip class."""
 
     def test_selection_status_persists_when_clip_changes_layer(self):

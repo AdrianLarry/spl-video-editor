@@ -24,6 +24,7 @@ from unittest import skip
 from gi.repository import Gdk
 from gi.repository import GES
 from gi.repository import Gst
+from gi.repository import Gtk
 
 from pitivi.librarycard import AUDIO
 from pitivi.librarycard import IMAGE
@@ -195,6 +196,40 @@ class BaseTestMediaLibrary(common.TestCase):
 
 class TestMediaLibrary(BaseTestMediaLibrary):
 
+    def test_remove_assets_requires_confirmation(self):
+        self.check_import(["flat_colour1_640x480.png"], proxying_strategy=ProxyingStrategy.NOTHING)
+        project = self.app.project_manager.current_project
+        asset = self.medialibrary.store[0].asset
+        self.medialibrary.flowbox.select_all()
+        with mock.patch("pitivi.medialibrary.Gtk.MessageDialog") as dialog:
+            dialog.return_value.run.return_value = Gtk.ResponseType.CANCEL
+            self.medialibrary.remove_assets_action.activate()
+            self.assertIn(asset, project.list_assets(GES.Extractable))
+            self.assertEqual(self.medialibrary.store.get_n_items(), 1)
+            dialog.return_value.run.return_value = Gtk.ResponseType.OK
+            self.medialibrary.remove_assets_action.activate()
+            self.assertNotIn(asset, project.list_assets(GES.Extractable))
+            self.assertEqual(self.medialibrary.store.get_n_items(), 0)
+
+    def test_trash_accepts_only_library_files(self):
+        self.check_import(["flat_colour1_640x480.png"], proxying_strategy=ProxyingStrategy.NOTHING)
+        library = self.medialibrary
+        selection = mock.Mock()
+        selection.get_uris.return_value = [library.store[0].uri]
+        context = mock.Mock()
+        with mock.patch("pitivi.medialibrary.Gtk.drag_get_source_widget") as source, \
+                mock.patch("pitivi.medialibrary.Gtk.drag_finish") as finish, \
+                mock.patch.object(library, "_confirm_remove_assets") as confirm:
+            source.return_value = None
+            library._trash_data_received_cb(None, context, 0, 0, selection, 0, 1)
+            confirm.assert_not_called()
+            finish.assert_called_with(context, False, False, 1)
+            source.return_value = library.flowbox
+            library._trash_data_received_cb(None, context, 0, 0, selection, 0, 2)
+            confirm.assert_called_once_with([library.store[0].asset])
+            finish.assert_called_with(context, True, False, 2)
+
+
     def stop_using_proxies(self, delete_proxies=False):
         sample_name = "30fps_numeroted_frames_red.mkv"
         self.check_import([sample_name])
@@ -243,7 +278,9 @@ class TestMediaLibrary(BaseTestMediaLibrary):
 
             # Remove the asset, the imported files are not selected.
             self.medialibrary.flowbox.select_all()
-            self.medialibrary.remove_assets_action.activate()
+            with mock.patch("pitivi.medialibrary.Gtk.MessageDialog") as dialog:
+                dialog.return_value.run.return_value = Gtk.ResponseType.OK
+                self.medialibrary.remove_assets_action.activate()
 
             # Make sure that the project has not assets anymore
             self.assertEqual(project.list_assets(GES.Extractable), [])

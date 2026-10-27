@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this program; if not, see <http://www.gnu.org/licenses/>.
 """Tests for the pitivi.utils.motion module."""
+import tempfile
+
 from gi.repository import GES
 from gi.repository import Gst
 
@@ -85,7 +87,7 @@ class MotionKeyframesTest(common.TestCase):
 class ZoomTest(common.TestCase):
     """Tests for the automatic zoom of the clips."""
 
-    # A video, 4:3: its own source moves. The photos zoom with an effect.
+    # Both videos and photos use the sub-pixel effect.
     SAMPLE = "one_fps_numeroted_blue.mkv"
 
     def _add_clip(self, start):
@@ -106,69 +108,6 @@ class ZoomTest(common.TestCase):
             set_zoom(source, zoom)
             sync_pushes(self.layer)
 
-    @common.setup_timeline
-    def test_zoom(self):
-        self._wait_until_project_loaded()
-        clip, source = self._add_clip(0)
-        base = get_base_position(source)
-        self.assertEqual(base, {"posx": 240, "posy": 0, "width": 1440, "height": 1080})
-
-        self._set_zoom(source, Zoom(ZOOM_IN, "center", 1.5))
-        self.assertEqual(get_zoom(source), Zoom(ZOOM_IN, "center", 1.5))
-        self.assertEqual(self._keyframes(source, "width"), [(0, 1440), (4, 2160)])
-        self.assertEqual(self._keyframes(source, "posx"), [(0, 240), (4, -120)])
-        # The base position is kept.
-        self.assertEqual(get_base_position(source), base)
-
-        # Trimming the clip keeps the zoom from its start to its end.
-        with self.action_log.started("trim", toplevel=True):
-            context = EditingContext(clip, self.timeline, GES.EditMode.EDIT_TRIM,
-                                     GES.Edge.EDGE_END, self.app)
-            context.edit_to(2 * SECOND, self.layer)
-            context.finish()
-        self.assertEqual(self._keyframes(source, "width"), [(0, 1440), (2, 2160)])
-        self.action_log.undo()
-        self.assertEqual(self._keyframes(source, "width"), [(0, 1440), (4, 2160)])
-
-        # Without zoom, the animation stays, still.
-        self._set_zoom(source, None)
-        self.assertIsNone(get_zoom(source))
-        self.assertEqual(self._keyframes(source, "width"), [(0, 1440), (4, 1440)])
-
-        self.action_log.undo()
-        self.assertEqual(get_zoom(source), Zoom(ZOOM_IN, "center", 1.5))
-        self.assertEqual(self._keyframes(source, "width"), [(0, 1440), (4, 2160)])
-        self.action_log.undo()
-        self.assertIsNone(get_zoom(source))
-
-    @common.setup_timeline
-    def test_zoom_with_push_and_framing(self):
-        self._wait_until_project_loaded()
-        unused_clip_a, source_a = self._add_clip(0)
-        unused_clip_b, source_b = self._add_clip(4)
-        self._set_zoom(source_a, Zoom(ZOOM_IN, "center", 1.5))
-        contact, = get_contacts(self.layer)
-        with self.action_log.started("transition", toplevel=True):
-            set_transition(contact, PUSH, SECOND, RIGHT)
-        # The first clip zooms, and goes out to the left during the push.
-        self.assertEqual(self._keyframes(source_a, "posx"), [(0, 240), (3, -30), (4, -2040)])
-        self.assertEqual(self._keyframes(source_a, "width"), [(0, 1440), (4, 2160)])
-
-        # Filling the frame changes the base position, the motion goes on.
-        with self.action_log.started("fill", toplevel=True):
-            set_base_position(source_a, {"posx": 0, "posy": -180, "width": 1920, "height": 1440})
-            sync_pushes(self.layer)
-        self.assertEqual(self._keyframes(source_a, "width"), [(0, 1920), (4, 2880)])
-        self.assertEqual(self._keyframes(source_a, "posx"), [(0, 0), (3, -360), (4, -2400)])
-
-        # Another format, the zoom follows.
-        set_format(self.app, self.project, VERTICAL)
-        self.assertEqual(get_zoom(source_a), Zoom(ZOOM_IN, "center", 1.5))
-        base = get_base_position(source_a)
-        self.assertEqual(base["height"], 1920)
-        self.assertEqual(self._keyframes(source_a, "height"), [(0, 1920), (4, 2880)])
-        self.action_log.undo()
-        self.assertEqual(self._keyframes(source_a, "width"), [(0, 1920), (4, 2880)])
 
 
 class PhotoZoomTest(ZoomTest):
@@ -324,3 +263,65 @@ class PhotoZoomTest(ZoomTest):
         source = clip.find_track_element(None, GES.VideoSource)
         self.assertEqual(get_zoom(source), Zoom(ZOOM_IN, "top", 1.4))
         self.assertEqual(self._effect_keyframes(get_zoom_effect(clip), "zoom"), [(0, 1), (4, 1.4)])
+
+
+class VideoZoomTest(PhotoZoomTest):
+    """The same motion operations on decoded frames instead of cached photos."""
+
+    SAMPLE = "one_fps_numeroted_blue.mkv"
+
+    @common.setup_timeline
+    def test_zoom_with_blur_fill(self):
+        self._wait_until_project_loaded()
+        clip, source = self._add_clip(0)
+        self._set_zoom(source, Zoom(ZOOM_OUT, "top", 1.2))
+        with self.action_log.started("fill", toplevel=True):
+            set_blur_fill(clip, True)
+            sync_pushes(self.layer)
+        effect = get_zoom_effect(clip)
+        fill = get_blur_fill(clip)
+        self.assertIn("static=false", effect.props.bin_description)
+        self.assertTrue(fill.props.active)
+        self.assertEqual(effect.get_child_property("fill-sigma"), (True, 0.0))
+        self.assertEqual(get_base_position(source), FULL)
+        self.assertLess(clip.get_top_effect_index(effect), clip.get_top_effect_index(fill))
+        self.assertEqual(self._effect_keyframes(effect, "zoom"), [(0, 1.2), (4, 1)])
+        self._set_zoom(source, None)
+        self.assertIsNone(get_zoom_effect(clip))
+        self.assertTrue(fill.props.active)
+        self.action_log.undo()
+        self.assertEqual(self._effect_keyframes(get_zoom_effect(clip), "zoom"), [(0, 1.2), (4, 1)])
+
+    @common.setup_timeline
+    def test_load_legacy_video_zoom(self):
+        from pitivi.project import Project
+        from pitivi.utils.motion import _sync_source
+        self._wait_until_project_loaded()
+        clip, source = self._add_clip(0)
+        zoom = Zoom(ZOOM_IN, "top", 1.5)
+        set_zoom(source, zoom)
+        # Simulate a saved video from before the sub-pixel effect.
+        _sync_source(source, zoom, {})
+        self.assertIsNone(get_zoom_effect(clip))
+        with tempfile.NamedTemporaryFile(suffix=".xges") as saved:
+            uri = Gst.filename_to_uri(saved.name)
+            self.assertTrue(self.project.save(self.timeline, uri, None, overwrite=True))
+            loaded = Project(app=self.app, uri=uri)
+            loop = common.create_main_loop()
+            loaded.connect_after("loaded", lambda *unused: loop.quit())
+            self.assertTrue(loaded.create_timeline())
+            try:
+                loop.run()
+                clip = loaded.ges_timeline.get_layers()[0].get_clips()[0]
+                source = clip.find_track_element(None, GES.VideoSource)
+                effect = get_zoom_effect(clip)
+                self.assertIsNotNone(effect)
+                self.assertIn("static=false", effect.props.bin_description)
+                self.assertEqual(get_zoom(source), zoom)
+                self.assertEqual(get_base_position(source),
+                                 {"posx": 240, "posy": 0, "width": 1440, "height": 1080})
+                for prop, value in FULL.items():
+                    self.assertEqual(self._keyframes(source, prop), [(0, value), (4, value)])
+                self.assertEqual(self._effect_keyframes(effect, "zoom"), [(0, 1), (4, 1.5)])
+            finally:
+                loaded.release()

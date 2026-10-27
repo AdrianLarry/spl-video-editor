@@ -3279,6 +3279,10 @@ msgstr "Muestra la imagen entera sobre una copia desenfocada que llena el cuadro
 msgid "Blur:"
 msgstr "Desenfoque:"
 
+#: pitivi/clip_properties/opacity.py
+msgid "Opacity"
+msgstr "Opacidad"
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 
