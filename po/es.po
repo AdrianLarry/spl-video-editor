@@ -3220,8 +3220,12 @@ msgid "Almost done"
 msgstr "Casi listo"
 
 #: pitivi/export.py
-msgid "Speed: %s×"
-msgstr "Velocidad: %s×"
+msgid "Exported in %s, %s× the speed of the video."
+msgstr "Exportado en %s, a %s× la velocidad del video."
+
+#: pitivi/speedometer.py
+msgid "speed"
+msgstr "velocidad"
 
 #: pitivi/export.py
 msgid ""

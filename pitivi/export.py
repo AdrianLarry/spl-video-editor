@@ -21,6 +21,7 @@ MP4 file, which can be played and shared anywhere, or a WebM file if the
 MP4 encoders are not installed. The render dialog of Pitivi does the
 work, without being shown.
 """
+import collections
 import locale
 import os
 import time
@@ -34,6 +35,7 @@ from gi.repository import Pango
 
 from pitivi.render import Quality
 from pitivi.render import RenderDialog
+from pitivi.speedometer import Speedometer
 from pitivi.utils.formats import get_format
 from pitivi.utils.ui import beautify_eta
 from pitivi.utils.ui import PADDING
@@ -51,6 +53,8 @@ HIGH = Quality.HIGH
 # Bits per pixel of the video, for estimating the size of the file.
 BITS_PER_PIXEL = {STANDARD: 0.1, HIGH: 0.16}
 AUDIO_BITRATE = 128000
+# The speedometer shows the speed of the last seconds.
+SPEED_WINDOW = 2
 
 
 def get_file_format():
@@ -108,6 +112,8 @@ class RenderEngine(RenderDialog):
     def __init__(self, app, project, file_format, quality, listener):
         RenderDialog.__init__(self, app, project)
         self.listener = listener
+        # The (time, position) of the last seconds, for the speedometer.
+        self.__recent = collections.deque()
         unused_extension, muxer, vencoder, aencoder = file_format
         set_combo_value(self.muxer_combo, Gst.ElementFactory.find(muxer))
         set_combo_value(self.video_encoder_combo, Gst.ElementFactory.find(vencoder))
@@ -168,11 +174,17 @@ class RenderEngine(RenderDialog):
         fraction = min(position, length) / length
         remaining = None
         speed = None
-        spent = time.time() - self._time_started
+        now = time.time()
+        spent = now - self._time_started
+        recent = self.__recent
+        recent.append((now, min(position, length)))
+        while now - recent[0][0] > SPEED_WINDOW:
+            recent.popleft()
         # Enough time for a meaningful estimate.
         if spent > 3 and fraction > 0.02:
             remaining = int(spent * (1 - fraction) / fraction * Gst.SECOND)
-            speed = min(position, length) / Gst.SECOND / spent
+            if now > recent[0][0]:
+                speed = (recent[-1][1] - recent[0][1]) / Gst.SECOND / (now - recent[0][0])
         self.listener.render_progress(fraction, remaining, speed)
 
 
@@ -334,7 +346,8 @@ class ExportDialog(Gtk.Dialog):
         self.progress_bar.set_fraction(0)
         self.progress_percent_label.set_text("0 %")
         self.progress_left_label.set_text(_("Calculating…"))
-        self.progress_speed_label.set_text("")
+        self.speedometer.set_speed(None)
+        self.__started = time.time()
         self.stack.set_visible_child_name("progress")
         if not self.engine.start(self.path):
             self.render_failed(_("The output file could not be created."), None)
@@ -361,12 +374,11 @@ class ExportDialog(Gtk.Dialog):
         self.progress_left_label.get_style_context().add_class("dim-label")
         meta.pack_end(self.progress_left_label, False, False, 0)
         box.pack_start(meta, False, False, 0)
-        self.progress_speed_label = Gtk.Label(xalign=0)
-        self.progress_speed_label.get_style_context().add_class("dim-label")
-        self.progress_speed_label.set_tooltip_text(
+        self.speedometer = Speedometer()
+        self.speedometer.set_tooltip_text(
             _("Seconds of video exported in each second. Above 1, exporting takes "
               "less time than watching the video."))
-        box.pack_start(self.progress_speed_label, False, False, 0)
+        box.pack_start(self.speedometer, False, False, PADDING)
         cancel_button = Gtk.Button(label=_("Cancel"))
         cancel_button.props.halign = Gtk.Align.END
         cancel_button.props.margin_top = SPACING
@@ -381,8 +393,7 @@ class ExportDialog(Gtk.Dialog):
             eta = beautify_eta(remaining)
             self.progress_left_label.set_text(_("About %s left") % eta if eta else _("Almost done"))
         if speed is not None:
-            self.progress_speed_label.set_text(
-                _("Speed: %s×") % locale.format_string("%.1f", speed))
+            self.speedometer.set_speed(speed)
 
     def __cancel_clicked_cb(self, unused_button):
         self.__stop()
@@ -415,6 +426,10 @@ class ExportDialog(Gtk.Dialog):
         self.done_label.set_justify(Gtk.Justification.CENTER)
         self.done_label.get_style_context().add_class("dim-label")
         box.pack_start(self.done_label, False, False, 0)
+        self.done_speed_label = Gtk.Label()
+        self.done_speed_label.get_style_context().add_class("dim-label")
+        self.done_speed_label.set_no_show_all(True)
+        box.pack_start(self.done_speed_label, False, False, 0)
         buttons = Gtk.Box(spacing=SPACING)
         buttons.props.halign = Gtk.Align.CENTER
         buttons.props.margin_top = SPACING
@@ -434,6 +449,14 @@ class ExportDialog(Gtk.Dialog):
         self.done_title.set_markup("<b><big>%s</big></b>" % GLib.markup_escape_text(
             _("Your video is ready")))
         self.done_label.set_text(self.path)
+        spent = time.time() - self.__started
+        duration = self.project.ges_timeline.props.duration / Gst.SECOND
+        if spent > 0 and duration > 0:
+            self.done_speed_label.set_text(
+                _("Exported in %s, %s× the speed of the video.") % (
+                    format_duration(int(spent * Gst.SECOND)),
+                    locale.format_string("%.1f", duration / spent)))
+            self.done_speed_label.show()
         self.open_folder_button.show()
         self.stack.set_visible_child_name("done")
         if not self.is_active():
@@ -449,6 +472,7 @@ class ExportDialog(Gtk.Dialog):
             _("The video could not be exported")))
         self.done_label.set_text(str(error))
         self.open_folder_button.hide()
+        self.done_speed_label.hide()
         self.stack.set_visible_child_name("done")
 
     def __open_folder_clicked_cb(self, unused_button):

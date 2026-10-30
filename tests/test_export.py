@@ -99,6 +99,8 @@ class ExportDialogTest(common.TestCase):
             path = os.path.join(folder, "Mi video.mp4")
             self.assertEqual(dialog.path, path)
             self.assertEqual(dialog.done_label.get_text(), path)
+            # How fast it was, as the speedometer showed it.
+            self.assertIn("×", dialog.done_speed_label.get_text())
             self.assertIsNone(dialog.engine)
             info = GES.UriClipAsset.request_sync(Gst.filename_to_uri(path)).get_info()
             caps = info.get_video_streams()[0].get_caps().to_string()
