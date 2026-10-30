@@ -456,6 +456,25 @@ EDITOR_PERSPECTIVE_CSS = """
         background-color: rgb(46, 52, 64);
     }
 
+    /* The tools of the selected clip, floating over the viewer. */
+    .spl-clip-toolbar {
+        background-color: rgba(23, 26, 32, 0.92);
+        border: 1px solid rgb(59, 66, 80);
+        border-radius: 10px;
+        padding: 3px;
+    }
+
+    .spl-clip-toolbar button {
+        color: rgb(236, 239, 244);
+        border-radius: 7px;
+        padding: 4px 8px;
+        min-height: 0;
+    }
+
+    .spl-clip-toolbar button:hover {
+        background-color: rgb(46, 52, 64);
+    }
+
     /* The export dialog, as in the mockup. */
     .spl-export,
     .spl-export > box {

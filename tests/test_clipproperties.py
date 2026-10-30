@@ -24,11 +24,16 @@ from gi.repository import GES
 from gi.repository import Gst
 from gi.repository import Pango
 
+from pitivi.clip_properties.crop import apply_crop
+from pitivi.clip_properties.crop import Crop
+from pitivi.clip_properties.crop import get_crop
+from pitivi.clip_properties.crop import get_crop_effect
 from pitivi.clip_properties.orientation import get_flip_effect
 from pitivi.clip_properties.orientation import get_orientation
 from pitivi.clip_properties.orientation import Orientation
 from pitivi.clip_properties.title import FONTS
 from pitivi.clip_properties.title import TEXT_COLORS
+from pitivi.utils.blurfill import get_image_size
 from pitivi.utils.misc import filename_from_uri
 from pitivi.utils.timeline import SELECT
 from pitivi.utils.transitions import BLUR
@@ -332,6 +337,63 @@ class TransformationPropertiesTest(common.TestCase):
                     for prop in ("posx", "posy", "width", "height")}
         self.assertDictEqual(position, box.get_framing_position(True))
         self.assertLess(position["width"], position["height"])
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_orientation_of_photo_with_blurred_fill(self):
+        """Checks a turned photo in front of the fill keeps its shape."""
+        from pitivi.utils.blurfill import get_blur_fill_position
+
+        layer = self.timeline_container.timeline.ges_timeline.get_layers()[0]
+        asset = GES.UriClipAsset.request_sync(common.get_sample_uri("flat_colour1_640x480.png"))
+        clip = layer.add_asset(asset, 0, 0, Gst.SECOND, GES.TrackType.UNKNOWN)
+        self.timeline_container.timeline.selection.select([clip])
+        box = self.transformation_box
+        box.blur_fill_button.clicked()
+        self.assertEqual(get_blur_fill_position(clip),
+                         {"posx": 240, "posy": 0, "width": 1440, "height": 1080})
+
+        box.rotate_right_button.clicked()
+        self.assertEqual(get_blur_fill_position(clip),
+                         {"posx": 555, "posy": 0, "width": 810, "height": 1080})
+        self.action_log.undo()
+        self.assertEqual(get_blur_fill_position(clip),
+                         {"posx": 240, "posy": 0, "width": 1440, "height": 1080})
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_orientation_turns_crop(self):
+        """Checks the crop turns with the image, cropping the same part."""
+        clip = self.add_clips_simple(self.timeline_container.timeline, 1)[0]
+        self.timeline_container.timeline.selection.select([clip])
+        box = self.transformation_box
+        source = box.source
+        with self.action_log.started("crop", toplevel=True):
+            apply_crop(clip, Crop(left=100))
+        width, height = get_image_size(clip)
+
+        box.rotate_right_button.clicked()
+        self.assertEqual(get_crop(clip), Crop(top=100))
+        self.assertEqual(get_image_size(clip), (height, width))
+        # Turned first, then cropped: the effects with a bigger index come first.
+        self.assertGreater(clip.get_top_effect_index(get_flip_effect(clip)),
+                           clip.get_top_effect_index(get_crop_effect(clip)))
+        position = {prop: source.get_child_property(prop)[1]
+                    for prop in ("posx", "posy", "width", "height")}
+        self.assertDictEqual(position, source.ui.default_position)
+        self.assertAlmostEqual(position["width"] / position["height"], height / width, places=2)
+
+        box.mirror_horizontally_button.clicked()
+        self.assertEqual(get_crop(clip), Crop(top=100))
+        box.rotate_right_button.clicked()
+        # Mirrored, the side cropped is seen on the right.
+        self.assertEqual(get_orientation(clip), Orientation(0, True))
+        self.assertEqual(get_crop(clip), Crop(right=100))
+
+        for unused in range(3):
+            self.action_log.undo()
+        self.assertEqual(get_orientation(clip), Orientation())
+        self.assertEqual(get_crop(clip), Crop(left=100))
 
     @common.setup_timeline
     @common.setup_clipproperties

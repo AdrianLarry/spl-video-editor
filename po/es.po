@@ -3307,6 +3307,30 @@ msgstr "Desenfoque:"
 msgid "Opacity"
 msgstr "Opacidad"
 
+#: pitivi/viewer/clip_toolbar.py
+msgid "Crop"
+msgstr "Recortar"
+
+#: pitivi/viewer/clip_toolbar.py
+msgid "More"
+msgstr "Más"
+
+#: pitivi/viewer/clip_toolbar.py
+msgid "Crop the sides of the image"
+msgstr "Recorta los lados de la imagen"
+
+#: pitivi/viewer/clip_toolbar.py
+msgid "Leave the image as it was"
+msgstr "Deja la imagen como estaba"
+
+#: pitivi/viewer/clip_toolbar.py
+msgid "Crop the image"
+msgstr "Recorta la imagen"
+
+#: pitivi/viewer/clip_toolbar.py
+msgid "Remove the crop"
+msgstr "Quitar el recorte"
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 

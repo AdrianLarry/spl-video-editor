@@ -37,6 +37,7 @@ from matplotlib.collections import PathCollection
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
+from pitivi.clip_properties.crop import cropped_size
 from pitivi.clip_properties.orientation import Orientation
 from pitivi.clip_properties.orientation import ORIENTATIONS
 from pitivi.configure import get_pixmap_dir
@@ -1141,6 +1142,9 @@ class VideoSource(TimelineElement):
             if orientation.swaps_dimensions and self.__videoflip.props.active:
                 asset_width = sinfo.get_natural_height()
                 asset_height = sinfo.get_natural_width()
+
+        # SPL: the part of the image kept by the crop.
+        asset_width, asset_height = cropped_size(parent, asset_width, asset_height)
 
         # Find the biggest size of the video inside the
         # final view (project size) keeping the aspect ratio

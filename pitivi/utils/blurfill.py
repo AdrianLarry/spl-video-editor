@@ -34,6 +34,7 @@ from typing import Tuple
 from gi.repository import GES
 from gi.repository import GstController
 
+from pitivi.clip_properties.crop import cropped_size
 from pitivi.clip_properties.orientation import get_orientation
 
 BLUR_FILL_META = "spl::blur-fill"
@@ -197,8 +198,8 @@ def _even(value: float) -> int:
     return max(2, round(value / 2) * 2)
 
 
-def get_image_size(clip: GES.Clip) -> Optional[Tuple[int, int]]:
-    """Returns the size of the image of the clip, as turned."""
+def get_image_size(clip: GES.Clip, cropped: bool = True) -> Optional[Tuple[int, int]]:
+    """Returns the size of the image of the clip, as turned and cropped."""
     asset = clip.get_asset()
     if not asset:
         return None
@@ -208,6 +209,8 @@ def get_image_size(clip: GES.Clip) -> Optional[Tuple[int, int]]:
     width, height = streams[0].get_natural_width(), streams[0].get_natural_height()
     if get_orientation(clip).swaps_dimensions:
         width, height = height, width
+    if cropped:
+        width, height = cropped_size(clip, width, height)
     return width, height
 
 

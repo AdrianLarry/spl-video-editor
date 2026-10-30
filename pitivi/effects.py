@@ -158,7 +158,9 @@ HIDDEN_EFFECTS = [
     # Overlaying an image onto a video stream can already be done.
     "gdkpixbufoverlay",
     # Rotating and mirroring are done with the buttons of the framing.
-    "videoflip"]
+    "videoflip",
+    # Cropping is done in the viewer, see clip_properties/crop.py.
+    "videocrop name=spl-crop"]
 
 # The effects offered, as in the mockup: simple, and made with elements
 # which work with any video. Some others of the catalog crash the app.

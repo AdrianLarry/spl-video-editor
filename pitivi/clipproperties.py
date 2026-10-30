@@ -40,6 +40,9 @@ from pitivi.check import MISSING_SOFT_DEPS
 from pitivi.clip_properties.alignment import AlignmentEditor
 from pitivi.clip_properties.color import ColorProperties
 from pitivi.clip_properties.compositing import CompositingProperties
+from pitivi.clip_properties.crop import get_crop
+from pitivi.clip_properties.crop import set_crop
+from pitivi.clip_properties.crop import turned_crop
 from pitivi.clip_properties.markers import ClipMarkersProperties
 from pitivi.clip_properties.opacity import OpacityProperties
 from pitivi.clip_properties.opacity import is_opacity_effect
@@ -61,10 +64,12 @@ from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.blurfill import BLUR_SIGMA_META
 from pitivi.utils.blurfill import get_blur_fill
 from pitivi.utils.blurfill import get_blur_fill_position
+from pitivi.utils.blurfill import get_fit_rect
 from pitivi.utils.blurfill import is_blur_fill_needed
 from pitivi.utils.blurfill import get_blur_sigma
 from pitivi.utils.blurfill import is_blur_fill_effect
 from pitivi.utils.blurfill import set_blur_fill
+from pitivi.utils.blurfill import set_blur_fill_position
 from pitivi.utils.blurfill import set_blur_sigma
 from pitivi.utils.blurfill import set_effect_sigma
 from pitivi.utils.blurfill import update_blur_fill
@@ -1464,11 +1469,20 @@ class TransformationProperties(Gtk.Expander, Loggable):
                                          finalizing_action=CommitTimelineFinalizingAction(
                                              self._project.pipeline),
                                          toplevel=True):
+            # SPL: the crop turns with the image, before the image is
+            # framed again for it.
+            set_crop(clip, turned_crop(get_crop(clip), orientation, new_orientation))
             set_orientation(clip, new_orientation)
             if get_blur_fill(clip):
                 # The blurred fill is made again for the turned image, it
                 # can be needed or not, which the pushes follow.
                 update_blur_fill(clip)
+                if new_orientation.swaps_dimensions != orientation.swaps_dimensions and \
+                        get_blur_fill_position(clip):
+                    # SPL: the photo in front of the fill is fitted again,
+                    # else it keeps its old shape.
+                    set_blur_fill_position(clip, dict(zip(("posx", "posy", "width", "height"),
+                                                          map(round, get_fit_rect(clip)))))
                 if clip.get_layer():
                     sync_pushes(clip.get_layer())
             elif new_orientation.swaps_dimensions != orientation.swaps_dimensions:

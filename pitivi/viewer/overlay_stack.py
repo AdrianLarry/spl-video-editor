@@ -21,6 +21,8 @@ from gi.repository import GLib
 from gi.repository import Gtk
 
 from pitivi.utils.loggable import Loggable
+from pitivi.viewer.clip_toolbar import ClipToolbar
+from pitivi.viewer.crop_overlay import CropOverlay
 from pitivi.viewer.move_scale_overlay import MoveScaleOverlay
 from pitivi.viewer.safe_areas_overlay import SafeAreasOverlay
 from pitivi.viewer.title_overlay import TitleOverlay
@@ -79,6 +81,12 @@ class OverlayStack(Gtk.Overlay, Loggable):
         self.add_overlay(self.preparing_spinner)
         self.set_overlay_pass_through(self.preparing_spinner, True)
 
+        # SPL: cropping the selected clip, from a toolbar over the viewer.
+        self.crop_overlay = CropOverlay(self)
+        self.add_overlay(self.crop_overlay)
+        self.clip_toolbar = ClipToolbar(app, self.crop_overlay)
+        self.add_overlay(self.clip_toolbar)
+
         sink_widget.connect("size-allocate", self.__sink_widget_size_allocate_cb)
 
     def __size_allocate_cb(self, widget, rectangle):
@@ -96,12 +104,21 @@ class OverlayStack(Gtk.Overlay, Loggable):
         else:
             overlay = MoveScaleOverlay(self, self.app.action_log, source)
         self.add_overlay(overlay)
+        # SPL: the crop and the toolbar stay on top, the toolbar clickable.
+        self.reorder_overlay(self.crop_overlay, -1)
+        self.reorder_overlay(self.clip_toolbar, -1)
         self.__overlays[source] = overlay
         return overlay
 
     def do_event(self, event):
+        if self.crop_overlay.active:
+            # The crop overlay handles the pointer while cropping.
+            return False
         if event.type == Gdk.EventType.BUTTON_RELEASE:
             cursor_position = numpy.array([event.x, event.y])
+            if self.click_position is None:
+                # SPL: pressed on a widget over the viewer, as the toolbar.
+                return False
             self.click_position = None
             if self.selected_overlay:
                 self.selected_overlay.on_button_release(cursor_position)
@@ -155,7 +172,7 @@ class OverlayStack(Gtk.Overlay, Loggable):
             overlay = self.__overlay_for_source(source)
             self.__visible_overlays.append(overlay)
         # check if viewer should be visible
-        if not self.__hide_all_overlays:
+        if not self.__hide_all_overlays and not self.crop_overlay.active:
             for source, overlay in self.__overlays.items():
                 if source in sources:
                     overlay.show()
@@ -167,6 +184,7 @@ class OverlayStack(Gtk.Overlay, Loggable):
 
     def select(self, source):
         """Specifies the selected source between the sources at the playhead."""
+        self.clip_toolbar.set_clip(source.get_parent() if source else None)
         if not source:
             self.selected_overlay = None
             return
@@ -190,6 +208,11 @@ class OverlayStack(Gtk.Overlay, Loggable):
         self.preparing_spinner.start()
         return False
 
+    def show_source_overlays(self, visible):
+        """Shows or hides the overlays of the sources, as while cropping."""
+        for overlay in self.__visible_overlays:
+            overlay.set_visible(visible and not self.__hide_all_overlays)
+
     def hide_overlays(self):
         if self.__hide_all_overlays:
             # The overlays are already hidden.
@@ -198,6 +221,8 @@ class OverlayStack(Gtk.Overlay, Loggable):
         self.guidelines_overlay.hide()
         for overlay in self.__visible_overlays:
             overlay.hide()
+        self.clip_toolbar.stop_cropping()
+        self.clip_toolbar.hide()
         self.__hide_all_overlays = True
 
     def show_overlays(self):
@@ -208,6 +233,7 @@ class OverlayStack(Gtk.Overlay, Loggable):
         self.guidelines_overlay.show()
         for overlay in self.__visible_overlays:
             overlay.show()
+        self.clip_toolbar.set_visible(self.clip_toolbar.clip is not None)
         self.__hide_all_overlays = False
 
     def set_cursor(self, name):
