@@ -225,9 +225,10 @@ class TestPipeline(common.TestCase):
         output_format.get_static_pad("src").add_probe(Gst.PadProbeType.EVENT_DOWNSTREAM, event_probe)
         try:
             pipeline.set_state(Gst.State.PLAYING)
-            # A mono music source, stereo video audio and a float mix.
-            formats = (("F32LE", 44100, 1, 4), ("S16LE", 48000, 2, 2),
-                       ("F64LE", 48000, 2, 8))
+            # A mono music source, stereo video audio and a float mix, at
+            # the rate of the project set on the audio track.
+            formats = (("F32LE", 96000, 1, 4), ("S16LE", 96000, 2, 2),
+                       ("F64LE", 96000, 2, 8))
             for index, (fmt, rate, channels, size) in enumerate(formats):
                 caps = Gst.Caps.from_string(
                     "audio/x-raw,format=%s,layout=interleaved,rate=%d,channels=%d"
@@ -247,7 +248,7 @@ class TestPipeline(common.TestCase):
                 caps = sample.get_caps().get_structure(0)
                 self.assertEqual(caps.get_string("format"), "S16LE")
                 self.assertEqual(caps.get_string("layout"), "interleaved")
-                self.assertEqual(caps.get_int("rate"), (True, 48000))
+                self.assertEqual(caps.get_int("rate"), (True, 96000))
                 self.assertEqual(caps.get_int("channels"), (True, 2))
                 samples += 1
             self.assertGreaterEqual(samples, 3)

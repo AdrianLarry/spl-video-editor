@@ -581,10 +581,12 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         # Keep the device format stable when video audio joins or leaves
         # the music mix. Renegotiating the sink interrupts its audio clock
         # and briefly stops both the sound and the viewer at clip boundaries.
+        # The rate is the one of the project, set on the audio track:
+        # resampling the silence of the gaps stalls pulsesink.
         self.props.audio_sink = Gst.parse_bin_from_description(
             "level ! audioconvert ! audioresample ! "
             "capsfilter name=spl-preview-audio-format "
-            "caps=audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2 ! "
+            "caps=audio/x-raw,format=S16LE,layout=interleaved,channels=2 ! "
             "autoaudiosink", True)
 
         if "watchdog" in os.environ.get("PITIVI_UNSTABLE_FEATURES", ''):
@@ -769,7 +771,9 @@ class Pipeline(GES.Pipeline, SimplePipeline):
             for clip in layer.get_clips():
                 if clip.get_track_types() & GES.TrackType.VIDEO:
                     edges.extend((clip.props.start, clip.props.start + clip.props.duration))
-        ahead = [edge for edge in edges if position < edge <= position + AHEAD_EDGE_WINDOW]
+        # Nothing is prepared after the end of the timeline.
+        end = self.props.timeline.props.duration
+        ahead = [edge for edge in edges if position < edge <= position + AHEAD_EDGE_WINDOW and edge < end]
         if not ahead:
             return False
         return self._ahead_end < min(ahead) + AHEAD_EDGE_MARGIN
