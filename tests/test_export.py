@@ -109,6 +109,30 @@ class ExportDialogTest(common.TestCase):
             self.assertFalse(self.project.pipeline.rendering())
             GLib.idle_add(dialog.destroy)
 
+    def test_existing_name(self):
+        """The dialog tells the name of the new video if the name is taken."""
+        app = common.create_pitivi_mock()
+        from pitivi.project import ProjectManager
+        app.project_manager = ProjectManager(app)
+        project = app.project_manager.new_blank_project()
+        with tempfile.TemporaryDirectory() as folder:
+            app.settings.lastExportFolder = folder
+            dialog = ExportDialog(app, project)
+            # The folder chooser sets its folder later.
+            dialog.folder_button.get_filename = lambda: folder
+            dialog.name_entry.set_text("EMBE")
+            self.assertFalse(dialog.name_note_box.get_visible())
+
+            with open(os.path.join(folder, "EMBE.mp4"), "w", encoding="utf-8"):
+                pass
+            dialog.name_entry.set_text("EMBE ")
+            self.assertTrue(dialog.name_note_box.get_visible())
+            self.assertIn("EMBE (2).mp4", dialog.name_note.get_text())
+
+            dialog.name_entry.set_text("Otro")
+            self.assertFalse(dialog.name_note_box.get_visible())
+            dialog.destroy()
+
     def test_invalid_name(self):
         app = common.create_pitivi_mock()
         from pitivi.project import ProjectManager

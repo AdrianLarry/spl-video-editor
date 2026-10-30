@@ -476,6 +476,19 @@ EDITOR_PERSPECTIVE_CSS = """
         border-radius: 8px;
     }
 
+    /* The name the new video takes, when one with the name exists. */
+    .spl-export .spl-name-note {
+        background-color: rgba(217, 83, 30, 0.14);
+        border-left: 3px solid #D9531E;
+        border-radius: 0 8px 8px 0;
+        padding: 8px 10px;
+        color: rgb(236, 239, 244);
+    }
+
+    .spl-export .spl-name-note image {
+        color: rgb(255, 138, 91);
+    }
+
     .spl-progress progress {
         background-image: none;
         background-color: rgb(255, 138, 91);

@@ -3229,6 +3229,14 @@ msgstr "velocidad"
 
 #: pitivi/export.py
 msgid ""
+"A video with this name already exists, so it does not change. The new one "
+"will be <b>%s</b>."
+msgstr ""
+"Ya hay un video con este nombre, y no se toca. El nuevo se va a llamar "
+"<b>%s</b>."
+
+#: pitivi/export.py
+msgid ""
 "Seconds of video exported in each second. Above 1, exporting takes less "
 "time than watching the video."
 msgstr ""

@@ -249,11 +249,28 @@ class ExportDialog(Gtk.Dialog):
         self.name_entry.set_activates_default(True)
         self.name_entry.connect("changed", lambda unused_entry: self.__update_buttons())
         box.pack_start(self.name_entry, False, False, 0)
+        # The name taken when a video with the same name exists, so the
+        # user knows which name to look for.
+        self.name_note_box = Gtk.Box(spacing=SPACING)
+        self.name_note_box.get_style_context().add_class("spl-name-note")
+        icon = Gtk.Image.new_from_icon_name("dialog-information-symbolic", Gtk.IconSize.BUTTON)
+        icon.props.valign = Gtk.Align.START
+        self.name_note_box.pack_start(icon, False, False, 0)
+        self.name_note = Gtk.Label(xalign=0)
+        self.name_note.set_line_wrap(True)
+        self.name_note.set_max_width_chars(46)
+        self.name_note_box.pack_start(self.name_note, True, True, 0)
+        self.name_note_box.show_all()
+        self.name_note_box.set_no_show_all(True)
+        self.name_note_box.hide()
+        box.pack_start(self.name_note_box, False, False, 0)
 
         box.pack_start(self.__field_label(_("Save in")), False, False, PADDING)
         self.folder_button = Gtk.FileChooserButton(title=_("Choose the folder"),
                                                    action=Gtk.FileChooserAction.SELECT_FOLDER)
         self.folder_button.set_filename(get_default_folder(self.app))
+        self.folder_button.connect("selection-changed",
+                                   lambda unused_button: self.__update_name_note())
         box.pack_start(self.folder_button, False, False, 0)
 
         box.pack_start(self.__field_label(_("Quality")), False, False, PADDING)
@@ -316,6 +333,26 @@ class ExportDialog(Gtk.Dialog):
         name = self.name_entry.get_text().strip()
         valid = bool(name) and "/" not in name and bool(self.file_format)
         self.export_button.set_sensitive(valid)
+        self.__update_name_note()
+
+    def __get_folder(self):
+        return self.folder_button.get_filename() or get_default_folder(self.app)
+
+    def __update_name_note(self):
+        name = self.name_entry.get_text().strip()
+        if not name or "/" in name or not self.file_format:
+            self.name_note_box.hide()
+            return
+        extension = self.file_format[0]
+        path = get_unique_path(self.__get_folder(), name, extension)
+        if os.path.basename(path) == "%s.%s" % (name, extension):
+            self.name_note_box.hide()
+            return
+        self.name_note.set_markup(
+            _("A video with this name already exists, so it does not change. "
+              "The new one will be <b>%s</b>.") % (
+                  "<span foreground=\"#FF8A5B\">%s</span>" % GLib.markup_escape_text(os.path.basename(path))))
+        self.name_note_box.show()
 
     def __update_summary(self):
         width, height = self.project.videowidth, self.project.videoheight
@@ -334,7 +371,7 @@ class ExportDialog(Gtk.Dialog):
                 GLib.markup_escape_text(format_size(size))))
 
     def __export_clicked_cb(self, unused_button):
-        folder = self.folder_button.get_filename() or get_default_folder(self.app)
+        folder = self.__get_folder()
         name = self.name_entry.get_text().strip()
         self.path = get_unique_path(folder, name, self.file_format[0])
         self.engine = RenderEngine(self.app, self.project, self.file_format,
@@ -400,6 +437,7 @@ class ExportDialog(Gtk.Dialog):
         # The unfinished file is useless.
         if self.path and os.path.exists(self.path):
             os.remove(self.path)
+        self.__update_name_note()
         self.stack.set_visible_child_name("form")
 
     def __stop(self):
