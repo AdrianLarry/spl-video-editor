@@ -29,6 +29,7 @@ from pitivi.undo.base import GObjectObserver
 from pitivi.undo.base import PropertyChangedAction
 from pitivi.undo.base import UndoableAction
 from pitivi.undo.base import UndoableAutomaticObjectAction
+from pitivi.undo.effect_order import EffectsOrderObserver
 from pitivi.undo.markers import MetaContainerObserver
 from pitivi.utils.blurfill import is_blur_fill_effect
 from pitivi.utils.fades import get_keyframes
@@ -194,11 +195,8 @@ class TrackElementObserver(TimelineElementObserver, MetaContainerObserver):
     def __init__(self, ges_track_element, action_log):
         TimelineElementObserver.__init__(self, ges_track_element, action_log)
         MetaContainerObserver.__init__(self, ges_track_element, action_log)
-        if isinstance(ges_track_element, GES.BaseEffect):
-            property_names = ("active", "priority",)
-        else:
-            property_names = ("active",)
-        self.gobject_observer = GObjectObserver(ges_track_element, property_names, action_log)
+        # SPL: the order of the effects is undone by EffectsOrderObserver.
+        self.gobject_observer = GObjectObserver(ges_track_element, ("active",), action_log)
 
     def release(self):
         MetaContainerObserver.release(self)
@@ -260,6 +258,18 @@ class TrackElementAdded(TrackElementAction):
 
 class TrackElementRemoved(TrackElementAction):
 
+    def __init__(self, clip, track_element):
+        TrackElementAction.__init__(self, clip, track_element)
+        # SPL: where the effect was, relative to the first child of the
+        # clip, which the layer can move.
+        self.offset = None
+        if isinstance(track_element, GES.BaseEffect):
+            self.offset = track_element.props.priority - self.__first_priority()
+
+    def __first_priority(self):
+        return min((child.props.priority for child in self.clip.get_children(False)),
+                   default=self.track_element.props.priority)
+
     def __repr__(self):
         return "<TrackElementRemoved %s, %s>" % (self.clip, self.track_element)
 
@@ -267,6 +277,16 @@ class TrackElementRemoved(TrackElementAction):
         self.remove()
 
     def undo(self):
+        if self.offset is not None:
+            # SPL: back where it was between the other effects, setting
+            # its priority would collide with them if the clip moved.
+            first = self.__first_priority()
+            index = len([effect for effect in self.clip.get_top_effects()
+                         if effect.props.priority - first < self.offset])
+            self.add()
+            self.clip.set_top_effect_index(self.track_element, index)
+            return
+
         # Set the priority it had when it was last removed from self.clip,
         # because re-adding it can change it, for example if it's an effect.
         priority = self.track_element.props.priority
@@ -778,6 +798,7 @@ class LayerObserver(MetaContainerObserver, Loggable):
 
         self.keyframe_observers = {}
         self.track_element_observers = {}
+        self.effects_order_observer = EffectsOrderObserver(action_log)
 
         ges_layer.connect("clip-added", self._clip_added_cb)
         ges_layer.connect("clip-removed", self._clip_removed_cb)
@@ -788,6 +809,7 @@ class LayerObserver(MetaContainerObserver, Loggable):
             self._connect_to_clip(ges_clip)
 
     def _connect_to_clip(self, ges_clip):
+        self.effects_order_observer.add_clip(ges_clip)
         ges_clip.connect("child-added", self._clip_track_element_added_cb)
         ges_clip.connect("child-removed", self._clip_track_element_removed_cb)
 
@@ -808,6 +830,7 @@ class LayerObserver(MetaContainerObserver, Loggable):
 
         for child in ges_clip.get_children(recursive=True):
             self._disconnect_from_track_element(child)
+        self.effects_order_observer.remove_clip(ges_clip)
 
         if isinstance(ges_clip, GES.TransitionClip):
             return
@@ -845,6 +868,8 @@ class LayerObserver(MetaContainerObserver, Loggable):
         if isinstance(track_element, (GES.BaseEffect, GES.VideoSource, GES.AudioSource)):
             observer = TrackElementObserver(track_element, self.action_log)
             self.track_element_observers[track_element] = observer
+        if isinstance(track_element, GES.BaseEffect):
+            self.effects_order_observer.add_effect(track_element)
 
     def _disconnect_from_track_element(self, track_element):
         if not isinstance(track_element, GES.VideoTransition):
@@ -852,6 +877,8 @@ class LayerObserver(MetaContainerObserver, Loggable):
             track_element.disconnect_by_func(self._control_binding_removed_cb)
         for unused_prop, binding in track_element.get_all_control_bindings().items():
             self._disconnect_from_control_source(binding)
+        if isinstance(track_element, GES.BaseEffect):
+            self.effects_order_observer.remove_effect(track_element)
         observer = self.track_element_observers.pop(track_element, None)
         # We only keep track of some track_elements.
         if observer:
