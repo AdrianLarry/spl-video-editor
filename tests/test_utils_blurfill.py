@@ -58,13 +58,14 @@ class BlurFillTest(common.TestCase):
         self.assertIn("width=1080,height=1080,pixel-aspect-ratio=1/1 ! spl-mix.sink_1", description)
         self.assertIn("sink_1::xpos=0 sink_1::ypos=420", description)
         # The background covers a small frame, cropped to it.
-        self.assertIn("width=480,height=480,pixel-aspect-ratio=1/1 ! videocrop left=105 right=105 top=0 bottom=0", description)
+        self.assertIn("width=240,height=240,pixel-aspect-ratio=1/1 ! videocrop left=52 right=52 top=0 bottom=0", description)
         self.assertTrue(description.endswith("format=AYUV,width=1080,height=1920 ! videoconvert"))
         self.assertIsNotNone(GES.Effect.new(description))
 
         # Custom sigma in description
         custom_desc = blur_fill_description((800, 800), (1080, 1920), sigma=15.0)
-        self.assertIn("gaussianblur sigma=15", custom_desc)
+        # The blur of the user is for a background of 480 pixels.
+        self.assertIn("gaussianblur sigma=7.5", custom_desc)
 
     def test_fill_needed(self):
         self.assertTrue(is_fill_needed((1080, 1920), (1920, 1080)))
@@ -129,13 +130,13 @@ class BlurFillTest(common.TestCase):
         self.assertEqual(get_blur_sigma(clip), 12.0)
         res, sigma_val = effect.get_child_property("sigma")
         self.assertTrue(res)
-        self.assertEqual(sigma_val, 12.0)
+        self.assertEqual(sigma_val, 6.0)
 
         # Another format makes the blurred fill again, preserving sigma.
         set_format(self.app, self.project, VERTICAL)
         effect = get_blur_fill(clip)
         self.assertIn("format=AYUV,width=1080,height=1920", effect.props.bin_description)
-        self.assertIn("sigma=12", effect.props.bin_description)
+        self.assertIn("sigma=6 ", effect.props.bin_description)
         self.assertEqual(get_base_position(source)["width"], 1080)
         self.action_log.undo()
         self.assertIn("format=AYUV,width=1920,height=1080", get_blur_fill(clip).props.bin_description)

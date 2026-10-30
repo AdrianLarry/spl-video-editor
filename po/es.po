@@ -3220,6 +3220,18 @@ msgid "Almost done"
 msgstr "Casi listo"
 
 #: pitivi/export.py
+msgid "Speed: %s×"
+msgstr "Velocidad: %s×"
+
+#: pitivi/export.py
+msgid ""
+"Seconds of video exported in each second. Above 1, exporting takes less "
+"time than watching the video."
+msgstr ""
+"Segundos de video exportados por cada segundo. Con más de 1, exportar "
+"tarda menos que mirar el video."
+
+#: pitivi/export.py
 msgid "Open folder"
 msgstr "Abrir carpeta"
 

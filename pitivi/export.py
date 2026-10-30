@@ -21,6 +21,7 @@ MP4 file, which can be played and shared anywhere, or a WebM file if the
 MP4 encoders are not installed. The render dialog of Pitivi does the
 work, without being shown.
 """
+import locale
 import os
 import time
 from gettext import gettext as _
@@ -166,11 +167,13 @@ class RenderEngine(RenderDialog):
             return
         fraction = min(position, length) / length
         remaining = None
+        speed = None
         spent = time.time() - self._time_started
         # Enough time for a meaningful estimate.
         if spent > 3 and fraction > 0.02:
             remaining = int(spent * (1 - fraction) / fraction * Gst.SECOND)
-        self.listener.render_progress(fraction, remaining)
+            speed = min(position, length) / Gst.SECOND / spent
+        self.listener.render_progress(fraction, remaining, speed)
 
 
 class ExportDialog(Gtk.Dialog):
@@ -331,6 +334,7 @@ class ExportDialog(Gtk.Dialog):
         self.progress_bar.set_fraction(0)
         self.progress_percent_label.set_text("0 %")
         self.progress_left_label.set_text(_("Calculating…"))
+        self.progress_speed_label.set_text("")
         self.stack.set_visible_child_name("progress")
         if not self.engine.start(self.path):
             self.render_failed(_("The output file could not be created."), None)
@@ -357,6 +361,12 @@ class ExportDialog(Gtk.Dialog):
         self.progress_left_label.get_style_context().add_class("dim-label")
         meta.pack_end(self.progress_left_label, False, False, 0)
         box.pack_start(meta, False, False, 0)
+        self.progress_speed_label = Gtk.Label(xalign=0)
+        self.progress_speed_label.get_style_context().add_class("dim-label")
+        self.progress_speed_label.set_tooltip_text(
+            _("Seconds of video exported in each second. Above 1, exporting takes "
+              "less time than watching the video."))
+        box.pack_start(self.progress_speed_label, False, False, 0)
         cancel_button = Gtk.Button(label=_("Cancel"))
         cancel_button.props.halign = Gtk.Align.END
         cancel_button.props.margin_top = SPACING
@@ -364,12 +374,15 @@ class ExportDialog(Gtk.Dialog):
         box.pack_start(cancel_button, False, False, 0)
         return box
 
-    def render_progress(self, fraction, remaining):
+    def render_progress(self, fraction, remaining, speed=None):
         self.progress_bar.set_fraction(fraction)
         self.progress_percent_label.set_text("%d %%" % int(fraction * 100))
         if remaining is not None:
             eta = beautify_eta(remaining)
             self.progress_left_label.set_text(_("About %s left") % eta if eta else _("Almost done"))
+        if speed is not None:
+            self.progress_speed_label.set_text(
+                _("Speed: %s×") % locale.format_string("%.1f", speed))
 
     def __cancel_clicked_cb(self, unused_button):
         self.__stop()

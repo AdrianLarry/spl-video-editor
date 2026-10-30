@@ -40,8 +40,12 @@ BLUR_FILL_META = "spl::blur-fill"
 BLUR_SIGMA_META = "spl::blur-sigma"
 
 # The size of the blurred background before it is made big, the bigger
-# side. Blurring a small image is fast, and it is blurred anyway.
-BACKGROUND_SIZE = 480
+# side. Blurring a small image is fast, and it is blurred anyway: at 240
+# exporting a video with the fill is about 3 times faster than at 480.
+BACKGROUND_SIZE = 240
+# The sigma chosen by the user blurs a background this big, the same blur
+# for any BACKGROUND_SIZE.
+SIGMA_SIZE = 480
 DEFAULT_BLUR_SIGMA = 6.0
 MIN_BLUR_SIGMA = 1.0
 MAX_BLUR_SIGMA = 20.0
@@ -163,6 +167,15 @@ def get_blur_sigma(container: GES.MetaContainer) -> float:
     return DEFAULT_BLUR_SIGMA
 
 
+def _element_sigma(sigma: float) -> float:
+    return sigma * BACKGROUND_SIZE / SIGMA_SIZE
+
+
+def set_effect_sigma(effect: GES.BaseEffect, sigma: float) -> None:
+    """Sets the blur chosen by the user on the effect making the fill."""
+    effect.set_child_property("sigma", _element_sigma(sigma))
+
+
 def set_blur_sigma(source: GES.VideoSource, sigma: float) -> None:
     """Sets the blur amount for the blurred fill."""
     sigma = min(MAX_BLUR_SIGMA, max(MIN_BLUR_SIGMA, float(sigma)))
@@ -172,7 +185,7 @@ def set_blur_sigma(source: GES.VideoSource, sigma: float) -> None:
         clip.set_double(BLUR_SIGMA_META, sigma)
         effect = get_blur_fill(clip)
         if effect:
-            effect.set_child_property("sigma", float(sigma))
+            set_effect_sigma(effect, sigma)
         from pitivi.utils.motion import get_zoom_effect  # pylint: disable=import-outside-toplevel
         zoom_effect = get_zoom_effect(clip)
         if zoom_effect and zoom_effect.get_child_property("fill-sigma")[1]:
@@ -223,7 +236,7 @@ def blur_fill_description(image_size: Tuple[int, int], frame_size: Tuple[int, in
     # properties when splitting or pasting the clip, see splittee.
     description = ("videoconvert ! splsplit name=spl-split "
             "spl-split. ! queue ! videoscale ! capsfilter caps=video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1 ! "
-            "videocrop left=%d right=%d top=%d bottom=%d ! gaussianblur sigma=%d ! videoscale ! "
+            "videocrop left=%d right=%d top=%d bottom=%d ! gaussianblur sigma=%g ! videoscale ! "
             "capsfilter caps=video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1 ! spl-mix.sink_0 "
             "spl-split. ! queue ! videoscale ! "
             "capsfilter caps=video/x-raw,width=%d,height=%d,pixel-aspect-ratio=1/1 ! spl-mix.sink_1 "
@@ -233,7 +246,7 @@ def blur_fill_description(image_size: Tuple[int, int], frame_size: Tuple[int, in
             "framepositioner name=spl-positioner ! "
             "capsfilter caps=video/x-raw,format=AYUV,width=%d,height=%d ! videoconvert"
             % (cover_width, cover_height,
-               crop_x // 2, crop_x - crop_x // 2, crop_y // 2, crop_y - crop_y // 2, round(sigma),
+               crop_x // 2, crop_x - crop_x // 2, crop_y // 2, crop_y - crop_y // 2, _element_sigma(round(sigma)),
                frame_width, frame_height,
                fit_width, fit_height,
                (frame_width - fit_width) // 2, (frame_height - fit_height) // 2,
@@ -331,7 +344,7 @@ def set_blur_fill(clip: GES.Clip, enabled: bool, sigma: Optional[float] = None) 
     description = blur_fill_description(image_size, frame_size, sigma, foreground=clip.get_asset().is_image())
     # Kept for when the frame changes again, but the image covers it.
     if effect and effect.props.bin_description == description:
-        effect.set_child_property("sigma", float(sigma))
+        set_effect_sigma(effect, sigma)
         _configure_composition(effect)
         link_alpha(effect, source)
         _set_needed(effect, is_blur_fill_needed(clip))
@@ -343,7 +356,7 @@ def set_blur_fill(clip: GES.Clip, enabled: bool, sigma: Optional[float] = None) 
         clip.remove(effect)
     effect = GES.Effect.new(description)
     effect.set_boolean(BLUR_FILL_META, True)
-    effect.set_child_property("sigma", float(sigma))
+    set_effect_sigma(effect, sigma)
     clip.set_double(BLUR_SIGMA_META, float(sigma))
     source.set_double(BLUR_SIGMA_META, float(sigma))
     clip.add(effect)

@@ -66,6 +66,7 @@ from pitivi.utils.blurfill import get_blur_sigma
 from pitivi.utils.blurfill import is_blur_fill_effect
 from pitivi.utils.blurfill import set_blur_fill
 from pitivi.utils.blurfill import set_blur_sigma
+from pitivi.utils.blurfill import set_effect_sigma
 from pitivi.utils.blurfill import update_blur_fill
 from pitivi.utils.custom_effect_widgets import create_custom_prop_widget_cb
 from pitivi.utils.custom_effect_widgets import create_custom_widget_cb
@@ -1344,7 +1345,7 @@ class TransformationProperties(Gtk.Expander, Loggable):
                 if clip:
                     effect = get_blur_fill(clip)
                     if effect:
-                        effect.set_child_property("sigma", float(sigma))
+                        set_effect_sigma(effect, sigma)
                     zoom_effect = get_zoom_effect(clip)
                     if zoom_effect and zoom_effect.get_child_property("fill-sigma")[1]:
                         # The effect zooming the photo makes its fill.
