@@ -38,6 +38,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from pitivi.clip_properties.crop import cropped_size
+from pitivi.clip_properties.crop import get_crop_effect
 from pitivi.clip_properties.orientation import Orientation
 from pitivi.clip_properties.orientation import ORIENTATIONS
 from pitivi.configure import get_pixmap_dir
@@ -1059,6 +1060,7 @@ class VideoSource(TimelineElement):
                         self._project_video_size_changed_cb)
 
         self.__videoflip = None
+        self.__crop_effect = None
         self.__retrieve_project_size()
         self.default_position = self._get_default_position()
 
@@ -1073,6 +1075,10 @@ class VideoSource(TimelineElement):
         self.__reset_position()
 
     def __parent_child_removed_cb(self, unused_parent, child):
+        if child == self.__crop_effect:
+            disconnect_all_by_func(child, self.__crop_effect_deep_notify_cb)
+            self.__crop_effect = None
+            self.default_position = self._get_default_position()
         if child == self.__videoflip:
             self.__videoflip = None
             self.__reset_position()
@@ -1143,7 +1149,12 @@ class VideoSource(TimelineElement):
                 asset_width = sinfo.get_natural_height()
                 asset_height = sinfo.get_natural_width()
 
-        # SPL: the part of the image kept by the crop.
+        # SPL: the part of the image kept by the crop. Its values are set
+        # after adding it, so its changes are followed.
+        if parent and not self.__crop_effect:
+            self.__crop_effect = get_crop_effect(parent)
+            if self.__crop_effect:
+                self.__crop_effect.connect("deep-notify", self.__crop_effect_deep_notify_cb)
         asset_width, asset_height = cropped_size(parent, asset_width, asset_height)
 
         # Find the biggest size of the video inside the
@@ -1175,6 +1186,10 @@ class VideoSource(TimelineElement):
     def __track_element_notify_active_cb(self, unused_track_element,
                                          unused_pspec):
         self.__reset_position()
+
+    def __crop_effect_deep_notify_cb(self, unused_effect, unused_element, unused_pspec):
+        # SPL: apply_crop places the image, only the fitting position changes.
+        self.default_position = self._get_default_position()
 
     def _get_background(self):
         return VideoBackground()

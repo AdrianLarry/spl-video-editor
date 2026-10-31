@@ -115,6 +115,32 @@ class CropTest(common.TestCase):
         self.assertEqual(get_base_position(source), whole)
 
     @common.setup_timeline
+    def test_fit_after_cropping(self):
+        self._wait_until_project_loaded()
+        clip = self._add_image()
+        source = clip.find_track_element(None, GES.VideoSource)
+
+        # Added again, as when cropping from the viewer.
+        self._apply_crop(clip, Crop(left=64, top=48))
+        self._apply_crop(clip, Crop())
+        self._apply_crop(clip, Crop(left=160, right=160))
+        self.assertEqual(source.ui.default_position,
+                         {"posx": 600, "posy": 0, "width": 720, "height": 1080})
+
+        # Changed.
+        self._apply_crop(clip, Crop(left=160, right=160, top=120))
+        self.assertEqual(source.ui.default_position,
+                         {"posx": 480, "posy": 0, "width": 960, "height": 1080})
+
+        self.action_log.undo()
+        self.assertEqual(source.ui.default_position,
+                         {"posx": 600, "posy": 0, "width": 720, "height": 1080})
+        self.action_log.undo()
+        self.assertIsNone(get_crop_effect(clip))
+        self.assertEqual(source.ui.default_position,
+                         {"posx": 240, "posy": 0, "width": 1440, "height": 1080})
+
+    @common.setup_timeline
     def test_crop_with_fill(self):
         self._wait_until_project_loaded()
         clip = self._add_image()
