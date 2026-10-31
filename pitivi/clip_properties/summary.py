@@ -22,7 +22,10 @@ from gi.repository import GLib
 from gi.repository import Gtk
 from gi.repository import Pango
 
+from pitivi.clip_properties.overlay import get_shape_name
+from pitivi.clip_properties.overlay import is_overlay_clip
 from pitivi.utils.misc import filename_from_uri
+from pitivi.utils.shapes import SHAPES
 from pitivi.utils.ui import beautify_length
 from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import SPACING
@@ -41,6 +44,10 @@ def describe_clip(clip):
 
     if isinstance(clip, GES.TransitionClip):
         return _("Transition"), clip.props.vtype.value_nick, "media-playlist-shuffle-symbolic"
+
+    if is_overlay_clip(clip):
+        shape = SHAPES.get(get_shape_name(clip))
+        return _("Overlay"), shape.label if shape else _("Shape"), "applications-graphics-symbolic"
 
     if isinstance(clip, GES.TestClip):
         return _("Color"), _("Color"), "applications-graphics-symbolic"

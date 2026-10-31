@@ -160,7 +160,10 @@ HIDDEN_EFFECTS = [
     # Rotating and mirroring are done with the buttons of the framing.
     "videoflip",
     # Cropping is done in the viewer, see clip_properties/crop.py.
-    "videocrop name=spl-crop"]
+    "videocrop name=spl-crop",
+    # The shapes of the overlays, see clip_properties/overlay.py.
+    "splshape",
+    "videoconvert ! video/x-raw,format=BGRA ! splshape name=spl-shape ! videoconvert"]
 
 # The effects offered, as in the mockup: simple, and made with elements
 # which work with any video. Some others of the catalog crash the app.

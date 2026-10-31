@@ -37,6 +37,7 @@ from gi.repository import GstPbutils
 from gi.repository import GstVideo
 from gi.repository import Gtk
 
+from pitivi.clip_properties.overlay import restore_overlays
 from pitivi.medialibrary import AssetThumbnail
 from pitivi.render import Encoders
 from pitivi.settings import xdg_cache_home
@@ -1541,10 +1542,33 @@ class Project(Loggable, GES.Project):
         for profile in profiles:
             if self.set_container_profile(profile):
                 break
+        self.__keep_track_video_size()
 
         self._load_encoder_settings(profiles)
         restore_blur_fills(self.ges_timeline)
         restore_motion(self.ges_timeline)
+        restore_overlays(self.ges_timeline)
+
+    def __keep_track_video_size(self):
+        """Makes the render profile use the size of the frame of the video track.
+
+        SPL: a profile whose encoder is missing is skipped, the next one can
+        have no size and get a default one, the frame of the project being
+        the one saved in the video track.
+        """
+        for track in self.ges_timeline.get_tracks():
+            if not isinstance(track, GES.VideoTrack):
+                continue
+            caps = track.get_restriction_caps()
+            if not caps or caps.is_empty():
+                return
+            struct = caps.get_structure(0)
+            for name in ("width", "height", "framerate"):
+                if struct.has_field(name) and self.video_profile and \
+                        self.video_profile.get_restriction()[0].get_value(name) != struct.get_value(name):
+                    self.info("Using the %s of the video track: %s", name, struct.get_value(name))
+                    self._set_video_restriction(name, struct.get_value(name))
+            return
 
     def set_container_profile(self, container_profile: GstPbutils.EncodingContainerProfile) -> bool:
         """Sets the specified container profile as new profile if usable.

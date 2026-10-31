@@ -27,6 +27,8 @@ from typing import Tuple
 
 from gi.repository import GES
 
+from pitivi.clip_properties.overlay import is_overlay_clip
+from pitivi.clip_properties.overlay import place_overlay
 from pitivi.undo.base import UndoableAction
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.blurfill import get_blur_fill
@@ -175,9 +177,14 @@ def set_format(app, project, kind: str) -> None:
 
     sources = []
     blur_fill_clips = []
+    overlay_clips = []
     for layer in project.ges_timeline.get_layers():
         for clip in layer.get_clips():
             if isinstance(clip, GES.TransitionClip):
+                continue
+            if is_overlay_clip(clip):
+                # Its shape is placed in fractions of the frame.
+                overlay_clips.append(clip)
                 continue
             if get_blur_fill(clip):
                 # The blurred fill covers the new frame.
@@ -203,5 +210,7 @@ def set_format(app, project, kind: str) -> None:
             _set_position(source, new_position)
         for clip in blur_fill_clips:
             update_blur_fill(clip)
+        for clip in overlay_clips:
+            place_overlay(clip)
         for layer in project.ges_timeline.get_layers():
             sync_pushes(layer)

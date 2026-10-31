@@ -20,11 +20,13 @@ from gi.repository import GES
 from gi.repository import GLib
 from gi.repository import Gtk
 
+from pitivi.clip_properties.overlay import is_overlay_clip
 from pitivi.utils.loggable import Loggable
 from pitivi.viewer.clip_toolbar import ClipToolbar
 from pitivi.viewer.crop_overlay import CropOverlay
 from pitivi.viewer.move_scale_overlay import MoveScaleOverlay
 from pitivi.viewer.safe_areas_overlay import SafeAreasOverlay
+from pitivi.viewer.shape_overlay import ShapeOverlay
 from pitivi.viewer.title_overlay import TitleOverlay
 
 
@@ -101,6 +103,9 @@ class OverlayStack(Gtk.Overlay, Loggable):
 
         if isinstance(source, GES.TitleSource):
             overlay = TitleOverlay(self, source)
+        elif is_overlay_clip(source.get_parent()):
+            # SPL: the shape of an overlay.
+            overlay = ShapeOverlay(self, self.app.action_log, source)
         else:
             overlay = MoveScaleOverlay(self, self.app.action_log, source)
         self.add_overlay(overlay)
@@ -147,7 +152,7 @@ class OverlayStack(Gtk.Overlay, Loggable):
             else:
 
                 # Prioritize Handles
-                if isinstance(self.selected_overlay, MoveScaleOverlay):
+                if isinstance(self.selected_overlay, (MoveScaleOverlay, ShapeOverlay)):
                     if self.selected_overlay.on_hover(cursor_position):
                         if self.selected_overlay.hovered_handle:
                             self.hovered_overlay = self.selected_overlay
@@ -171,6 +176,8 @@ class OverlayStack(Gtk.Overlay, Loggable):
         for source in sources:
             overlay = self.__overlay_for_source(source)
             self.__visible_overlays.append(overlay)
+        # SPL: the shapes, small and over the video, are hovered first.
+        self.__visible_overlays.sort(key=lambda overlay: not isinstance(overlay, ShapeOverlay))
         # check if viewer should be visible
         if not self.__hide_all_overlays and not self.crop_overlay.active:
             for source, overlay in self.__overlays.items():

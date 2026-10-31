@@ -3331,6 +3331,42 @@ msgstr "Recorta la imagen"
 msgid "Remove the crop"
 msgstr "Quitar el recorte"
 
+#: SPL overlays
+msgid "Shape"
+msgstr "Forma"
+
+#: SPL overlays
+msgid "Frame"
+msgstr "Marco"
+
+#: SPL overlays
+msgid "Circle"
+msgstr "Círculo"
+
+#: SPL overlays
+msgid "Arrow"
+msgstr "Flecha"
+
+#: SPL overlays
+msgid "Overlay"
+msgstr "Superposición"
+
+#: SPL overlays
+msgid "Line width"
+msgstr "Grosor de línea"
+
+#: SPL overlays
+msgid "Rounded corners"
+msgstr "Esquinas redondeadas"
+
+#: SPL overlays
+msgid "Drag the shape in the viewer to place it, its handles to resize it."
+msgstr "Arrastrá la forma en el visor para ubicarla, y sus tiradores para cambiar su tamaño."
+
+#: SPL overlays
+msgid "Add a frame, a circle or an arrow over the video"
+msgstr "Agrega un marco, un círculo o una flecha sobre el video"
+
 #~ msgid "No markers"
 #~ msgstr "Sin marcadores"
 

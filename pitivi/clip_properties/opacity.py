@@ -75,7 +75,11 @@ class OpacityProperties(Gtk.Expander):
     def _refresh(self, *unused):
         if self._updating or not self.source:
             return
-        effect = get_opacity_effect(self.source.get_parent())
+        clip = self.source.get_parent()
+        if not clip:
+            # The source is being removed from the clip, as when undoing.
+            return
+        effect = get_opacity_effect(clip)
         value = effect.get_child_property("alpha")[1] if effect else 1
         self._updating = True
         try:

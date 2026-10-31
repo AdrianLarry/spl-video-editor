@@ -34,6 +34,8 @@ from gi.repository import Gtk
 from gi.repository import Pango
 from gi.repository import PangoCairo
 
+from pitivi.clip_properties.overlay import draw_thumbnail
+from pitivi.clip_properties.overlay import is_overlay_clip
 from pitivi.settings import GlobalSettings
 from pitivi.settings import xdg_cache_home
 from pitivi.utils.loggable import Loggable
@@ -488,6 +490,12 @@ class ImagePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
             return GdkPixbuf.Pixbuf.new_from_file_at_scale(
                 Gst.uri_get_location(self.uri), -1, self.thumb_height, True)
 
+        clip = self.ges_elem.get_parent()
+        if isinstance(self.ges_elem, GES.VideoTestSource) and is_overlay_clip(clip):
+            # SPL: the shape of the overlay.
+            surface = draw_thumbnail(clip, THUMB_HEIGHT)
+            return Gdk.pixbuf_get_from_surface(surface, 0, 0, THUMB_HEIGHT, THUMB_HEIGHT)
+
         if isinstance(self.ges_elem, GES.VideoTestSource):
             self.debug("Generating thumbnail for color")
             pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, THUMB_HEIGHT, THUMB_HEIGHT)
@@ -541,7 +549,7 @@ class ImagePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
 
     def _source_deep_notify_cb(self, source, unused_gstelement, pspec):
         """Handles updates in the VideoTestSource."""
-        if pspec.name == "foreground-color":
+        if pspec.name in ("foreground-color", "shape", "color", "line-width", "corner-radius"):
             self.become_controlled()
 
     def set_selected(self, selected):

@@ -45,6 +45,10 @@ from pitivi.clip_properties.crop import set_crop
 from pitivi.clip_properties.crop import turned_crop
 from pitivi.clip_properties.markers import ClipMarkersProperties
 from pitivi.clip_properties.opacity import OpacityProperties
+from pitivi.clip_properties.overlay import create_overlay_clip
+from pitivi.clip_properties.overlay import is_overlay_clip
+from pitivi.clip_properties.overlay import setup_overlay
+from pitivi.clip_properties.overlay_ui import OverlayProperties
 from pitivi.clip_properties.opacity import is_opacity_effect
 from pitivi.clip_properties.orientation import get_orientation
 from pitivi.clip_properties.orientation import Orientation
@@ -79,6 +83,7 @@ from pitivi.utils.formats import get_fill_position
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import disconnect_all_by_func
 from pitivi.utils.motion import get_base_position
+from pitivi.utils.motion import get_frame_size
 from pitivi.utils.motion import get_zoom_effect
 from pitivi.utils.motion import has_motion
 from pitivi.utils.motion import is_zoom_effect
@@ -198,6 +203,11 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.color_expander.set_vexpand(False)
         self.settings_pages["image"].pack_start(self.color_expander, False, False, 0)
 
+        # SPL: the shape of an overlay.
+        self.overlay_expander = OverlayProperties(app)
+        self.overlay_expander.set_vexpand(False)
+        self.settings_pages["image"].pack_start(self.overlay_expander, False, False, 0)
+
         self.opacity_expander = OpacityProperties(app)
         self.settings_pages["image"].pack_start(self.opacity_expander, False, False, 0)
 
@@ -289,6 +299,17 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
                 assert res, prop
         self._selection.set_selection([title_clip], SELECT)
 
+    def create_overlay_clip(self, shape_name):
+        """Adds an overlay with the shape at the playhead, above the video."""
+        clip = create_overlay_clip(self.app.settings.titleClipLength * Gst.MSECOND)
+        with self.app.action_log.started("add overlay",
+                                         finalizing_action=CommitTimelineFinalizingAction(self._project.pipeline),
+                                         toplevel=True):
+            self.app.gui.editor.timeline_ui.insert_clips_on_first_layer([clip])
+            source = clip.find_track_element(None, GES.VideoTestSource)
+            setup_overlay(clip, shape_name, get_frame_size(source))
+        self._selection.set_selection([clip], SELECT)
+
     def create_color_clip_cb(self, unused_widget):
         color_clip = GES.TestClip.new()
         duration = self.app.settings.ColorClipLength * Gst.MSECOND
@@ -331,7 +352,12 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
                 elif isinstance(child, GES.VideoTestSource):
                     color_clip_source = child
 
-        self.transformation_expander.set_source(video_source)
+        # SPL: an overlay is placed in the viewer, its shape changed here.
+        is_overlay = is_overlay_clip(ges_clip)
+        self.overlay_expander.set_clip(ges_clip if is_overlay else None)
+        if is_overlay:
+            color_clip_source = None
+        self.transformation_expander.set_source(None if is_overlay else video_source)
         # Photos and videos zoom with sub-pixel precision, including their
         # blurred fill when enabled.
         is_visual = isinstance(video_source, GES.VideoUriSource)
