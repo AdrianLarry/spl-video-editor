@@ -17,6 +17,7 @@
 """Widgets to control title clip properties."""
 import html
 import os
+import time
 from gettext import gettext as _
 from typing import Optional
 from typing import Union
@@ -30,7 +31,7 @@ from gi.repository import Pango
 from pitivi.configure import get_ui_dir
 from pitivi.dialogs.prefs import PreferencesDialog
 from pitivi.settings import GlobalSettings
-from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.undo.timeline import FlushSeekFinalizingAction
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.ui import argb_to_gdk_rgba
 from pitivi.utils.ui import gdk_rgba_to_argb
@@ -58,6 +59,14 @@ REFERENCE_FRAME_HEIGHT = 1080
 # The text colors offered, as ARGB.
 TEXT_COLORS = (0xFFFFFFFF, 0xFFFFD166, 0xFFFF8A5B, 0xFF7EE0C3, 0xFF8EC5FF, 0xFF141414)
 BLACK_TEXT_COLOR = 0xFF141414
+
+# Shadow and outline styles for text: (id, label, tooltip, draw_shadow, outline_color)
+SHADOW_STYLES = (
+    ("flat", _("Flat"), _("Without shadow or outline"), False, 0x00000000),
+    ("shadow", _("Shadow"), _("Soft drop shadow"), True, 0x00000000),
+    ("outline", _("Outline"), _("Sharp dark outline for high contrast"), False, 0xFF000000),
+    ("emboss", _("Relief"), _("Outline with drop shadow"), True, 0xFF000000),
+)
 
 
 def get_font_description(font_index: int, points: float) -> str:
@@ -129,6 +138,11 @@ class TitleProperties(Gtk.Expander, Loggable):
         # performed not by this class.
         self._setting_ui = False
         self._children_props_handler = None
+        self._size_change_timeout_id = None
+        self._pending_size = None
+        self._dragging = False
+        self._last_applied_time = 0
+        self.shadow_buttons = {}
 
         self._create_ui()
 
@@ -252,6 +266,8 @@ class TitleProperties(Gtk.Expander, Loggable):
         self.size_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,
                                                    MIN_TEXT_SIZE, MAX_TEXT_SIZE, 1)
         self.size_scale.set_draw_value(False)
+        self.size_scale.connect("button-press-event", self._size_scale_button_press_cb)
+        self.size_scale.connect("button-release-event", self._size_scale_button_release_cb)
         self.size_scale.connect("value-changed", self._size_scale_value_changed_cb)
         size_box = Gtk.Box()
         size_box.pack_start(size_label, True, True, 0)
@@ -276,9 +292,25 @@ class TitleProperties(Gtk.Expander, Loggable):
         other_color_box.pack_start(Gtk.Label(label=_("Other")), False, False, 0)
         colors_box.add(other_color_box)
 
+        shadow_label = Gtk.Label(label=_("Shadow"), xalign=0)
+        shadow_box = Gtk.Box(spacing=2)
+        shadow_box.get_style_context().add_class("linked")
+        self.shadow_buttons = {}
+        group = None
+        for style_id, label, tooltip, unused_shadow, unused_outline in SHADOW_STYLES:
+            button = Gtk.RadioButton.new_from_widget(group)
+            group = group or button
+            button.set_mode(False)
+            button.set_label(label)
+            button.set_tooltip_text(tooltip)
+            button.connect("toggled", self._shadow_button_toggled_cb, style_id)
+            shadow_box.pack_start(button, True, True, 0)
+            self.shadow_buttons[style_id] = button
+
         for widget, margin_top in ((font_label, PADDING), (self.font_combo, PADDING),
                                    (size_box, SPACING), (self.size_scale, 0),
-                                   (color_label, SPACING), (colors_box, PADDING)):
+                                   (color_label, SPACING), (colors_box, PADDING),
+                                   (shadow_label, SPACING), (shadow_box, PADDING)):
             widget.props.margin_top = margin_top
             self.editing_box.pack_start(widget, False, False, 0)
 
@@ -367,8 +399,10 @@ class TitleProperties(Gtk.Expander, Loggable):
                 self._setting_ui = False
             return
 
+        project = self.app.project_manager.current_project
+        pipeline = project.pipeline if project else None
         with self.app.action_log.started("Title change position",
-                                         finalizing_action=CommitTimelineFinalizingAction(self.app.project_manager.current_project.pipeline),
+                                         finalizing_action=FlushSeekFinalizingAction(pipeline),
                                          toplevel=True):
             self._setting_props = True
             try:
@@ -388,8 +422,10 @@ class TitleProperties(Gtk.Expander, Loggable):
             self._setting_ui = False
 
     def _set_child_property(self, name, value, mergeable=False):
+        project = self.app.project_manager.current_project
+        pipeline = project.pipeline if project else None
         with self.app.action_log.started("Title change property %s" % name,
-                                         finalizing_action=CommitTimelineFinalizingAction(self.app.project_manager.current_project.pipeline),
+                                         finalizing_action=FlushSeekFinalizingAction(pipeline),
                                          mergeable=mergeable,
                                          toplevel=True):
             self._setting_props = True
@@ -460,15 +496,72 @@ class TitleProperties(Gtk.Expander, Loggable):
             text_size_to_points(DEFAULT_TEXT_SIZE, self._get_frame_height())
         self._set_child_property("font-desc", get_font_description(combo.get_active(), points))
 
+    def _size_scale_button_press_cb(self, unused_widget, unused_event):
+        self._dragging = True
+        return False
+
+    def _size_scale_button_release_cb(self, unused_widget, unused_event):
+        self._dragging = False
+        self.flush_pending_size_change()
+        return False
+
+    def flush_pending_size_change(self):
+        if self._size_change_timeout_id:
+            GLib.source_remove(self._size_change_timeout_id)
+            self._size_change_timeout_id = None
+        self._apply_size_change(force=True)
+
     def _size_scale_value_changed_cb(self, scale):
         self._update_size_value_label()
         if self._setting_ui:
             return
 
+        self._pending_size = scale.get_value()
+
+        # If the user is dragging the slider with the mouse, debounce rapid changes
+        # so we don't spam GStreamer while seeking/rendering.
+        if self._dragging:
+            if self._size_change_timeout_id:
+                GLib.source_remove(self._size_change_timeout_id)
+            self._size_change_timeout_id = GLib.timeout_add(75, self._apply_size_change)
+            return
+
+        project = self.app.project_manager.current_project
+        pipeline = project.pipeline if project else None
+
+        # If pipeline is not busy rendering, apply immediately.
+        if not pipeline or not pipeline._busy_async:
+            if self._size_change_timeout_id:
+                GLib.source_remove(self._size_change_timeout_id)
+                self._size_change_timeout_id = None
+            self._apply_size_change()
+            return
+
+        # Pipeline is busy rendering a previous seek. Schedule a deferred update
+        # so we don't modify Pango font description while GStreamer is actively rendering it.
+        if not self._size_change_timeout_id:
+            self._size_change_timeout_id = GLib.timeout_add(30, self._apply_size_change)
+
+    def _apply_size_change(self, force=False):
+        self._size_change_timeout_id = None
+        if self._pending_size is None or not self.source:
+            return False
+
+        project = self.app.project_manager.current_project
+        pipeline = project.pipeline if project else None
+        if not force and pipeline and pipeline._busy_async:
+            self._size_change_timeout_id = GLib.timeout_add(30, self._apply_size_change)
+            return False
+
+        size = self._pending_size
+        self._pending_size = None
+        self._last_applied_time = time.time()
+
         font_desc = self._get_font_desc()
-        points = text_size_to_points(scale.get_value(), self._get_frame_height())
+        points = text_size_to_points(size, self._get_frame_height())
         font_desc.set_size(round(points * Pango.SCALE))
         self._set_child_property("font-desc", font_desc.to_string(), mergeable=True)
+        return False
 
     def _update_size_value_label(self):
         self.size_value_label.set_markup("<b>%d</b>" % round(self.size_scale.get_value()))
@@ -518,6 +611,46 @@ class TitleProperties(Gtk.Expander, Loggable):
         for button_argb, button in self.color_buttons.items():
             button.set_active(button_argb == argb)
         self.other_color_button.set_rgba(argb_to_gdk_rgba(argb))
+
+        res_s, draw_shadow = source.get_child_property("draw-shadow")
+        res_o, outline_color = source.get_child_property("outline-color")
+        has_shadow = bool(res_s and draw_shadow)
+        has_outline = bool(res_o and outline_color and (outline_color >> 24) > 0)
+
+        if has_outline and has_shadow:
+            active_style = "emboss"
+        elif has_outline and not has_shadow:
+            active_style = "outline"
+        elif not has_outline and has_shadow:
+            active_style = "shadow"
+        else:
+            active_style = "flat"
+
+        button = self.shadow_buttons.get(active_style)
+        if button and not button.get_active():
+            button.set_active(True)
+
+    def _shadow_button_toggled_cb(self, button, style_id):
+        if self._setting_ui or not button.get_active() or not self.source:
+            return
+
+        for sid, unused_label, unused_tip, draw_shadow, outline_color in SHADOW_STYLES:
+            if sid == style_id:
+                break
+        else:
+            return
+
+        project = self.app.project_manager.current_project
+        pipeline = project.pipeline if project else None
+        with self.app.action_log.started("Title change shadow style",
+                                         finalizing_action=FlushSeekFinalizingAction(pipeline),
+                                         toplevel=True):
+            self._setting_props = True
+            try:
+                self.source.set_child_property("draw-shadow", draw_shadow)
+                self.source.set_child_property("outline-color", outline_color)
+            finally:
+                self._setting_props = False
 
     def _font_button_cb(self, widget):
         if self._setting_ui:
@@ -624,6 +757,12 @@ class TitleProperties(Gtk.Expander, Loggable):
             source (GES.TitleSource): The source of the clip.
         """
         self.debug("Setting source to %s", source)
+        if self._size_change_timeout_id:
+            GLib.source_remove(self._size_change_timeout_id)
+            self._size_change_timeout_id = None
+        self._pending_size = None
+        self._dragging = False
+
         if self.source:
             self.source.disconnect(self._children_props_handler)
             self._children_props_handler = None
@@ -646,7 +785,6 @@ class TitleProperties(Gtk.Expander, Loggable):
     def _source_deep_notify_cb(self, source, unused_gstelement, pspec):
         """Handles updates in the TitleSource backing the current TitleClip."""
         if self._setting_props:
-            self.app.project_manager.current_project.pipeline.commit_timeline()
             return
 
         control_binding = self.source.get_control_binding(pspec.name)
@@ -661,7 +799,9 @@ class TitleProperties(Gtk.Expander, Loggable):
         finally:
             self._setting_ui = False
 
-        self.app.project_manager.current_project.pipeline.commit_timeline()
+        project = self.app.project_manager.current_project
+        if project and project.pipeline:
+            project.pipeline.flush_seek()
 
     def __update_ui_for_prop(self, pspec: GObject.ParamSpec):
         res, value = self.source.get_child_property(pspec.name)
@@ -690,6 +830,10 @@ class TitleProperties(Gtk.Expander, Loggable):
             widget.set_active_id(value)
             self._update_position_buttons()
         elif pspec.name == "font-desc":
+            if self._size_change_timeout_id:
+                GLib.source_remove(self._size_change_timeout_id)
+                self._size_change_timeout_id = None
+            self._pending_size = None
             self._update_style_widgets()
             if self.font_button.get_font_desc() == value:
                 return
@@ -706,10 +850,11 @@ class TitleProperties(Gtk.Expander, Loggable):
             if color == self.background_color_button.get_rgba():
                 return
             self.background_color_button.set_rgba(color)
-        elif pspec.name == "outline-color":
-            color = argb_to_gdk_rgba(value)
-            if color == self.outline_color_button.get_rgba():
-                return
-            self.outline_color_button.set_rgba(color)
-        elif pspec.name == "draw-shadow":
-            self.drop_shadow_checkbox.set_active(value)
+        elif pspec.name in ["outline-color", "draw-shadow"]:
+            self._update_style_widgets()
+            if pspec.name == "outline-color":
+                color = argb_to_gdk_rgba(value)
+                if color != self.outline_color_button.get_rgba():
+                    self.outline_color_button.set_rgba(color)
+            elif pspec.name == "draw-shadow":
+                self.drop_shadow_checkbox.set_active(value)

@@ -50,7 +50,17 @@ class CommitTimelineFinalizingAction(FinalizingAction):
         self.__pipeline = pipeline
 
     def do(self):
-        self.__pipeline.commit_timeline()
+        if self.__pipeline:
+            self.__pipeline.commit_timeline()
+
+
+class FlushSeekFinalizingAction(FinalizingAction):
+    def __init__(self, pipeline):
+        self.__pipeline = pipeline
+
+    def do(self):
+        if self.__pipeline:
+            self.__pipeline.flush_seek()
 
 
 class TimelineElementPropertyChangedAction(PropertyChangedAction):

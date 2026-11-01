@@ -24,6 +24,9 @@ from gi.repository import Pango
 
 from pitivi.clip_properties.overlay import get_shape_name
 from pitivi.clip_properties.overlay import is_overlay_clip
+from pitivi.clip_properties.particles import get_particle_effect_name
+from pitivi.clip_properties.particles import is_particle_clip
+from pitivi.clip_properties.particles import PARTICLE_LABELS
 from pitivi.utils.misc import filename_from_uri
 from pitivi.utils.shapes import SHAPES
 from pitivi.utils.ui import beautify_length
@@ -44,6 +47,11 @@ def describe_clip(clip):
 
     if isinstance(clip, GES.TransitionClip):
         return _("Transition"), clip.props.vtype.value_nick, "media-playlist-shuffle-symbolic"
+
+    if is_particle_clip(clip):
+        p_name = get_particle_effect_name(clip)
+        label = PARTICLE_LABELS.get(p_name, _("Effect"))
+        return _("Effect"), label, "weather-snow-symbolic"
 
     if is_overlay_clip(clip):
         shape = SHAPES.get(get_shape_name(clip))

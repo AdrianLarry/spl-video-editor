@@ -3340,12 +3340,29 @@ msgid "Frame"
 msgstr "Marco"
 
 #: SPL overlays
+msgid "Filled"
+msgstr "Relleno"
+
+#: SPL overlays
+msgid "Spotlight"
+msgstr "Foco"
+
+#: SPL overlays
 msgid "Circle"
 msgstr "Círculo"
 
 #: SPL overlays
+msgid "Number"
+msgstr "Número"
+
+#: SPL overlays
 msgid "Arrow"
 msgstr "Flecha"
+
+#: SPL overlays
+msgid "Underline"
+msgstr "Subrayado"
+
 
 #: SPL overlays
 msgid "Overlay"
@@ -4275,9 +4292,6 @@ msgstr "Agrega un marco, un círculo o una flecha sobre el video"
 #~ msgid "Insert at End of Timeline"
 #~ msgstr "Insertar al _final de la cronología"
 
-#~| msgid "Rendering"
-#~ msgid "Underline"
-#~ msgstr "Subrayado"
 
 #~ msgid "Settings"
 #~ msgstr "Ajustes"
@@ -5148,3 +5162,65 @@ msgstr "Agrega un marco, un círculo o una flecha sobre el video"
 #~ msgstr ""
 #~ "<span size='x-large'>Añada vídeos a la línea de tiempos arrastrándolos "
 #~ "aquí.</span>"
+
+msgid "Shadow"
+msgstr "Sombra"
+
+msgid "Flat"
+msgstr "Plana"
+
+msgid "Outline"
+msgstr "Contorno"
+
+msgid "Relief"
+msgstr "Relieve"
+
+msgid "Without shadow or outline"
+msgstr "Texto plano sin sombra ni contorno"
+
+msgid "Soft drop shadow"
+msgstr "Sombra suave clásica"
+
+msgid "Sharp dark outline for high contrast"
+msgstr "Contorno oscuro definido para alto contraste"
+
+msgid "Outline with drop shadow"
+msgstr "Contorno y sombra combinados"
+
+msgid "Snow"
+msgstr "Nieve"
+
+msgid "Falling snowflakes drifting gently"
+msgstr "Copos de nieve cayendo suavemente"
+
+msgid "Confetti"
+msgstr "Confeti"
+
+msgid "Sparkles"
+msgstr "Destellos"
+
+msgid "Smoke"
+msgstr "Humo"
+
+msgid "Particles"
+msgstr "Partículas"
+
+msgid "Density"
+msgstr "Cantidad"
+
+msgid "Effect"
+msgstr "Efecto"
+
+msgid "Add a particle effect layer (snow, confetti, sparkles, smoke) over the video"
+msgstr "Agrega una capa de efectos de partículas (nieve, confeti, destellos, humo) sobre el video"
+
+msgid "Festive colorful falling confetti"
+msgstr "Confeti festivo multicolor cayendo"
+
+msgid "Magical glittering stars and flares"
+msgstr "Estrellas y destellos brillantes"
+
+msgid "Soft rising atmospheric smoke"
+msgstr "Humo suave ascendente y atmosférico"
+
+

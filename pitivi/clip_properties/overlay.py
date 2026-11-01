@@ -41,12 +41,16 @@ SHAPE_BIN_DESCRIPTION = ("videoconvert ! video/x-raw,format=BGRA ! %s name=spl-s
                          % ELEMENT_NAME)
 
 GEOMETRY_PROPS = ("x1", "y1", "x2", "y2")
-STYLE_PROPS = ("color", "line-width", "corner-radius")
+STYLE_PROPS = ("color", "line-width", "corner-radius", "text", "alpha")
 
 
 def is_overlay_clip(clip: Optional[GES.Clip]) -> bool:
     """Whether the clip is an overlay."""
-    return isinstance(clip, GES.TestClip) and bool(clip.get_string(OVERLAY_META))
+    if not isinstance(clip, GES.TestClip):
+        return False
+    if clip.get_string(OVERLAY_META):
+        return True
+    return get_shape_effect(clip) is not None
 
 
 def get_shape_effect(clip: GES.Clip) -> Optional[GES.Effect]:
@@ -73,6 +77,14 @@ def default_geometry(shape_name: str, frame_size: Tuple[int, int]) -> Dict[str, 
     """
     width, height = frame_size
     side = min(width, height) * 0.4
+    if shape_name == "underline":
+        y = (height / 2 + side * 0.3) / height
+        return {"x1": (width - side) / 2 / width, "y1": y,
+                "x2": (width + side) / 2 / width, "y2": y}
+    if shape_name == "number":
+        side = min(width, height) * 0.16
+        return {"x1": (width - side) / 2 / width, "y1": (height - side) / 2 / height,
+                "x2": (width + side) / 2 / width, "y2": (height + side) / 2 / height}
     if SHAPES[shape_name].kind == BOX:
         return {"x1": (width - side) / 2 / width, "y1": (height - side) / 2 / height,
                 "x2": (width + side) / 2 / width, "y2": (height + side) / 2 / height}
@@ -89,7 +101,27 @@ def create_overlay_clip(duration: int) -> GES.TestClip:
     return clip
 
 
-def setup_overlay(clip: GES.TestClip, shape_name: str, frame_size: Tuple[int, int]) -> GES.Effect:
+def next_shape_number(timeline: Optional[GES.Timeline]) -> int:
+    """Returns the next sequential integer for a number badge."""
+    if not timeline:
+        return 1
+    highest = 0
+    for layer in timeline.get_layers():
+        for clip in layer.get_clips():
+            if is_overlay_clip(clip) and get_shape_name(clip) == "number":
+                effect = get_shape_effect(clip)
+                if effect:
+                    try:
+                        val = int(str(effect.get_child_property("text")[1]).strip())
+                        if val > highest:
+                            highest = val
+                    except (ValueError, TypeError):
+                        pass
+    return highest + 1
+
+
+def setup_overlay(clip: GES.TestClip, shape_name: str, frame_size: Tuple[int, int],
+                  text: Optional[str] = None) -> GES.Effect:
     """Makes the clip, in a layer, draw the shape."""
     clip.set_string(OVERLAY_META, shape_name)
     source = clip.find_track_element(None, GES.VideoTestSource)
@@ -98,6 +130,8 @@ def setup_overlay(clip: GES.TestClip, shape_name: str, frame_size: Tuple[int, in
     effect = GES.Effect.new(SHAPE_BIN_DESCRIPTION)
     clip.add(effect)
     effect.set_child_property("shape", shape_name)
+    if text is not None:
+        effect.set_child_property("text", str(text))
     for prop, value in default_geometry(shape_name, frame_size).items():
         effect.set_child_property(prop, value)
     place_overlay(clip)
@@ -144,7 +178,7 @@ def set_values(clip: GES.Clip, values: Dict[str, object]) -> None:
     if not effect:
         return
     for prop, value in values.items():
-        if prop != "shape" and effect.get_child_property(prop)[1] != value:
+        if effect.get_child_property(prop)[1] != value:
             effect.set_child_property(prop, value)
     place_overlay(clip)
 
@@ -159,9 +193,16 @@ def draw_thumbnail(clip: GES.Clip, size: int) -> cairo.ImageSurface:
     if len(values) > 1:
         # The shape filling the picture, thick enough to be seen.
         values = dict(values)
-        kind = SHAPES[values["shape"]].kind if values["shape"] in SHAPES else BOX
-        values.update({"x1": 0.15, "y1": 0.2, "x2": 0.85, "y2": 0.8} if kind == BOX else
-                      {"x1": 0.15, "y1": 0.8, "x2": 0.8, "y2": 0.25})
+        shape_name = values.get("shape", "")
+        kind = SHAPES[shape_name].kind if shape_name in SHAPES else BOX
+        if shape_name == "underline":
+            values.update({"x1": 0.15, "y1": 0.6, "x2": 0.85, "y2": 0.6})
+        elif shape_name == "number":
+            values.update({"x1": 0.2, "y1": 0.2, "x2": 0.8, "y2": 0.8})
+        elif kind == BOX:
+            values.update({"x1": 0.15, "y1": 0.2, "x2": 0.85, "y2": 0.8})
+        else:
+            values.update({"x1": 0.15, "y1": 0.8, "x2": 0.8, "y2": 0.25})
         values["line-width"] = max(values["line-width"], 90.0)
         values["corner-radius"] = min(values["corner-radius"], 200.0)
         stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_ARGB32, size)

@@ -96,12 +96,14 @@ class CropOverlay(Gtk.DrawingArea, Loggable):
         self.__hovered = None
         self.__grab_crop = None
         self.__click = None
+        self.__key_press_handler_id = 0
         self.set_no_show_all(True)
         # Shown over the whole viewer while cropping, it gets the events.
         self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK |
-                        Gdk.EventMask.POINTER_MOTION_MASK)
+                        Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.KEY_PRESS_MASK)
         for signal in ("button-press-event", "motion-notify-event", "button-release-event"):
             self.connect(signal, lambda unused_widget, event: self.handle_event(event))
+        self.connect("key-press-event", lambda unused_widget, event: self.handle_key_event(event))
 
     @property
     def active(self):
@@ -138,6 +140,9 @@ class CropOverlay(Gtk.DrawingArea, Loggable):
             self.__whole = numpy.array(get_fit_rect(clip), dtype=float)
         self.crop = self.__old_crop
         self.stack.show_source_overlays(False)
+        gui = getattr(self.stack.app, "gui", None)
+        if gui and hasattr(gui, "connect"):
+            self.__key_press_handler_id = gui.connect("key-press-event", self.__key_press_event_cb)
         self.show()
         self.queue_draw()
 
@@ -188,6 +193,14 @@ class CropOverlay(Gtk.DrawingArea, Loggable):
             action_log.emit("move", operation)
 
     def __stop(self):
+        if self.__key_press_handler_id:
+            gui = getattr(self.stack.app, "gui", None)
+            if gui and hasattr(gui, "disconnect"):
+                try:
+                    gui.disconnect(self.__key_press_handler_id)
+                except Exception:
+                    pass
+            self.__key_press_handler_id = 0
         self.clip = None
         self.__action_log = None
         self.__whole_operation = None
@@ -316,6 +329,24 @@ class CropOverlay(Gtk.DrawingArea, Loggable):
             self.__grabbed = None
             self.queue_draw()
         return True
+
+    def __key_press_event_cb(self, unused_widget, event):
+        return self.handle_key_event(event)
+
+    def handle_key_event(self, event):
+        """Applies with Enter, cancels with Esc, while cropping."""
+        if not self.active:
+            return False
+        modifiers = Gtk.accelerator_get_default_mod_mask()
+        if event.state & modifiers:
+            return False
+        if event.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
+            self.apply()
+            return True
+        if event.keyval == Gdk.KEY_Escape:
+            self.cancel()
+            return True
+        return False
 
     def do_draw(self, cr):
         if not self.clip:

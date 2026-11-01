@@ -79,4 +79,17 @@ class Overlay(Gtk.DrawingArea, Loggable):
         self.queue_draw()
 
     def _commit(self):
-        self.stack.app.project_manager.current_project.pipeline.commit_timeline()
+        project = self.stack.app.project_manager.current_project
+        if project and project.pipeline:
+            project.pipeline.flush_seek()
+
+
+class EmptyOverlay(Overlay):
+    """An overlay for full-frame effects that displays no on-screen handles."""
+
+    def on_hover(self, unused_cursor_position):
+        return False
+
+    def update_from_source(self):
+        pass
+

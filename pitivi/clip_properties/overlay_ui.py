@@ -28,7 +28,7 @@ from pitivi.clip_properties.overlay import get_shape_effect
 from pitivi.clip_properties.overlay import get_shape_name
 from pitivi.clip_properties.overlay import get_values
 from pitivi.clip_properties.overlay import set_values
-from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.undo.timeline import FlushSeekFinalizingAction
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.shapes import BOX
 from pitivi.utils.shapes import SHAPES
@@ -48,7 +48,9 @@ MAX_CORNER_RADIUS = 120
 def draw_shape_icon(cr, shape, width, height, color=(1, 1, 1, 1), line_width=2.0):
     """Draws a small picture of the shape, filling the area."""
     margin = line_width + 2
-    if shape.kind == BOX:
+    if shape.name == "underline":
+        start, end = (margin, height * 0.7), (width - margin, height * 0.7)
+    elif shape.kind == BOX:
         start, end = (margin - 1, margin + height * 0.08), (width - margin + 1, height - margin - height * 0.08)
     else:
         start, end = (margin, height - margin), (width - margin, margin)
@@ -121,10 +123,14 @@ class OverlayProperties(Gtk.Expander, Loggable):
         self.add(box)
 
         self.shape_buttons = {}
-        shapes_box = Gtk.Box(spacing=2)
-        shapes_box.get_style_context().add_class("linked")
+        row1 = Gtk.Box(spacing=2)
+        row1.get_style_context().add_class("linked")
+        row2 = Gtk.Box(spacing=2)
+        row2.get_style_context().add_class("linked")
         group = None
-        for shape in SHAPES.values():
+        shapes_list = list(SHAPES.values())
+        split_at = 4
+        for i, shape in enumerate(shapes_list):
             button = Gtk.RadioButton.new_from_widget(group)
             group = group or button
             button.set_mode(False)
@@ -134,9 +140,11 @@ class OverlayProperties(Gtk.Expander, Loggable):
             button.add(row)
             button.set_tooltip_text(shape.label)
             button.connect("toggled", self.__shape_toggled_cb, shape.name)
-            shapes_box.pack_start(button, False, False, 0)
+            target_row = row1 if i < split_at else row2
+            target_row.pack_start(button, True, True, 0)
             self.shape_buttons[shape.name] = button
-        box.pack_start(shapes_box, False, False, 0)
+        box.pack_start(row1, False, False, 0)
+        box.pack_start(row2, False, False, 0)
 
         color_label = Gtk.Label(label=_("Color"), xalign=0)
         color_label.props.margin_top = SPACING
@@ -167,6 +175,8 @@ class OverlayProperties(Gtk.Expander, Loggable):
             _("Rounded corners"), 0, MAX_CORNER_RADIUS, "corner-radius")
         box.pack_start(self.corner_box, False, False, 0)
         box.pack_start(self.corner_scale, False, False, 0)
+        self.number_spin, self.number_box = self.__create_number_spin(_("Number"), 1, 999)
+        box.pack_start(self.number_box, False, False, 0)
 
         hint = Gtk.Label(label=_("Drag the shape in the viewer to place it, its handles to resize it."),
                          xalign=0, wrap=True)
@@ -214,6 +224,18 @@ class OverlayProperties(Gtk.Expander, Loggable):
         scale.connect("value-changed", self.__scale_changed_cb, prop)
         return scale, header
 
+    def __create_number_spin(self, title, lower, upper):
+        label = Gtk.Label(label=title, xalign=0, hexpand=True)
+        header = Gtk.Box()
+        header.props.margin_top = SPACING
+        header.pack_start(label, True, True, 0)
+        adjustment = Gtk.Adjustment(value=1, lower=lower, upper=upper, step_increment=1, page_increment=10)
+        spin = Gtk.SpinButton(adjustment=adjustment, climb_rate=1, digits=0)
+        spin.set_numeric(True)
+        spin.connect("value-changed", self.__number_changed_cb)
+        header.pack_start(spin, False, False, 0)
+        return spin, header
+
     def set_clip(self, clip: Optional[GES.Clip]) -> None:
         """Shows the properties of the overlay, or hides them for None."""
         if self.__effect:
@@ -253,22 +275,37 @@ class OverlayProperties(Gtk.Expander, Loggable):
             has_corners = bool(shape and shape.has_corners)
             self.corner_box.set_visible(has_corners)
             self.corner_scale.set_visible(has_corners)
+            is_number = (values.get("shape") == "number")
+            self.number_box.set_visible(is_number)
+            if is_number:
+                try:
+                    num_val = int(values.get("text", "1"))
+                except (ValueError, TypeError):
+                    num_val = 1
+                self.number_spin.set_value(num_val)
         finally:
             self.__updating = False
 
     def __change(self, values, mergeable=False):
         if self.__updating or not self.clip:
             return
-        pipeline = self.app.project_manager.current_project.pipeline
+        project = self.app.project_manager.current_project
+        pipeline = project.pipeline if project else None
         with self.app.action_log.started("overlay change", toplevel=True, mergeable=mergeable,
-                                         finalizing_action=CommitTimelineFinalizingAction(pipeline)):
+                                         finalizing_action=FlushSeekFinalizingAction(pipeline)):
             if "shape" in values:
                 get_shape_effect(self.clip).set_child_property("shape", values["shape"])
             set_values(self.clip, values)
 
     def __shape_toggled_cb(self, button, shape_name):
         if button.get_active() and shape_name != get_shape_name(self.clip):
-            self.__change({"shape": shape_name})
+            changes = {"shape": shape_name}
+            if shape_name == "number" and "text" not in get_values(self.clip):
+                project = self.app.project_manager.current_project
+                timeline = project.ges_timeline if project else None
+                from pitivi.clip_properties.overlay import next_shape_number
+                changes["text"] = str(next_shape_number(timeline))
+            self.__change(changes)
 
     def __color_toggled_cb(self, button, argb):
         if self.__updating:
@@ -287,3 +324,10 @@ class OverlayProperties(Gtk.Expander, Loggable):
     def __scale_changed_cb(self, scale, prop):
         scale.value_label.set_text("%d" % round(scale.get_value()))
         self.__change({prop: float(scale.get_value())}, mergeable=True)
+
+    def __number_changed_cb(self, spin):
+        if self.__updating or not self.clip:
+            return
+        val_str = str(int(spin.get_value()))
+        if get_values(self.clip).get("text") != val_str:
+            self.__change({"text": val_str}, mergeable=True)

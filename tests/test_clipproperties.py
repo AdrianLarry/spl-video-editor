@@ -893,6 +893,74 @@ class TitlePropertiesTest(common.TestCase):
 
     @common.setup_timeline
     @common.setup_clipproperties
+    def test_rapid_size_changes(self):
+        """Checks that rapid text size changes don't trigger commit_timeline and undo properly."""
+        self.project.pipeline.get_position = mock.Mock(return_value=0)
+        self.project.pipeline.commit_timeline = mock.Mock()
+        self.clipproperties.create_title_clip_cb(None)
+
+        # create_title_clip_cb calls commit_timeline once to insert clip
+        self.assertEqual(self.project.pipeline.commit_timeline.call_count, 1)
+
+        title_box = self.clipproperties.title_expander
+        # Rapid dragging of the scale
+        for size in (70, 68, 65, 60, 55, 50, 48):
+            title_box.size_scale.set_value(size)
+        title_box.flush_pending_size_change()
+
+        # commit_timeline should NOT have been called during slider dragging
+        self.assertEqual(self.project.pipeline.commit_timeline.call_count, 1)
+
+        font_desc_str = self._get_title_source_child_props()["font-desc"][1]
+        self.assertEqual(Pango.FontDescription.from_string(font_desc_str).get_size(), 48 * Pango.SCALE)
+
+        # Undoing restores the original size
+        self.action_log.undo()
+        font_desc_str = self._get_title_source_child_props()["font-desc"][1]
+        self.assertEqual(Pango.FontDescription.from_string(font_desc_str).get_size(), 72 * Pango.SCALE)
+        self.assertEqual(title_box.size_scale.get_value(), 72)
+
+        # Redoing restores the last dragged size
+        self.action_log.redo()
+        font_desc_str = self._get_title_source_child_props()["font-desc"][1]
+        self.assertEqual(Pango.FontDescription.from_string(font_desc_str).get_size(), 48 * Pango.SCALE)
+        self.assertEqual(title_box.size_scale.get_value(), 48)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_shadow_styles(self):
+        """Checks changing the shadow and outline styles of the text."""
+        self.project.pipeline.get_position = mock.Mock(return_value=0)
+        self.clipproperties.create_title_clip_cb(None)
+        title_box = self.clipproperties.title_expander
+
+        def get_shadow_props():
+            props = self._get_title_source_child_props()
+            return props["draw-shadow"][1], props["outline-color"][1]
+
+        # Default text has both shadow and outline (emboss/relieve)
+        self.assertTrue(title_box.shadow_buttons["emboss"].get_active())
+        self.assertEqual(get_shadow_props(), (True, 0xFF000000))
+
+        # Switch to flat (no shadow, no outline)
+        title_box.shadow_buttons["flat"].set_active(True)
+        self.assertEqual(get_shadow_props(), (False, 0x00000000))
+
+        # Switch to shadow only
+        title_box.shadow_buttons["shadow"].set_active(True)
+        self.assertEqual(get_shadow_props(), (True, 0x00000000))
+
+        # Switch to outline only
+        title_box.shadow_buttons["outline"].set_active(True)
+        self.assertEqual(get_shadow_props(), (False, 0xFF000000))
+
+        # Undoing restores shadow only
+        self.action_log.undo()
+        self.assertEqual(get_shadow_props(), (True, 0x00000000))
+        self.assertTrue(title_box.shadow_buttons["shadow"].get_active())
+
+    @common.setup_timeline
+    @common.setup_clipproperties
     def test_modify_title(self):
         """Exercise modifying the title."""
         self.project.pipeline.get_position = mock.Mock(return_value=0)

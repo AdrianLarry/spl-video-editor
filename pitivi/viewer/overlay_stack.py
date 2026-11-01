@@ -21,10 +21,12 @@ from gi.repository import GLib
 from gi.repository import Gtk
 
 from pitivi.clip_properties.overlay import is_overlay_clip
+from pitivi.clip_properties.particles import is_particle_clip
 from pitivi.utils.loggable import Loggable
 from pitivi.viewer.clip_toolbar import ClipToolbar
 from pitivi.viewer.crop_overlay import CropOverlay
 from pitivi.viewer.move_scale_overlay import MoveScaleOverlay
+from pitivi.viewer.overlay import EmptyOverlay
 from pitivi.viewer.safe_areas_overlay import SafeAreasOverlay
 from pitivi.viewer.shape_overlay import ShapeOverlay
 from pitivi.viewer.title_overlay import TitleOverlay
@@ -106,6 +108,9 @@ class OverlayStack(Gtk.Overlay, Loggable):
         elif is_overlay_clip(source.get_parent()):
             # SPL: the shape of an overlay.
             overlay = ShapeOverlay(self, self.app.action_log, source)
+        elif is_particle_clip(source.get_parent()):
+            # SPL: full-frame particle overlay, no on-screen handles.
+            overlay = EmptyOverlay(self, source)
         else:
             overlay = MoveScaleOverlay(self, self.app.action_log, source)
         self.add_overlay(overlay)

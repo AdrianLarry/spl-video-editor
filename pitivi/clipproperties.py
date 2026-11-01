@@ -47,8 +47,13 @@ from pitivi.clip_properties.markers import ClipMarkersProperties
 from pitivi.clip_properties.opacity import OpacityProperties
 from pitivi.clip_properties.overlay import create_overlay_clip
 from pitivi.clip_properties.overlay import is_overlay_clip
+from pitivi.clip_properties.overlay import next_shape_number
 from pitivi.clip_properties.overlay import setup_overlay
 from pitivi.clip_properties.overlay_ui import OverlayProperties
+from pitivi.clip_properties.particles import create_particle_clip
+from pitivi.clip_properties.particles import is_particle_clip
+from pitivi.clip_properties.particles import setup_particle_overlay
+from pitivi.clip_properties.particles_ui import ParticlesProperties
 from pitivi.clip_properties.opacity import is_opacity_effect
 from pitivi.clip_properties.orientation import get_orientation
 from pitivi.clip_properties.orientation import Orientation
@@ -208,6 +213,11 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.overlay_expander.set_vexpand(False)
         self.settings_pages["image"].pack_start(self.overlay_expander, False, False, 0)
 
+        # SPL: procedural particles effect overlay.
+        self.particles_expander = ParticlesProperties(app)
+        self.particles_expander.set_vexpand(False)
+        self.settings_pages["image"].pack_start(self.particles_expander, False, False, 0)
+
         self.opacity_expander = OpacityProperties(app)
         self.settings_pages["image"].pack_start(self.opacity_expander, False, False, 0)
 
@@ -302,12 +312,25 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
     def create_overlay_clip(self, shape_name):
         """Adds an overlay with the shape at the playhead, above the video."""
         clip = create_overlay_clip(self.app.settings.titleClipLength * Gst.MSECOND)
+        timeline = self._project.ges_timeline if self._project else None
+        text = str(next_shape_number(timeline)) if shape_name == "number" else "1"
         with self.app.action_log.started("add overlay",
                                          finalizing_action=CommitTimelineFinalizingAction(self._project.pipeline),
                                          toplevel=True):
             self.app.gui.editor.timeline_ui.insert_clips_on_first_layer([clip])
             source = clip.find_track_element(None, GES.VideoTestSource)
-            setup_overlay(clip, shape_name, get_frame_size(source))
+            setup_overlay(clip, shape_name, get_frame_size(source), text=text)
+        self._selection.set_selection([clip], SELECT)
+
+    def create_particle_clip(self, effect_name):
+        """Adds a particle effect overlay at the playhead, above the video."""
+        clip = create_particle_clip(self.app.settings.titleClipLength * Gst.MSECOND)
+        with self.app.action_log.started("add particle effect",
+                                         finalizing_action=CommitTimelineFinalizingAction(self._project.pipeline),
+                                         toplevel=True):
+            self.app.gui.editor.timeline_ui.insert_clips_on_first_layer([clip])
+            source = clip.find_track_element(None, GES.VideoTestSource)
+            setup_particle_overlay(clip, effect_name, get_frame_size(source))
         self._selection.set_selection([clip], SELECT)
 
     def create_color_clip_cb(self, unused_widget):
@@ -354,10 +377,12 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
 
         # SPL: an overlay is placed in the viewer, its shape changed here.
         is_overlay = is_overlay_clip(ges_clip)
+        is_particle = is_particle_clip(ges_clip)
         self.overlay_expander.set_clip(ges_clip if is_overlay else None)
-        if is_overlay:
+        self.particles_expander.set_clip(ges_clip if is_particle else None)
+        if is_overlay or is_particle:
             color_clip_source = None
-        self.transformation_expander.set_source(None if is_overlay else video_source)
+        self.transformation_expander.set_source(None if (is_overlay or is_particle) else video_source)
         # Photos and videos zoom with sub-pixel precision, including their
         # blurred fill when enabled.
         is_visual = isinstance(video_source, GES.VideoUriSource)
@@ -913,6 +938,8 @@ class EffectProperties(Gtk.Expander, Loggable):
             return None
 
         effect_info = self.app.effects.get_info(effect)
+        if not effect_info:
+            return None
         thumbnail = Gtk.Image.new_from_pixbuf(effect_info.icon.scale_simple(
             EFFECT_THUMBNAIL_WIDTH, EFFECT_THUMBNAIL_HEIGHT, GdkPixbuf.InterpType.BILINEAR))
         thumbnail.props.valign = Gtk.Align.CENTER

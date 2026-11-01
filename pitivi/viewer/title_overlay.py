@@ -17,7 +17,7 @@
 import cairo
 import numpy
 
-from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.undo.timeline import FlushSeekFinalizingAction
 from pitivi.viewer.overlay import Overlay
 
 
@@ -91,9 +91,10 @@ class TitleOverlay(Overlay):
         if self._is_hovered():
             self._select()
             self.stack.set_cursor("grabbing")
+            project = self.stack.app.project_manager.current_project
+            pipeline = project.pipeline if project else None
             self.stack.app.action_log.begin("Title drag",
-                                            finalizing_action=CommitTimelineFinalizingAction(
-                                                self.stack.app.project_manager.current_project.pipeline),
+                                            finalizing_action=FlushSeekFinalizingAction(pipeline),
                                             toplevel=True)
         else:
             # We're not hovered anymore, make sure we're not selected.

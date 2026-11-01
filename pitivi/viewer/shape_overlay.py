@@ -25,7 +25,7 @@ from gi.repository import GES
 from pitivi.clip_properties.overlay import get_shape_name
 from pitivi.clip_properties.overlay import get_values
 from pitivi.clip_properties.overlay import set_values
-from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.undo.timeline import FlushSeekFinalizingAction
 from pitivi.utils.motion import get_frame_size
 from pitivi.utils.shapes import BOX
 from pitivi.utils.shapes import REFERENCE_SIZE
@@ -169,9 +169,10 @@ class ShapeOverlay(Overlay):
         self.__grabbed = self.hovered_handle
         self.__click = None
         self.__click_values = get_values(self.clip)
+        project = self.stack.app.project_manager.current_project
+        pipeline = project.pipeline if project else None
         self.__action_log.begin("overlay change",
-                                finalizing_action=CommitTimelineFinalizingAction(
-                                    self._source.get_timeline().get_parent()),
+                                finalizing_action=FlushSeekFinalizingAction(pipeline),
                                 toplevel=True)
         self.__recording = True
         if not self.__grabbed:

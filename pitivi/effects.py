@@ -163,7 +163,10 @@ HIDDEN_EFFECTS = [
     "videocrop name=spl-crop",
     # The shapes of the overlays, see clip_properties/overlay.py.
     "splshape",
-    "videoconvert ! video/x-raw,format=BGRA ! splshape name=spl-shape ! videoconvert"]
+    "videoconvert ! video/x-raw,format=BGRA ! splshape name=spl-shape ! videoconvert",
+    # Procedural particle effect layers.
+    "splparticles name=spl-particles",
+    "videoconvert ! video/x-raw,format=BGRA ! splparticles name=spl-particles ! videoconvert"]
 
 # The effects offered, as in the mockup: simple, and made with elements
 # which work with any video. Some others of the catalog crash the app.
@@ -177,6 +180,10 @@ SIMPLE_EFFECTS = (
     ("videobalance brightness=0.12", _("More brightness"), _("A brighter image")),
     ("videobalance contrast=1.4", _("More contrast"), _("Darker darks and lighter lights")),
     ("gaussianblur sigma=4", _("Soft blur"), _("A slightly blurred image")),
+    ("videoconvert ! video/x-raw,format=BGRA ! splparticles effect=snow ! videoconvert", _("Snow"), _("Falling snowflakes drifting gently")),
+    ("videoconvert ! video/x-raw,format=BGRA ! splparticles effect=confetti ! videoconvert", _("Confetti"), _("Festive colorful falling confetti")),
+    ("videoconvert ! video/x-raw,format=BGRA ! splparticles effect=sparkles ! videoconvert", _("Sparkles"), _("Magical glittering stars and flares")),
+    ("videoconvert ! video/x-raw,format=BGRA ! splparticles effect=smoke ! videoconvert", _("Smoke"), _("Soft rising atmospheric smoke")),
 )
 
 GlobalSettings.add_config_section('effect-library')

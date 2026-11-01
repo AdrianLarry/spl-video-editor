@@ -17,6 +17,7 @@
 """Tests for the pitivi.clip_properties.crop module."""
 from unittest import mock
 
+from gi.repository import Gdk
 from gi.repository import GES
 from gi.repository import Gst
 
@@ -243,3 +244,55 @@ class CropOverlayTest(common.TestCase):
         overlay.finished.assert_called_once()
         self.action_log.undo()
         self.assertEqual(get_crop(clip), Crop())
+
+    @common.setup_timeline
+    def test_shortcuts_enter_and_esc(self):
+        self._wait_until_project_loaded()
+        clip = self._add_image()
+        with self.action_log.started("crop", toplevel=True):
+            apply_crop(clip, Crop(left=50))
+        overlay = self._create_overlay()
+
+        # Enter applies the crop
+        overlay.start(clip)
+        overlay.crop = Crop(left=50, top=80)
+
+        # Test an ignored key first (e.g. key with Control modifier)
+        ctrl_event = mock.Mock(keyval=Gdk.KEY_Return, state=Gdk.ModifierType.CONTROL_MASK)
+        self.assertFalse(overlay.handle_key_event(ctrl_event))
+        self.assertTrue(overlay.active)
+
+        # Plain Return applies
+        enter_event = mock.Mock(keyval=Gdk.KEY_Return, state=0)
+        self.assertTrue(overlay.handle_key_event(enter_event))
+        self.assertFalse(overlay.active)
+        self.assertEqual(get_crop(clip), Crop(left=50, top=80))
+        overlay.finished.assert_called_once()
+        overlay.finished.reset_mock()
+
+        # Esc cancels the crop
+        overlay.start(clip)
+        overlay.crop = Crop(left=50, top=150)
+
+        # Test Escape with Alt (ignored)
+        alt_event = mock.Mock(keyval=Gdk.KEY_Escape, state=Gdk.ModifierType.MOD1_MASK)
+        self.assertFalse(overlay.handle_key_event(alt_event))
+        self.assertTrue(overlay.active)
+
+        # Plain Escape cancels
+        esc_event = mock.Mock(keyval=Gdk.KEY_Escape, state=0)
+        self.assertTrue(overlay.handle_key_event(esc_event))
+        self.assertFalse(overlay.active)
+        self.assertEqual(get_crop(clip), Crop(left=50, top=80))
+        overlay.finished.assert_called_once()
+        overlay.finished.reset_mock()
+
+        # KP_Enter applies the crop
+        overlay.start(clip)
+        overlay.crop = Crop(bottom=60)
+        kp_enter_event = mock.Mock(keyval=Gdk.KEY_KP_Enter, state=0)
+        self.assertTrue(overlay.handle_key_event(kp_enter_event))
+        self.assertFalse(overlay.active)
+        self.assertEqual(get_crop(clip), Crop(bottom=60))
+        overlay.finished.assert_called_once()
+

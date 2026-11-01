@@ -29,6 +29,8 @@ from gi.repository import GES
 
 from pitivi.clip_properties.overlay import is_overlay_clip
 from pitivi.clip_properties.overlay import place_overlay
+from pitivi.clip_properties.particles import is_particle_clip
+from pitivi.clip_properties.particles import place_particle_overlay
 from pitivi.undo.base import UndoableAction
 from pitivi.undo.timeline import CommitTimelineFinalizingAction
 from pitivi.utils.blurfill import get_blur_fill
@@ -178,9 +180,13 @@ def set_format(app, project, kind: str) -> None:
     sources = []
     blur_fill_clips = []
     overlay_clips = []
+    particle_clips = []
     for layer in project.ges_timeline.get_layers():
         for clip in layer.get_clips():
             if isinstance(clip, GES.TransitionClip):
+                continue
+            if is_particle_clip(clip):
+                particle_clips.append(clip)
                 continue
             if is_overlay_clip(clip):
                 # Its shape is placed in fractions of the frame.
@@ -212,5 +218,7 @@ def set_format(app, project, kind: str) -> None:
             update_blur_fill(clip)
         for clip in overlay_clips:
             place_overlay(clip)
+        for clip in particle_clips:
+            place_particle_overlay(clip)
         for layer in project.ges_timeline.get_layers():
             sync_pushes(layer)

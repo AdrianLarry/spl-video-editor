@@ -4,6 +4,10 @@ from gettext import gettext as _
 from gi.repository import GES
 from gi.repository import Gtk
 
+from pitivi.clip_properties.overlay import get_shape_effect
+from pitivi.clip_properties.overlay import is_overlay_clip
+from pitivi.clip_properties.particles import get_particle_effect
+from pitivi.clip_properties.particles import is_particle_clip
 from pitivi.undo.base import FinalizingAction
 from pitivi.utils.ui import PADDING
 from pitivi.utils.ui import SPACING
@@ -12,6 +16,10 @@ OPACITY_EFFECT = "alpha name=spl_opacity method=set"
 
 
 def get_opacity_effect(clip):
+    if is_overlay_clip(clip):
+        return get_shape_effect(clip)
+    if is_particle_clip(clip):
+        return get_particle_effect(clip)
     return next((effect for effect in clip.get_top_effects()
                  if is_opacity_effect(effect)), None)
 

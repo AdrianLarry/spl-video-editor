@@ -23,7 +23,7 @@ from gi.repository import Gtk
 
 from pitivi.configure import get_ui_dir
 from pitivi.settings import GlobalSettings
-from pitivi.undo.timeline import CommitTimelineFinalizingAction
+from pitivi.undo.timeline import FlushSeekFinalizingAction
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.ui import argb_to_gdk_rgba
 from pitivi.utils.ui import gdk_rgba_to_argb
@@ -73,8 +73,10 @@ class ColorProperties(Gtk.Expander, Loggable):
         self.show_all()
 
     def _set_child_property(self, name, value):
+        project = self.app.project_manager.current_project
+        pipeline = project.pipeline if project else None
         with self.app.action_log.started("Color change property",
-                                         finalizing_action=CommitTimelineFinalizingAction(self.app.project_manager.current_project.pipeline),
+                                         finalizing_action=FlushSeekFinalizingAction(pipeline),
                                          toplevel=True):
             res = self.source.set_child_property(name, value)
             assert res

@@ -36,9 +36,12 @@ from gi.repository import PangoCairo
 
 from pitivi.clip_properties.overlay import draw_thumbnail
 from pitivi.clip_properties.overlay import is_overlay_clip
+from pitivi.clip_properties.particles import draw_particle_thumbnail
+from pitivi.clip_properties.particles import is_particle_clip
 from pitivi.settings import GlobalSettings
 from pitivi.settings import xdg_cache_home
 from pitivi.utils.loggable import Loggable
+from pitivi.utils.misc import disconnect_all_by_func
 from pitivi.utils.misc import path_from_uri
 from pitivi.utils.misc import quantize
 from pitivi.utils.misc import quote_uri
@@ -456,11 +459,13 @@ class ImagePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
         self.thumbs = {}
         self.thumb_height = THUMB_HEIGHT
         self.thumb_width = 0
-
+        self.__clip = None
         self.ges_elem.connect("notify::duration", self._duration_changed_cb)
 
         if isinstance(self.ges_elem, GES.VideoTestSource):
             self.ges_elem.connect("deep-notify", self._source_deep_notify_cb)
+            self.ges_elem.connect("notify::parent", self._parent_changed_cb)
+            self._update_parent_clip()
 
         self.become_controlled()
 
@@ -491,6 +496,10 @@ class ImagePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
                 Gst.uri_get_location(self.uri), -1, self.thumb_height, True)
 
         clip = self.ges_elem.get_parent()
+        if isinstance(self.ges_elem, GES.VideoTestSource) and is_particle_clip(clip):
+            surface = draw_particle_thumbnail(clip, THUMB_HEIGHT)
+            return Gdk.pixbuf_get_from_surface(surface, 0, 0, THUMB_HEIGHT, THUMB_HEIGHT)
+
         if isinstance(self.ges_elem, GES.VideoTestSource) and is_overlay_clip(clip):
             # SPL: the shape of the overlay.
             surface = draw_thumbnail(clip, THUMB_HEIGHT)
@@ -547,8 +556,21 @@ class ImagePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
         """Handles the changing of the duration of the clip."""
         self._update_thumbnails()
 
+    def _parent_changed_cb(self, unused_element, unused_param_spec):
+        self._update_parent_clip()
+
+    def _update_parent_clip(self):
+        clip = self.ges_elem.get_parent()
+        if clip == self.__clip:
+            return
+        if self.__clip:
+            disconnect_all_by_func(self.__clip, self._source_deep_notify_cb)
+        self.__clip = clip
+        if clip:
+            clip.connect("deep-notify", self._source_deep_notify_cb)
+
     def _source_deep_notify_cb(self, source, unused_gstelement, pspec):
-        """Handles updates in the VideoTestSource."""
+        """Handles updates in the VideoTestSource or its clip."""
         if pspec.name in ("foreground-color", "shape", "color", "line-width", "corner-radius"):
             self.become_controlled()
 
@@ -577,6 +599,13 @@ class ImagePreviewer(Gtk.Layout, Previewer, Zoomable, Loggable):
     def release(self):
         """Stops preview generation and cleans the object."""
         self.stop_generation()
+        if self.__clip:
+            disconnect_all_by_func(self.__clip, self._source_deep_notify_cb)
+            self.__clip = None
+        disconnect_all_by_func(self.ges_elem, self._source_deep_notify_cb)
+        disconnect_all_by_func(self.ges_elem, self._parent_changed_cb)
+        disconnect_all_by_func(self.ges_elem, self._duration_changed_cb)
+        disconnect_all_by_func(self, self._height_changed_cb)
         Zoomable.__del__(self)
 
 

@@ -19,6 +19,7 @@ from unittest import mock
 
 import numpy
 from gi.repository import GES
+from gi.repository import GLib
 
 from pitivi.clip_properties.overlay import get_shape_effect
 from pitivi.clip_properties.overlay import get_shape_name
@@ -42,14 +43,27 @@ class ShapesTest(common.TestCase):
             values = {"shape": name, "x1": 0.2, "y1": 0.2, "x2": 0.8, "y2": 0.8,
                       "color": 0xFFFF0000, "line-width": 60.0, "corner-radius": 30.0}
             pixels = render_shape(values, 200, 100, 800).reshape(100, 200, 4)
-            # Transparent out of the shape, opaque red on its line.
+
+            if name == "spotlight":
+                # Darkened outside the spotlight box, clear center
+                self.assertGreater(pixels[2, 2, 3], 0, name)
+                self.assertEqual(pixels[50, 100].tolist(), [0, 0, 0, 0], name)
+                # Has opaque red border
+                opaque = pixels[pixels[:, :, 3] == 255]
+                self.assertTrue(len(opaque), name)
+                x, y, width, height = shape_box(values, (200, 100))
+                self.assertEqual((x, y, width, height), (0, 0, 200, 100), name)
+                continue
+
+            # Transparent out of the shape, opaque red on its line/body.
             self.assertEqual(pixels[2, 2].tolist(), [0, 0, 0, 0], name)
             opaque = pixels[pixels[:, :, 3] == 255]
             self.assertTrue(len(opaque), name)
-            self.assertTrue((opaque == [0, 0, 255, 255]).all(), name)
-            # The edges, half transparent, keep the color.
-            edges = pixels[(pixels[:, :, 3] > 0) & (pixels[:, :, 3] < 255)]
-            self.assertTrue((numpy.abs(edges[:, 2].astype(int) - 255) <= 2).all(), name)
+            if name != "number":
+                self.assertTrue((opaque == [0, 0, 255, 255]).all(), name)
+            else:
+                # Number badge has red circle and high-contrast text
+                self.assertTrue((opaque[:, 2] == 255).any(), name)
 
             # Only the part of the frame with the shape, drawn the same.
             x, y, width, height = shape_box(values, (200, 100))
@@ -118,6 +132,118 @@ class OverlayPropertiesTest(common.TestCase):
         self.assertEqual(get_values(clip)["line-width"], 10)
         self.action_log.undo()
         self.assertEqual(get_values(clip)["color"], 0xFFD9531E)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_all_shapes_switching(self):
+        self.project.pipeline.get_position = mock.Mock(return_value=0)
+        self.clipproperties.create_overlay_clip("frame")
+        clip = self.layer.get_clips()[0]
+        box = self.clipproperties.overlay_expander
+
+        for name, shape in SHAPES.items():
+            box.shape_buttons[name].set_active(True)
+            self.assertEqual(get_shape_name(clip), name)
+            self.assertEqual(get_shape_effect(clip).get_child_property("shape")[1], name)
+            self.assertEqual(box.corner_scale.props.visible, shape.has_corners)
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_number_badge_sequence_and_edit(self):
+        self.project.pipeline.get_position = mock.Mock(return_value=0)
+        # Create first number badge -> automatically 1
+        self.clipproperties.create_overlay_clip("number")
+        all_clips = [c for layer in self.project.ges_timeline.get_layers() for c in layer.get_clips()]
+        self.assertEqual(len(all_clips), 1)
+        clip1 = all_clips[0]
+        self.assertEqual(get_values(clip1)["text"], "1")
+        box = self.clipproperties.overlay_expander
+        self.assertTrue(box.number_box.props.visible)
+        self.assertEqual(box.number_spin.get_value(), 1)
+
+        # Create second number badge -> automatically 2
+        self.clipproperties.create_overlay_clip("number")
+        all_clips = [c for layer in self.project.ges_timeline.get_layers() for c in layer.get_clips()]
+        self.assertEqual(len(all_clips), 2)
+        clip2 = [c for c in all_clips if c != clip1][0]
+        self.assertEqual(get_values(clip2)["text"], "2")
+        self.assertEqual(box.number_spin.get_value(), 2)
+
+        # Create third number badge -> automatically 3
+        self.clipproperties.create_overlay_clip("number")
+        all_clips = [c for layer in self.project.ges_timeline.get_layers() for c in layer.get_clips()]
+        self.assertEqual(len(all_clips), 3)
+        clip3 = [c for c in all_clips if c not in (clip1, clip2)][0]
+        self.assertEqual(get_values(clip3)["text"], "3")
+
+        # Edit clip3 number manually to 7
+        box.number_spin.set_value(7)
+        self.assertEqual(get_values(clip3)["text"], "7")
+
+        # Undo restores to 3
+        self.action_log.undo()
+        self.assertEqual(get_values(clip3)["text"], "3")
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_overlay_opacity(self):
+        self.project.pipeline.get_position = mock.Mock(return_value=0)
+        self.clipproperties.create_overlay_clip("frame")
+        clip = self.layer.get_clips()[0]
+        opacity_box = self.clipproperties.opacity_expander
+        self.assertTrue(opacity_box.props.visible)
+        self.assertEqual(opacity_box.adjustment.get_value(), 100)
+
+        # Set opacity to 40%
+        opacity_box.adjustment.set_value(40)
+        self.assertAlmostEqual(get_values(clip)["alpha"], 0.4)
+
+        # Pixels render with attenuated alpha
+        values = get_values(clip)
+        values.update({"x1": 0.2, "y1": 0.2, "x2": 0.8, "y2": 0.8, "line-width": 40.0, "corner-radius": 0.0})
+        pixels = render_shape(values, 100, 100, 400).reshape(100, 100, 4)
+        max_alpha = pixels[:, :, 3].max()
+        # 255 * 0.4 = 102
+        self.assertAlmostEqual(max_alpha, 102, delta=2)
+
+        # Undo restores to 100%
+        self.action_log.undo()
+        self.assertAlmostEqual(get_values(clip)["alpha"], 1.0)
+        self.assertEqual(opacity_box.adjustment.get_value(), 100)
+
+
+
+    @common.setup_timeline
+    @common.setup_clipproperties
+    def test_thumbnail_updates_on_style_change(self):
+        self.project.pipeline.get_position = mock.Mock(return_value=0)
+        self.clipproperties.create_overlay_clip("frame")
+        clip = self.layer.get_clips()[0]
+        source = clip.find_track_element(None, GES.VideoTestSource)
+        previewer = source.ui.previewer
+
+        while GLib.MainContext.default().iteration(False):
+            pass
+        pixbuf1 = previewer._ImagePreviewer__image_pixbuf.get_pixels()
+
+        box = self.clipproperties.overlay_expander
+        box.color_buttons[0xFFFFD166].set_active(True)
+        while GLib.MainContext.default().iteration(False):
+            pass
+        pixbuf2 = previewer._ImagePreviewer__image_pixbuf.get_pixels()
+        self.assertNotEqual(pixbuf1, pixbuf2)
+
+        box.shape_buttons["circle"].set_active(True)
+        while GLib.MainContext.default().iteration(False):
+            pass
+        pixbuf3 = previewer._ImagePreviewer__image_pixbuf.get_pixels()
+        self.assertNotEqual(pixbuf2, pixbuf3)
+
+        self.action_log.undo()
+        while GLib.MainContext.default().iteration(False):
+            pass
+        pixbuf4 = previewer._ImagePreviewer__image_pixbuf.get_pixels()
+        self.assertEqual(pixbuf2, pixbuf4)
 
     @common.setup_timeline
     @common.setup_clipproperties

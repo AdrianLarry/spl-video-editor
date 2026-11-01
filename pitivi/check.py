@@ -434,6 +434,8 @@ def initialize_modules():
     register_speed_element()
     from pitivi.utils.shapefilter import register as register_shape_element
     register_shape_element()
+    from pitivi.utils.particlesfilter import register as register_particles_element
+    register_particles_element()
 
     from pitivi.utils.misc import video_info_get_natural_height, video_info_get_natural_width, video_info_get_rotation
 

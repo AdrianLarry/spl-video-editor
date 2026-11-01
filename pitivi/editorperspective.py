@@ -29,6 +29,7 @@ from gi.repository import Gtk
 from gi.repository import Pango
 
 from pitivi.clip_properties.overlay_ui import ShapeMenuButton
+from pitivi.clip_properties.particles_ui import ParticleMenuButton
 from pitivi.clipproperties import ClipProperties
 from pitivi.configure import APPNAME
 from pitivi.configure import get_ui_dir
@@ -234,9 +235,13 @@ class EditorPerspective(Perspective, Loggable):
         # SPL: the shapes go over the video, as the texts.
         self.add_shape_button = ShapeMenuButton(self.__add_shape_cb)
         self.add_shape_button.set_sensitive(False)
+        # SPL: procedural particle effect layers (snow, confetti, sparkles, smoke).
+        self.add_particle_button = ParticleMenuButton(self.__add_particle_cb)
+        self.add_particle_button.set_sensitive(False)
         add_box = Gtk.Box(spacing=PADDING)
         add_box.pack_start(self.add_text_button, False, False, 0)
         add_box.pack_start(self.add_shape_button, False, False, 0)
+        add_box.pack_start(self.add_particle_button, False, False, 0)
         self.files_panel = self.__create_side_panel(
             _("Files"), "view-grid-symbolic", add_box, self.main_tabs)
         self.mainhpaned.pack1(self.files_panel, resize=False, shrink=False)
@@ -602,6 +607,11 @@ class EditorPerspective(Perspective, Loggable):
         self.context_tabs.set_current_page(0)
         self.clipconfig.create_overlay_clip(shape_name)
 
+    def __add_particle_cb(self, effect_name):
+        self.expand_properties()
+        self.context_tabs.set_current_page(0)
+        self.clipconfig.create_particle_clip(effect_name)
+
     def switch_context_tab(self, ges_clip):
         """Activates the appropriate tab on the second set of tabs.
 
@@ -888,6 +898,7 @@ class EditorPerspective(Perspective, Loggable):
         self.clipconfig.set_project(project, self.timeline_ui)
         self.add_text_button.set_sensitive(True)
         self.add_shape_button.set_sensitive(True)
+        self.add_particle_button.set_sensitive(True)
         self.timeline_ui.set_project(project)
 
         # When creating a blank project there's no project URI yet.
@@ -1001,6 +1012,7 @@ class EditorPerspective(Perspective, Loggable):
         self.info("Project closed")
         self.add_text_button.set_sensitive(False)
         self.add_shape_button.set_sensitive(False)
+        self.add_particle_button.set_sensitive(False)
         if project.loaded:
             self._disconnect_from_project(project)
 

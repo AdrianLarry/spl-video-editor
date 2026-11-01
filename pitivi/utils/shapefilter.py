@@ -53,9 +53,12 @@ def color_to_rgba(color: int):
 
 def _style(values, frame_size) -> Style:
     scale = min(frame_size) / REFERENCE_SIZE
-    return Style(color_to_rgba(values["color"]),
+    r, g, b, a = color_to_rgba(values["color"])
+    alpha = float(values.get("alpha", 1.0))
+    return Style((r, g, b, a * alpha),
                  max(1.0, values["line-width"] * scale),
-                 values["corner-radius"] * scale)
+                 values["corner-radius"] * scale,
+                 str(values.get("text", "1")))
 
 
 def shape_box(values, frame_size: Tuple[int, int]) -> Tuple[int, int, int, int]:
@@ -157,6 +160,10 @@ class ShapeFilter(GstBase.BaseTransform):
                        GObject.ParamFlags.READWRITE),
         "corner-radius": (float, "Corner radius", "The radius of the corners", 0.0, 2000.0, 28.0,
                           GObject.ParamFlags.READWRITE),
+        "text": (str, "Text", "The text or number drawn on the shape", "1",
+                 GObject.ParamFlags.READWRITE),
+        "alpha": (float, "Alpha", "The overall opacity of the shape", 0.0, 1.0, 1.0,
+                  GObject.ParamFlags.READWRITE),
         "frame-width": (int, "Frame width", "The width of the frame, 0 for the one received",
                         0, 32768, 0, GObject.ParamFlags.READWRITE),
         "frame-height": (int, "Frame height", "The height of the frame, 0 for the one received",
@@ -165,13 +172,12 @@ class ShapeFilter(GstBase.BaseTransform):
 
     def __init__(self):
         GstBase.BaseTransform.__init__(self)
+        self.set_in_place(True)
         self.props_values = {"shape": "frame", "x1": 0.3, "y1": 0.4, "x2": 0.7, "y2": 0.6,
                              "color": DEFAULT_COLOR, "line-width": 10.0, "corner-radius": 28.0,
-                             "frame-width": 0, "frame-height": 0}
-        self.in_info = None
-        self.out_info = None
+                             "text": "1", "alpha": 1.0, "frame-width": 0, "frame-height": 0}
+        self.video_info = None
         self.__pixels = None
-        self.__returned_caps = []
 
     def do_get_property(self, pspec):
         return self.props_values[pspec.name]
@@ -181,78 +187,41 @@ class ShapeFilter(GstBase.BaseTransform):
             return
         self.props_values[pspec.name] = value
         self.__pixels = None
-        if self.out_info and self.__box()[2:] != (self.out_info.width, self.out_info.height):
-            self.reconfigure_src()
 
     def __box(self, size=None):
         """Returns where the frame given is in the frame: x, y, width, height."""
         values = self.props_values
         if not values["frame-width"] or not values["frame-height"]:
             if size is None:
-                size = (self.in_info.width, self.in_info.height) if self.in_info else (0, 0)
+                size = (self.video_info.width, self.video_info.height) if self.video_info else (0, 0)
             return (0, 0) + tuple(size)
         return shape_box(values, (values["frame-width"], values["frame-height"]))
 
-    def do_transform_caps(self, direction, caps, filter_caps):
-        other = Gst.Caps.new_empty()
-        for index in range(caps.get_size()):
-            structure = caps.get_structure(index).copy()
-            res_width, width = structure.get_int("width")
-            res_height, height = structure.get_int("height")
-            if direction == Gst.PadDirection.SINK and res_width and res_height:
-                # The size given, with the frame received.
-                unused_x, unused_y, width, height = self.__box((width, height))
-                structure.set_value("width", width)
-                structure.set_value("height", height)
-                other.append_structure(structure)
-            else:
-                # Any size received, nothing of it is seen.
-                structure.remove_field("width")
-                structure.remove_field("height")
-                other = other.merge(Gst.Caps.from_string(
-                    structure.to_string().replace(
-                        "video/x-raw", "video/x-raw, width=(int)[ 1, 32768 ], height=(int)[ 1, 32768 ]",
-                        1)))
-        if filter_caps:
-            other = filter_caps.intersect_full(other, Gst.CapsIntersectMode.FIRST)
-        # PyGObject gives its reference to GStreamer and drops it again when
-        # the wrapper goes away, so the wrappers are kept.
-        self.__returned_caps.append(other)
-        return other
-
     def do_set_caps(self, incaps, outcaps):
-        self.in_info = GstVideo.VideoInfo.new_from_caps(incaps)
-        self.out_info = GstVideo.VideoInfo.new_from_caps(outcaps)
+        self.video_info = GstVideo.VideoInfo.new_from_caps(incaps)
         self.__pixels = None
         return True
 
-    def do_transform_size(self, direction, caps, size, othercaps):
-        info = GstVideo.VideoInfo.new_from_caps(othercaps)
-        return True, info.size
-
-    def do_transform_meta(self, outbuf, meta, inbuf):
-        # GES keeps the alpha and the position of the clip in a meta of the
-        # buffers, the fades need it.
-        return True
-
-    def do_transform(self, inbuf, outbuf):
+    def do_transform_ip(self, buf):
         pixels = self.__pixels
-        width, height = self.out_info.width, self.out_info.height
         if pixels is None:
+            if not self.video_info:
+                return Gst.FlowReturn.OK
+            width, height = self.video_info.width, self.video_info.height
             values = dict(self.props_values)
-            x, y, unused_width, unused_height = self.__box()
+            x, y, unused_width, unused_height = self.__box((width, height))
             frame_size = (values["frame-width"], values["frame-height"])
-            pixels = render_shape(values, width, height, self.out_info.stride[0],
+            pixels = render_shape(values, width, height, self.video_info.stride[0],
                                   frame_size if all(frame_size) else None, (x, y))
             self.__pixels = pixels
-        res, mapinfo = outbuf.map(Gst.MapFlags.WRITE)
+        res, mapinfo = buf.map(Gst.MapFlags.READ | Gst.MapFlags.WRITE)
         if not res:
             return Gst.FlowReturn.ERROR
         try:
             frame = numpy.frombuffer(mapinfo.data, dtype=numpy.uint8, count=pixels.size)
             frame[:] = pixels.reshape(-1)
         finally:
-            outbuf.unmap(mapinfo)
+            buf.unmap(mapinfo)
         return Gst.FlowReturn.OK
 
 

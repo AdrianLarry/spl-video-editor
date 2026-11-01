@@ -75,11 +75,11 @@ class ClipToolbar(Gtk.Box):
         self.pack_start(self.tools, False, False, 0)
 
         self.cropping = Gtk.Box(spacing=2)
-        self.done_button = _button("object-select-symbolic", _("Done"), _("Crop the image"))
+        self.done_button = _button("object-select-symbolic", _("Done"), f"{_('Crop the image')} (Enter)")
         self.done_button.get_style_context().add_class("spl-accent")
         self.done_button.connect("clicked", lambda unused_button: self.__finish_crop(True))
         self.cropping.pack_start(self.done_button, False, False, 0)
-        self.cancel_button = _button("window-close-symbolic", _("Cancel"), _("Leave the image as it was"))
+        self.cancel_button = _button("window-close-symbolic", _("Cancel"), f"{_('Leave the image as it was')} (Esc)")
         self.cancel_button.connect("clicked", lambda unused_button: self.__finish_crop(False))
         self.cropping.pack_start(self.cancel_button, False, False, 0)
         self.pack_start(self.cropping, False, False, 0)
