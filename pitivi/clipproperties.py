@@ -46,6 +46,7 @@ from pitivi.clip_properties.crop import turned_crop
 from pitivi.clip_properties.markers import ClipMarkersProperties
 from pitivi.clip_properties.opacity import OpacityProperties
 from pitivi.clip_properties.overlay import create_overlay_clip
+from pitivi.clip_properties.overlay import get_frame_size
 from pitivi.clip_properties.overlay import is_overlay_clip
 from pitivi.clip_properties.overlay import next_shape_number
 from pitivi.clip_properties.overlay import setup_overlay
@@ -54,6 +55,8 @@ from pitivi.clip_properties.particles import create_particle_clip
 from pitivi.clip_properties.particles import is_particle_clip
 from pitivi.clip_properties.particles import setup_particle_overlay
 from pitivi.clip_properties.particles_ui import ParticlesProperties
+from pitivi.utils.resource_packages import STICKER_META
+from pitivi.utils.resource_packages import is_sticker_clip
 from pitivi.clip_properties.opacity import is_opacity_effect
 from pitivi.clip_properties.orientation import get_orientation
 from pitivi.clip_properties.orientation import Orientation
@@ -333,6 +336,79 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
             setup_particle_overlay(clip, effect_name, get_frame_size(source))
         self._selection.set_selection([clip], SELECT)
 
+    def create_sticker_clip(self, sticker_item):
+        """Adds a sticker overlay at the playhead, above the video."""
+        uri = sticker_item.uri
+        asset = GES.UriClipAsset.request_sync(uri)
+        if not asset:
+            return
+        if not hasattr(asset, "creation_progress"):
+            asset.creation_progress = 100
+            asset.error = None
+            asset.ready = True
+            asset.force_proxying = False
+            asset.proxying_error = None
+        duration = self.app.settings.imageClipLength * Gst.MSECOND
+        timeline = self._project.ges_timeline if self._project else None
+        if timeline and hasattr(timeline, "get_frame_at") and hasattr(timeline, "get_frame_time"):
+            duration = timeline.get_frame_time(timeline.get_frame_at(duration))
+        clip = asset.extract()
+        clip.set_duration(duration)
+        clip.set_string(STICKER_META, sticker_item.name)
+        with self.app.action_log.started("add sticker",
+                                         finalizing_action=CommitTimelineFinalizingAction(self._project.pipeline),
+                                         toplevel=True):
+            self.app.gui.editor.timeline_ui.insert_clips_on_first_layer([clip])
+
+            # Center and scale proportionally
+            source = clip.find_track_element(None, GES.VideoUriSource)
+            if source:
+                frame_width, frame_height = get_frame_size(source)
+                streams = asset.get_info().get_video_streams()
+                if streams:
+                    vinfo = streams[0]
+                    nat_w, nat_h = vinfo.get_width(), vinfo.get_height()
+                else:
+                    nat_w, nat_h = 400, 400
+                target_w = round(min(frame_width, frame_height) * 0.35)
+                target_h = round(target_w * (nat_h / nat_w)) if nat_w > 0 else target_w
+                pos_x = round((frame_width - target_w) / 2)
+                pos_y = round((frame_height - target_h) * 0.25)
+                for prop, val in zip(("posx", "posy", "width", "height"),
+                                     (pos_x, pos_y, target_w, target_h)):
+                    source.set_child_property(prop, val)
+
+        self._selection.set_selection([clip], SELECT)
+
+    def create_audio_clip(self, audio_item):
+        """Adds an audio track at the playhead on the audio layer."""
+        uri = audio_item.uri
+        asset = GES.UriClipAsset.request_sync(uri)
+        if not asset:
+            return
+        if not hasattr(asset, "creation_progress"):
+            asset.creation_progress = 100
+            asset.error = None
+            asset.ready = True
+            asset.force_proxying = False
+            asset.proxying_error = None
+        duration = asset.get_duration()
+        timeline_ui = self.app.gui.editor.timeline_ui
+        timeline = self._project.ges_timeline
+        with self.app.action_log.started("add audio clip",
+                                         finalizing_action=CommitTimelineFinalizingAction(self._project.pipeline),
+                                         toplevel=True):
+            clip = asset.extract()
+            clip.set_duration(duration)
+            layers = timeline.get_layers()
+            target_layer = timeline_ui.timeline.get_layer_for(GES.TrackType.AUDIO, layers[-1])
+            start = timeline_ui.timeline.layout.playhead_position
+            if hasattr(timeline, "get_frame_at") and hasattr(timeline, "get_frame_time"):
+                start = timeline.get_frame_time(timeline.get_frame_at(start))
+            target_layer.add_clip(clip)
+            clip.set_start(start)
+        self._selection.set_selection([clip], SELECT)
+
     def create_color_clip_cb(self, unused_widget):
         color_clip = GES.TestClip.new()
         duration = self.app.settings.ColorClipLength * Gst.MSECOND
@@ -385,7 +461,7 @@ class ClipProperties(Gtk.ScrolledWindow, Loggable):
         self.transformation_expander.set_source(None if (is_overlay or is_particle) else video_source)
         # Photos and videos zoom with sub-pixel precision, including their
         # blurred fill when enabled.
-        is_visual = isinstance(video_source, GES.VideoUriSource)
+        is_visual = isinstance(video_source, GES.VideoUriSource) and not is_sticker_clip(ges_clip)
         self.zoom_expander.set_source(video_source if is_visual else None)
         is_video = (isinstance(video_source, GES.VideoUriSource) and
                     not ges_clip.get_asset().is_image())

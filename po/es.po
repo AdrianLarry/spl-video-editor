@@ -5223,4 +5223,38 @@ msgstr "Estrellas y destellos brillantes"
 msgid "Soft rising atmospheric smoke"
 msgstr "Humo suave ascendente y atmosférico"
 
+msgid "Sticker"
+msgstr "Sticker"
 
+msgid "Stickers & Badges"
+msgstr "Stickers y Etiquetas"
+
+msgid "Add a sticker or promotional badge (Offer, New, -50%, etc.) over the video"
+msgstr "Agrega un sticker o etiqueta promocional (Oferta, Nuevo, -50%, etc.) sobre el video"
+
+msgid "Resources"
+msgstr "Recursos"
+
+msgid "Add promotional stickers, background music, or sound effects from packages"
+msgstr "Agregá stickers promocionales, música de fondo o efectos de sonido desde paquetes"
+
+msgid "No stickers available in packages"
+msgstr "No hay stickers disponibles en los paquetes"
+
+msgid "No audio tracks available in packages"
+msgstr "No hay pistas de audio disponibles en los paquetes"
+
+msgid "Listen preview"
+msgstr "Escuchar vista previa"
+
+msgid "Add audio track to timeline"
+msgstr "Agregar pista de audio a la línea de tiempo"
+
+msgid "Royalty-free audio"
+msgstr "Audio libre de derechos"
+
+msgid "Open packages folder"
+msgstr "Abrir carpeta de paquetes"
+
+msgid "Open ~/.local/share/pitivi/packages to add or manage packages"
+msgstr "Abrir ~/.local/share/pitivi/packages para agregar o administrar paquetes"

@@ -28,6 +28,8 @@ from pitivi.clip_properties.particles import get_particle_effect_name
 from pitivi.clip_properties.particles import is_particle_clip
 from pitivi.clip_properties.particles import PARTICLE_LABELS
 from pitivi.utils.misc import filename_from_uri
+from pitivi.utils.resource_packages import get_sticker_name
+from pitivi.utils.resource_packages import is_sticker_clip
 from pitivi.utils.shapes import SHAPES
 from pitivi.utils.ui import beautify_length
 from pitivi.utils.ui import PADDING
@@ -56,6 +58,9 @@ def describe_clip(clip):
     if is_overlay_clip(clip):
         shape = SHAPES.get(get_shape_name(clip))
         return _("Overlay"), shape.label if shape else _("Shape"), "applications-graphics-symbolic"
+
+    if is_sticker_clip(clip):
+        return _("Sticker"), get_sticker_name(clip) or _("Sticker"), "emblem-favorite-symbolic"
 
     if isinstance(clip, GES.TestClip):
         return _("Color"), _("Color"), "applications-graphics-symbolic"

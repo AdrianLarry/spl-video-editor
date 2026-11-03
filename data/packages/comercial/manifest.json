@@ -1,0 +1,76 @@
+{
+  "id": "comercial",
+  "name": "Comercio y Ofertas",
+  "version": "1.0",
+  "author": "SPL",
+  "license": "CC0",
+  "description": "Etiquetas de oferta, nuevos productos, llamadas a la acción y música de fondo libre de derechos.",
+  "items": [
+    {
+      "id": "sticker_oferta",
+      "name": "Oferta Especial",
+      "type": "sticker",
+      "category": "badges",
+      "file": "stickers/oferta.svg",
+      "license": "CC0"
+    },
+    {
+      "id": "sticker_nuevo",
+      "name": "Nuevo Producto",
+      "type": "sticker",
+      "category": "badges",
+      "file": "stickers/nuevo.svg",
+      "license": "CC0"
+    },
+    {
+      "id": "sticker_descuento",
+      "name": "-50% OFF",
+      "type": "sticker",
+      "category": "badges",
+      "file": "stickers/descuento.svg",
+      "license": "CC0"
+    },
+    {
+      "id": "sticker_precio",
+      "name": "Etiqueta de Precio",
+      "type": "sticker",
+      "category": "badges",
+      "file": "stickers/precio.svg",
+      "license": "CC0"
+    },
+    {
+      "id": "sticker_destacado",
+      "name": "Destacado",
+      "type": "sticker",
+      "category": "badges",
+      "file": "stickers/destacado.svg",
+      "license": "CC0"
+    },
+    {
+      "id": "sticker_envio_gratis",
+      "name": "Envío Gratis",
+      "type": "sticker",
+      "category": "badges",
+      "file": "stickers/envio_gratis.svg",
+      "license": "CC0"
+    },
+    {
+      "id": "audio_loop_comercial",
+      "name": "Música Alegre Comercial",
+      "type": "audio",
+      "category": "music",
+      "file": "audio/loop_comercial.ogg",
+      "description": "Loop alegre y optimista para reels y anuncios",
+      "license": "CC0"
+    },
+    {
+      "id": "audio_chime_exito",
+      "name": "Campana de Éxito",
+      "type": "audio",
+      "category": "sfx",
+      "file": "audio/chime_exito.ogg",
+      "description": "Efecto de sonido de campanada brillante y logro",
+      "license": "CC0"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200">
+  <defs>
+    <linearGradient id="nuevoBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E676"/>
+      <stop offset="100%" stop-color="#00A86B"/>
+    </linearGradient>
+    <filter id="capsuleShadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <g filter="url(#capsuleShadow)">
+    <rect x="25" y="40" width="350" height="120" rx="60" fill="url(#nuevoBg)"/>
+    <rect x="33" y="48" width="334" height="104" rx="52" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-opacity="0.75"/>
+    <!-- Sparkle icons -->
+    <path d="M 75,70 Q 75,90 60,90 Q 75,90 75,110 Q 75,90 90,90 Q 75,90 75,70 Z" fill="#FFFFFF"/>
+    <path d="M 325,100 Q 325,112 315,112 Q 325,112 325,124 Q 325,112 335,112 Q 325,112 325,100 Z" fill="#FFE600"/>
+    <text x="200" y="122" text-anchor="middle" font-family="'Inter', 'Arial Black', sans-serif" font-weight="900" font-size="56" fill="#FFFFFF" letter-spacing="6">NUEVO</text>
+  </g>
+</svg>

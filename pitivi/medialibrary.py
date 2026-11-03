@@ -334,10 +334,11 @@ class AssetThumbnail(GObject.Object, Loggable):
             List[GdkPixbuf.Pixbuf]: The small thumbnail and the large thumbnail
             to be decorated.
         """
+        info = self.__asset.get_info()
         video_streams = [
             stream_info
-            for stream_info in self.__asset.get_info().get_stream_list()
-            if isinstance(stream_info, GstPbutils.DiscovererVideoInfo)]
+            for stream_info in info.get_stream_list()
+            if isinstance(stream_info, GstPbutils.DiscovererVideoInfo)] if info else []
         self.card_thumb = None
         if video_streams:
             # Check if the files have thumbnails in the user's cache directory.
@@ -486,7 +487,7 @@ class AssetThumbnail(GObject.Object, Loggable):
         elif self.proxy_manager.is_hq_proxy(asset) and target_is_valid:
             # The asset is a HQ proxy.
             self.state = self.PROXIED
-        elif not self.proxy_manager.is_proxy_asset(asset) and asset.proxying_error:
+        elif not self.proxy_manager.is_proxy_asset(asset) and getattr(asset, "proxying_error", None):
             self.state = self.ASSET_PROXYING_ERROR
         elif self.proxy_manager.is_asset_queued(asset):
             self.state = self.IN_PROGRESS
@@ -1094,17 +1095,20 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
 
     def _flush_pending_assets(self):
         self.debug("Flushing %d pending model rows", len(self._pending_assets))
-        for asset in self._pending_assets:
-            thumb_decorator = AssetThumbnail(asset, self.app.proxy_manager)
-            item = AssetStoreItem(asset, thumb_decorator)
-
-            asset.connect("notify-meta", self.asset_meta_changed_cb)
-            self.witnessed_tags.update(item.tags)
-            self.store.insert_sorted(item, AssetStoreItem.compare_alphabetical, None)
-
-            thumb_decorator.connect("thumb-updated", self.__thumb_updated_cb, asset)
-
+        pending = list(self._pending_assets)
         del self._pending_assets[:]
+        for asset in pending:
+            try:
+                thumb_decorator = AssetThumbnail(asset, self.app.proxy_manager)
+                item = AssetStoreItem(asset, thumb_decorator)
+
+                asset.connect("notify-meta", self.asset_meta_changed_cb)
+                self.witnessed_tags.update(item.tags)
+                self.store.insert_sorted(item, AssetStoreItem.compare_alphabetical, None)
+
+                thumb_decorator.connect("thumb-updated", self.__thumb_updated_cb, asset)
+            except Exception as e:
+                self.error("Failed adding asset %s: %s", getattr(getattr(asset, "props", None), "id", asset), e)
 
     def asset_meta_changed_cb(self, asset, meta_key, meta_value):
         if meta_key != "pitivi::tags":
@@ -1146,7 +1150,7 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         proxying_files = []
         for item in self.store:
             item.infotext = beautify_asset(item.asset)
-            if not item.asset.ready:
+            if not getattr(item.asset, "ready", True):
                 proxying_files.append(item.asset)
                 if item.thumb_decorator.state != AssetThumbnail.IN_PROGRESS:
                     item.thumb_decorator.refresh()
@@ -1206,14 +1210,15 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
 
     def _asset_added_cb(self, unused_project, asset):
         """Checks whether the asset added to the project should be shown."""
-        self._last_imported_uris.add(asset.props.id)
+        if hasattr(asset, "props") and hasattr(asset.props, "id"):
+            self._last_imported_uris.add(asset.props.id)
 
         for item in self.store:
             if asset == item.asset:
                 self.info("Asset %s already in!", asset.props.id)
                 return
 
-        if isinstance(asset, GES.UriClipAsset) and not asset.error:
+        if isinstance(asset, GES.UriClipAsset) and not getattr(asset, "error", None):
             self.debug("Asset %s added: %s", asset, asset.props.id)
             asset.connect("notify::proxy", self.__asset_proxied_cb)
             asset.connect("notify::proxy-target", self.__asset_proxying_cb)
@@ -1644,8 +1649,8 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
                       if self.app.proxy_manager.is_hq_proxy(asset)]
         scaled_proxies = [asset.get_proxy_target() for asset in assets
                           if self.app.proxy_manager.is_scaled_proxy(asset)]
-        in_progress = [asset.creation_progress for asset in assets
-                       if asset.creation_progress < 100]
+        in_progress = [getattr(asset, "creation_progress", 100) for asset in assets
+                       if getattr(asset, "creation_progress", 100) < 100]
 
         if hq_proxies:
             action = Gio.SimpleAction.new("unproxy-asset", None)

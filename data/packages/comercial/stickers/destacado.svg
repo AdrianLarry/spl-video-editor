@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="starGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF080"/>
+      <stop offset="50%" stop-color="#FFB703"/>
+      <stop offset="100%" stop-color="#FB8500"/>
+    </linearGradient>
+    <filter id="starShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <g filter="url(#starShadow)">
+    <!-- Star -->
+    <polygon points="200,25 240,140 365,140 265,215 305,335 200,260 95,335 135,215 35,140 160,140" fill="url(#starGold)"/>
+    <!-- Ribbon banner -->
+    <path d="M 60,225 L 340,225 L 320,290 L 80,290 Z" fill="#023047"/>
+    <path d="M 60,225 L 340,225 L 320,290 L 80,290 Z" fill="none" stroke="#FFB703" stroke-width="3"/>
+    <text x="200" y="270" text-anchor="middle" font-family="'Inter', 'Arial Black', sans-serif" font-weight="900" font-size="32" fill="#FFFFFF" letter-spacing="3">DESTACADO</text>
+  </g>
+</svg>

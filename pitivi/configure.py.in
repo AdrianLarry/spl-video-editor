@@ -97,3 +97,20 @@ def get_user_plugins_dir():
     user_plugin_dir = os.path.join(user_data_dir, 'pitivi', 'plugins')
     os.makedirs(user_plugin_dir, exist_ok=True)
     return user_plugin_dir
+
+
+def get_packages_dir():
+    """Returns our directory with official bundled resource packages."""
+    dev_dir = os.path.join(_get_root_dir(), "data", "packages")
+    if os.path.isdir(dev_dir):
+        return dev_dir
+    return os.path.join(get_data_dir(), 'packages')
+
+
+def get_user_packages_dir():
+    """Returns our directory with user-installed resource packages."""
+    user_data_dir = GLib.get_user_data_dir()
+    user_packages_dir = os.path.join(user_data_dir, 'pitivi', 'packages')
+    os.makedirs(user_packages_dir, exist_ok=True)
+    return user_packages_dir
+

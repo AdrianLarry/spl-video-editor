@@ -1028,9 +1028,10 @@ def beautify_asset(asset):
     if duration:
         res.append(_("<b>Duration:</b> %s") % duration)
 
-    if asset.creation_progress < 100:
+    creation_progress = getattr(asset, "creation_progress", 100)
+    if creation_progress < 100:
         res.append(_("<b>Proxy creation progress:</b> %d%%") %
-                   asset.creation_progress)
+                   creation_progress)
 
     return "\n".join(res)
 

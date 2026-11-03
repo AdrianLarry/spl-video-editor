@@ -30,6 +30,7 @@ from gi.repository import Pango
 
 from pitivi.clip_properties.overlay_ui import ShapeMenuButton
 from pitivi.clip_properties.particles_ui import ParticleMenuButton
+from pitivi.clip_properties.stickers_ui import StickerMenuButton
 from pitivi.clipproperties import ClipProperties
 from pitivi.configure import APPNAME
 from pitivi.configure import get_ui_dir
@@ -50,6 +51,7 @@ from pitivi.timeline.transitions import TransitionPropertiesWidget
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import path_from_uri
 from pitivi.utils.misc import with_build_label
+from pitivi.utils.resource_packages import PackageManager
 from pitivi.utils.ui import beautify_time_delta
 from pitivi.utils.ui import EDITOR_PERSPECTIVE_CSS
 from pitivi.utils.ui import info_name
@@ -238,10 +240,16 @@ class EditorPerspective(Perspective, Loggable):
         # SPL: procedural particle effect layers (snow, confetti, sparkles, smoke).
         self.add_particle_button = ParticleMenuButton(self.__add_particle_cb)
         self.add_particle_button.set_sensitive(False)
+        # SPL: stickers and badges from resource packages.
+        self.package_manager = PackageManager()
+        self.package_manager.load_packages()
+        self.add_sticker_button = StickerMenuButton(self.__add_sticker_cb, self.package_manager, self.__add_audio_cb)
+        self.add_sticker_button.set_sensitive(False)
         add_box = Gtk.Box(spacing=PADDING)
         add_box.pack_start(self.add_text_button, False, False, 0)
         add_box.pack_start(self.add_shape_button, False, False, 0)
         add_box.pack_start(self.add_particle_button, False, False, 0)
+        add_box.pack_start(self.add_sticker_button, False, False, 0)
         self.files_panel = self.__create_side_panel(
             _("Files"), "view-grid-symbolic", add_box, self.main_tabs)
         self.mainhpaned.pack1(self.files_panel, resize=False, shrink=False)
@@ -612,6 +620,16 @@ class EditorPerspective(Perspective, Loggable):
         self.context_tabs.set_current_page(0)
         self.clipconfig.create_particle_clip(effect_name)
 
+    def __add_sticker_cb(self, sticker_item):
+        self.expand_properties()
+        self.context_tabs.set_current_page(0)
+        self.clipconfig.create_sticker_clip(sticker_item)
+
+    def __add_audio_cb(self, audio_item):
+        self.expand_properties()
+        self.context_tabs.set_current_page(0)
+        self.clipconfig.create_audio_clip(audio_item)
+
     def switch_context_tab(self, ges_clip):
         """Activates the appropriate tab on the second set of tabs.
 
@@ -899,6 +917,7 @@ class EditorPerspective(Perspective, Loggable):
         self.add_text_button.set_sensitive(True)
         self.add_shape_button.set_sensitive(True)
         self.add_particle_button.set_sensitive(True)
+        self.add_sticker_button.set_sensitive(True)
         self.timeline_ui.set_project(project)
 
         # When creating a blank project there's no project URI yet.

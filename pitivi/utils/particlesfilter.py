@@ -133,6 +133,9 @@ class ParticlesFilter(GstBase.BaseTransform):
             surface = cairo.ImageSurface.create_for_data(
                 mapinfo.data, cairo.FORMAT_ARGB32, width, height, stride)
             cr = cairo.Context(surface)
+            cr.set_operator(cairo.OPERATOR_CLEAR)
+            cr.paint()
+            cr.set_operator(cairo.OPERATOR_OVER)
             render_particles(cr, self.effect, t, width, height,
                              self.amount, self.speed, self.size, self.opacity)
             surface.flush()

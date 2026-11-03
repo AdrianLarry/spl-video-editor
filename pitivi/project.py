@@ -1469,6 +1469,17 @@ class Project(Loggable, GES.Project):
 
     def do_asset_added(self, asset):
         """Handles `GES.Project::asset-added` emitted by self."""
+        if not hasattr(asset, "creation_progress"):
+            asset.creation_progress = 100
+        if not hasattr(asset, "error"):
+            asset.error = None
+        if not hasattr(asset, "ready"):
+            asset.ready = True
+        if not hasattr(asset, "force_proxying"):
+            asset.force_proxying = False
+        if not hasattr(asset, "proxying_error"):
+            asset.proxying_error = None
+
         self._maybe_init_settings_from_asset(asset)
         if asset and not GObject.type_is_a(asset.get_extractable_type(),
                                            GES.UriClip):
