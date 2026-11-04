@@ -701,11 +701,21 @@ class Pipeline(GES.Pipeline, SimplePipeline):
 
     def __preview_size_allocate_cb(self, widget, allocation, size):
         frame_width, frame_height = 0, 0
-        for track in self.props.timeline.get_tracks() if self.props.timeline else []:
-            caps = track.get_restriction_caps() if track.props.track_type == GES.TrackType.VIDEO else None
-            if caps:
-                frame_width = caps.get_structure(0).get_int("width")[1]
-                frame_height = caps.get_structure(0).get_int("height")[1]
+        pm = getattr(self.app, "project_manager", None)
+        project = pm.current_project if pm else None
+        if project and getattr(project, "videowidth", 0) and getattr(project, "videoheight", 0):
+            frame_width = project.videowidth
+            frame_height = project.videoheight
+        else:
+            for track in self.props.timeline.get_tracks() if self.props.timeline else []:
+                if track.props.track_type == GES.TrackType.VIDEO:
+                    try:
+                        caps = track.get_restriction_caps()
+                        if caps:
+                            frame_width = caps.get_structure(0).get_int("width")[1]
+                            frame_height = caps.get_structure(0).get_int("height")[1]
+                    except Exception:
+                        pass
         if not frame_width or not frame_height:
             return
         scale_factor = widget.get_scale_factor()

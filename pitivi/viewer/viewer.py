@@ -896,7 +896,8 @@ class ViewerContainer(Gtk.Box, Loggable):
         """Switches back to the project pipeline following a clip trimming."""
         if not self.trim_pipeline:
             return
-        self.target.switch_widget(self.overlay_stack)
+        if self.overlay_stack:
+            self.target.switch_widget(self.overlay_stack)
         self.trim_pipeline = None
 
     def _preparing_cb(self, unused_pipeline, preparing):
@@ -911,18 +912,23 @@ class ViewerContainer(Gtk.Box, Loggable):
             self.playpause_button.set_pause()
             self.app.simple_inhibit(ViewerContainer.INHIBIT_REASON,
                                     Gtk.ApplicationInhibitFlags.IDLE)
-            self.overlay_stack.hide_overlays()
+            if self.overlay_stack:
+                self.overlay_stack.hide_overlays()
         else:
             if state == Gst.State.PAUSED:
                 if old_state != Gst.State.PAUSED:
                     st = Gst.Structure.new_empty("pause")
                     if old_state == Gst.State.PLAYING:
-                        position_seconds = pipeline.get_position() / Gst.SECOND
-                        st.set_value("playback_time", position_seconds)
+                        try:
+                            position_seconds = pipeline.get_position() / Gst.SECOND
+                            st.set_value("playback_time", position_seconds)
+                        except Exception:
+                            pass
                     self.app.write_action(st)
 
                 self.playpause_button.set_play()
-            self.overlay_stack.show_overlays()
+            if self.overlay_stack:
+                self.overlay_stack.show_overlays()
             self.app.simple_uninhibit(ViewerContainer.INHIBIT_REASON)
 
 
@@ -958,9 +964,15 @@ class ViewerWidget(Gtk.AspectFrame, Loggable):
 
     def switch_widget(self, widget):
         child = self.get_child()
+        if child == widget:
+            return
         if child:
             self.remove(child)
+        parent = widget.get_parent()
+        if parent:
+            parent.remove(widget)
         self.add(widget)
+        widget.show()
 
     def update_aspect_ratio(self, project):
         """Forces the DAR of the project on the child widget."""
