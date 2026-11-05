@@ -160,6 +160,8 @@ class ZoomFilter(GstBase.BaseTransform):
     def do_transform_meta(self, outbuf, meta, inbuf):
         # GES keeps the alpha and the position of the clip in a meta of the
         # buffers, the fades and the transitions need it.
+        if meta.info.api == GstVideo.video_meta_api_get_type():
+            return False
         return True
 
     def do_before_transform(self, buffer):
