@@ -46,6 +46,7 @@ from pitivi.timeline.previewers import ThumbnailCache
 from pitivi.undo.project import AssetAddedIntention
 from pitivi.undo.project import AssetProxiedIntention
 from pitivi.utils.blurfill import restore_blur_fills
+from pitivi.utils.layeractive import watch_timeline
 from pitivi.utils.motion import restore_motion
 from pitivi.utils.formats import get_closest_format
 from pitivi.utils.formats import SIZES
@@ -1559,6 +1560,7 @@ class Project(Loggable, GES.Project):
         restore_blur_fills(self.ges_timeline)
         restore_motion(self.ges_timeline)
         restore_overlays(self.ges_timeline)
+        watch_timeline(self.ges_timeline)
 
     def __keep_track_video_size(self):
         """Makes the render profile use the size of the frame of the video track.
