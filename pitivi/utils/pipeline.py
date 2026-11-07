@@ -57,6 +57,10 @@ AHEAD_MAX_BYTES = 256 * 1024 * 1024
 AHEAD_EDGE_MARGIN = 150 * Gst.MSECOND
 AHEAD_POLL_MS = 20
 AHEAD_MAX_WAIT = 4
+# Playing waits as well when the frames prepared ahead run out, until this
+# much is prepared or the clip edges close ahead are.
+AHEAD_LOW = 80 * Gst.MSECOND
+AHEAD_RESUME = 600 * Gst.MSECOND
 
 
 class PipelineError(Exception):
@@ -577,6 +581,8 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         self._ahead_track = None
         # Where the last seek goes, the position is known once it is done.
         self._ahead_from = None
+        # Paused because the frames prepared ahead ran out while playing.
+        self.rebuffering = False
 
         # Keep the device format stable when video audio joins or leaves
         # the music mix. Renegotiating the sink interrupts its audio clock
@@ -747,6 +753,42 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         self.__stop_waiting_ahead()
         SimplePipeline.pause(self)
 
+    def _position_listener_cb(self):
+        result = SimplePipeline._position_listener_cb(self)
+        self.__check_ahead_running_out()
+        return result
+
+    def __check_ahead_running_out(self):
+        """Waits when the frames prepared ahead of the viewer run out.
+
+        Building the sources at a clip edge can take longer than the frames
+        prepared ahead last, with a video under photos with effects. The
+        frames came late and the viewer dropped them: the transitions were
+        not seen. Playing waits instead, the playhead with the viewer, and
+        goes on when the frames are ready.
+        """
+        if self._ahead_wait_id or not self._ahead_end or self._busy_async or self.rendering():
+            return
+        if self.get_simple_state() != Gst.State.PLAYING:
+            return
+        position = self._last_position
+        if position >= self.get_last_frame_position():
+            return
+        if self._ahead_end - position > AHEAD_LOW:
+            return
+        self.info("Waiting, the frames prepared ahead run out at %s", Gst.TIME_ARGS(position))
+        self.rebuffering = True
+        SimplePipeline.pause(self)
+        self._ahead_wait_id = GLib.timeout_add(AHEAD_POLL_MS, self.__wait_ahead_cb, time.monotonic())
+        self.emit("preparing", True)
+
+    def __ahead_short(self):
+        """Returns whether less than AHEAD_RESUME is prepared, while waiting."""
+        if not self.rebuffering or self._ahead_end is None:
+            return False
+        position = self._last_position
+        return self._ahead_end < min(position + AHEAD_RESUME, self.get_last_frame_position())
+
     def seek_paused(self, position):
         """Seeks and stops playing, as a click on the timeline does.
 
@@ -762,6 +804,10 @@ class Pipeline(GES.Pipeline, SimplePipeline):
             GLib.source_remove(self._ahead_wait_id)
             self._ahead_wait_id = 0
             self.emit("preparing", False)
+        if self.rebuffering:
+            # Stopped while waiting: the widgets show it is paused.
+            self.rebuffering = False
+            self.emit("state-change", Gst.State.PAUSED, Gst.State.PLAYING)
 
     def __must_prepare_ahead(self):
         """Returns whether a clip edge close ahead is not prepared yet.
@@ -790,9 +836,10 @@ class Pipeline(GES.Pipeline, SimplePipeline):
 
     def __wait_ahead_cb(self, started):
         if time.monotonic() - started < AHEAD_MAX_WAIT and \
-                (self._busy_async or self.__must_prepare_ahead()):
+                (self._busy_async or self.__must_prepare_ahead() or self.__ahead_short()):
             return True
         self._ahead_wait_id = 0
+        self.rebuffering = False
         self.emit("preparing", False)
         SimplePipeline.toggle_playback(self)
         return False

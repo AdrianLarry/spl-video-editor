@@ -906,6 +906,9 @@ class ViewerContainer(Gtk.Box, Loggable):
 
     def _pipeline_state_changed_cb(self, pipeline, state, old_state):
         """Updates the widgets when the playback starts or stops."""
+        if state == Gst.State.PAUSED and getattr(pipeline, "rebuffering", False):
+            # Waiting for the frames prepared ahead, it goes on playing.
+            return
         if state == Gst.State.PLAYING:
             st = Gst.Structure.new_empty("play")
             self.app.write_action(st)
