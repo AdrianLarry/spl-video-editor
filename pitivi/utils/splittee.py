@@ -25,6 +25,13 @@ from gi.repository import GObject
 from gi.repository import Gst
 
 ELEMENT_NAME = "splsplit"
+CAPS = Gst.Caps.from_string("video/x-raw, format=(string)AYUV")
+
+
+def _filtered(filter_caps):
+    if not filter_caps:
+        return CAPS.copy()
+    return filter_caps.intersect_full(CAPS, Gst.CapsIntersectMode.FIRST)
 
 
 class SplitTee(Gst.Element):
@@ -63,13 +70,12 @@ class SplitTee(Gst.Element):
 
     def __sink_query(self, pad, parent, query):
         if query.type == Gst.QueryType.CAPS:
-            # The caps both branches accept.
-            caps = query.parse_caps()
-            result = caps if caps else Gst.Caps.new_any()
-            for srcpad in self.srcpads_:
-                peer_caps = srcpad.peer_query_caps(caps)
-                result = result.intersect(peer_caps)
-            query.set_caps_result(result)
+            # Both branches take AYUV, the gaussianblur of the background
+            # needs it. Asking the branches went through all the effects
+            # and the mixer below them twice, for every query: it took most
+            # of the second NLE needs to build a stack with a photo with the
+            # blurred fill, and froze the viewer at the transitions.
+            query.set_caps_result(_filtered(query.parse_caps()))
             return True
         if query.type == Gst.QueryType.ALLOCATION:
             # Each branch allocates its own buffers.
@@ -78,8 +84,8 @@ class SplitTee(Gst.Element):
 
     def __src_query(self, pad, parent, query):
         if query.type == Gst.QueryType.CAPS:
-            # The caps asked downstream are the ones of upstream.
-            query.set_caps_result(self.sinkpad.peer_query_caps(query.parse_caps()))
+            # The branches get what the sink pad takes.
+            query.set_caps_result(_filtered(query.parse_caps()))
             return True
         return pad.query_default(parent, query)
 
