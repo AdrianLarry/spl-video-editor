@@ -22,6 +22,8 @@ from gi.repository import GLib
 from gi.repository import GObject
 from gi.repository import Gtk
 
+from pitivi.configure import APP_ID
+
 
 INTERACTIVE_INTRO_CSS = """
 @keyframes intro-highlight {
@@ -94,7 +96,7 @@ class InteractiveIntro(GObject.Object):
     def __create_intro_button(self):
         """Creates a button for controlling the intro."""
         button = Gtk.Button.new_from_icon_name(
-            "org.pitivi.Pitivi-symbolic", Gtk.IconSize.LARGE_TOOLBAR)
+            APP_ID + "-symbolic", Gtk.IconSize.LARGE_TOOLBAR)
         button.set_always_show_image(True)
         button.props.no_show_all = True
         button.props.relief = Gtk.ReliefStyle.NONE
@@ -209,7 +211,7 @@ class InteractiveIntro(GObject.Object):
         self.control_popover.popdown()
         editor = self.app.gui.editor
         self.tips = [
-            (self.intro_button, _("Welcome to Pitivi!"),
+            (self.intro_button, _("Welcome to Vitrina!"),
              Gtk.PositionType.BOTTOM, False, 4000),
             (editor.medialibrary.scrollwin, _("Drag files here to import them"),
              Gtk.PositionType.RIGHT, True, 5000),

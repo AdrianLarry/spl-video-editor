@@ -23,6 +23,7 @@ from gi.repository import Gio
 from gi.repository import GLib
 from gi.repository import Gtk
 
+from pitivi.configure import APP_ID
 from pitivi.configure import get_pixmap_dir
 from pitivi.dialogs.about import AboutDialog
 from pitivi.dialogs.prefs import PreferencesDialog
@@ -128,7 +129,7 @@ class MainWindow(Gtk.ApplicationWindow, Loggable):
         """Sets up the various perspectives's UI."""
         self.log("Setting up the perspectives.")
 
-        self.set_icon_name("pitivi")
+        self.set_icon_name(APP_ID)
         self._create_actions()
 
         self.greeter.setup_ui()

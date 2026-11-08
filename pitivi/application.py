@@ -27,6 +27,7 @@ from gi.repository import GObject
 from gi.repository import Gst
 from gi.repository import Gtk
 
+from pitivi.configure import APP_ID
 from pitivi.configure import RELEASES_URL
 from pitivi.configure import VERSION
 from pitivi.effects import EffectsManager
@@ -69,7 +70,7 @@ class Pitivi(Gtk.Application, Loggable):
 
     def __init__(self):
         Gtk.Application.__init__(self,
-                                 application_id="org.pitivi.Pitivi",
+                                 application_id=APP_ID,
                                  flags=Gio.ApplicationFlags.NON_UNIQUE | Gio.ApplicationFlags.HANDLES_OPEN)
         Loggable.__init__(self)
 
@@ -309,7 +310,10 @@ class Pitivi(Gtk.Application, Loggable):
 
     def _check_version(self):
         """Checks online for new versions of the app."""
-        self.info("Requesting version information async")
+        # SPL: Vitrina works offline, and the releases online are the ones
+        # of Pitivi.
+        return
+        self.info("Requesting version information async")  # pylint: disable=unreachable
         giofile = Gio.File.new_for_uri(RELEASES_URL)
         giofile.load_contents_async(None, self._version_info_received_cb, None)
 

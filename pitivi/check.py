@@ -115,7 +115,7 @@ class Dependency:
             message = _("- %s not found on the system") % self.modulename
         else:
             # Translators: %s is a Python module name or another OS component
-            message = _("- %s version %s is installed but Pitivi requires at least version %s") % (
+            message = _("- %s version %s is installed but Vitrina requires at least version %s") % (
                 self.modulename, self.version_installed, self.version_required)
 
         if self.additional_message is not None:
@@ -193,7 +193,7 @@ class GstPluginDependency(Dependency):
             message = _("- %s GStreamer plug-in not found on the system") % self.modulename
         else:
             # Translators: %s is a Python module name or another OS component
-            message = _("- %s Gstreamer plug-in version %s is installed but Pitivi requires at least version %s") % (
+            message = _("- %s Gstreamer plug-in version %s is installed but Vitrina requires at least version %s") % (
                 self.modulename, self.version_installed, self.version_required)
 
         if self.additional_message is not None:

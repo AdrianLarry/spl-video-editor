@@ -27,6 +27,7 @@ from gi.repository import Gst
 from gi.repository import Gtk
 from gi.repository import Pango
 
+from pitivi.configure import APP_ID
 from pitivi.settings import GlobalSettings
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import uri_is_valid
@@ -155,7 +156,7 @@ class PreviewWidget(Gtk.Grid, Loggable):
         vbox = Gtk.Box()
         vbox.set_orientation(Gtk.Orientation.VERTICAL)
         vbox.set_spacing(SPACING)
-        self.l_error = Gtk.Label(label=_("Pitivi can not preview this file."))
+        self.l_error = Gtk.Label(label=_("Vitrina can not preview this file."))
         self.b_details = Gtk.Button.new_with_label(_("More info"))
         self.b_details.connect('clicked', self._on_b_details_clicked_cb)
         vbox.pack_start(self.l_error, True, True, 0)
@@ -457,7 +458,7 @@ class PreviewWidget(Gtk.Grid, Loggable):
                                    message_type=Gtk.MessageType.WARNING,
                                    buttons=Gtk.ButtonsType.OK,
                                    text=self.error_message)
-        dialog.set_icon_name("pitivi")
+        dialog.set_icon_name(APP_ID)
         dialog.set_title(_("Error while analyzing a file"))
         dialog.run()
         dialog.destroy()

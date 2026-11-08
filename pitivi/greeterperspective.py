@@ -29,6 +29,7 @@ from gi.repository import GLib
 from gi.repository import Gtk
 
 from pitivi.check import MISSING_SOFT_DEPS
+from pitivi.configure import APP_ID
 from pitivi.configure import get_ui_dir
 from pitivi.dialogs.browseprojects import BrowseProjectsDialog
 from pitivi.perspective import Perspective
@@ -176,7 +177,7 @@ class GreeterPerspective(Perspective):
 
         logo = builder.get_object("logo")
         icon_theme = Gtk.IconTheme.get_default()
-        pixbuf = icon_theme.load_icon("org.pitivi.Pitivi", 256, Gtk.IconLookupFlags.FORCE_SIZE)
+        pixbuf = icon_theme.load_icon(APP_ID, 256, Gtk.IconLookupFlags.FORCE_SIZE)
         logo.set_from_pixbuf(pixbuf)
 
         self.toplevel_widget = builder.get_object("toplevel_vbox")
@@ -335,7 +336,7 @@ class GreeterPerspective(Perspective):
             if projects:
                 self.headerbar.set_title(with_build_label(_("Select a Project")))
             else:
-                self.headerbar.set_title(with_build_label(_("Pitivi")))
+                self.headerbar.set_title(with_build_label(_("Vitrina")))
 
     def _create_actions(self):
         group = Gio.SimpleActionGroup()
@@ -422,7 +423,7 @@ class GreeterPerspective(Perspective):
 
         # increment counter, create infobar and show info
         self.app.settings.displayCounter += 1
-        text = _("Pitivi %s is available.") % latest_version
+        text = _("Vitrina %s is available.") % latest_version
         label = Gtk.Label(label=text)
         self.__infobar.get_content_area().add(label)
         self.__infobar.set_message_type(Gtk.MessageType.INFO)
@@ -499,7 +500,7 @@ class GreeterPerspective(Perspective):
         popover = Gtk.Popover()
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin=PADDING * 3)
 
-        label = Gtk.Label(_("To enable additional features, please install the following packages and restart Pitivi:"))
+        label = Gtk.Label(_("To enable additional features, please install the following packages and restart Vitrina:"))
         label.props.halign = Gtk.Align.START
         label.props.wrap = True
         label.props.xalign = 0

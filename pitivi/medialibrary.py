@@ -41,6 +41,7 @@ from gi.repository import GstPbutils
 from gi.repository import Gtk
 from gi.repository import Pango
 
+from pitivi.configure import APP_ID
 from pitivi.configure import get_pixmap_dir
 from pitivi.configure import get_ui_dir
 from pitivi.dialogs.clipmediaprops import ClipMediaPropsDialog
@@ -1034,7 +1035,7 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         dialog = Gtk.FileChooserDialog()
         dialog.set_title(_("Select One or More Files"))
         dialog.set_action(Gtk.FileChooserAction.OPEN)
-        dialog.set_icon_name("pitivi")
+        dialog.set_icon_name(APP_ID)
         dialog.add_buttons(_("Cancel"), Gtk.ResponseType.CANCEL,
                            _("Add"), Gtk.ResponseType.OK)
         dialog.props.extra_widget = FileChooserExtraWidget(self.app)
@@ -1392,8 +1393,8 @@ class MediaLibraryWidget(Gtk.Box, Loggable):
         title = ngettext("Error while analyzing a file",
                          "Error while analyzing files",
                          len(self._errors))
-        headline = ngettext("The following file can not be used with Pitivi.",
-                            "The following files can not be used with Pitivi.",
+        headline = ngettext("The following file can not be used with Vitrina.",
+                            "The following files can not be used with Vitrina.",
                             len(self._errors))
         error_dialogbox = FileListErrorDialog(title, headline)
         error_dialogbox.connect("close", self._error_dialog_box_close_cb)

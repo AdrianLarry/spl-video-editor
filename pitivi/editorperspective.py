@@ -821,7 +821,7 @@ class EditorPerspective(Perspective, Loggable):
 
         group.add_action(self.intro.intro_action)
         self.app.shortcuts.add("editor.interactive-intro", [], self.intro.intro_action,
-                               _("Quick intros to Pitivi"), group="win")
+                               _("Quick intros to Vitrina"), group="win")
 
         self.import_asset_action = Gio.SimpleAction.new("import-asset", None)
         self.import_asset_action.connect("activate", self.__import_asset_cb)
@@ -1084,7 +1084,7 @@ class EditorPerspective(Perspective, Loggable):
                 # You have to do this *after* successfully creating a blank project,
                 # or the startupwizard will still be connected to that signal too.
                 reason = _("No replacement file was provided for \"<i>%s</i>\".\n\n"
-                           "Pitivi does not currently support partial projects.") % \
+                           "Vitrina does not currently support partial projects.") % \
                     info_name(asset)
                 project_manager.emit("new-project-failed", project.uri, reason)
 

@@ -34,8 +34,8 @@ msgstr "Proyecto de vídeo Pitivi/GES"
 
 #: data/org.pitivi.Pitivi.appdata.xml.in:8 data/org.pitivi.Pitivi.desktop.in:4
 #: pitivi/greeterperspective.py:278
-msgid "Pitivi"
-msgstr "Pitivi"
+msgid "Vitrina"
+msgstr "Vitrina"
 
 #: data/org.pitivi.Pitivi.appdata.xml.in:9 data/org.pitivi.Pitivi.desktop.in:6
 msgid "Create and edit your own movies"
@@ -375,12 +375,12 @@ msgid "Remove"
 msgstr "Quitar"
 
 #: data/ui/greeter.ui:230
-msgid "Welcome to Pitivi"
-msgstr "Bienvenido/a a Pitivi"
+msgid "Welcome to Vitrina"
+msgstr "Bienvenido/a a Vitrina"
 
 #: data/ui/greeter.ui:244
-msgid "Beautiful, powerful and intuitive movie editor"
-msgstr "Un editor de vídeo bonito, potente e intuitivo"
+msgid "Short videos for your business, simple and beautiful"
+msgstr "Videos cortos para tu negocio, simples y lindos"
 
 #: data/ui/mainmenubutton.ui:21
 msgid "Save the current project under a new name or a different location"
@@ -439,16 +439,16 @@ msgid "User Manual"
 msgstr "Manual del usuario"
 
 #: data/ui/mainmenubutton.ui:193
-msgid "Start the intro to Pitivi for new users"
-msgstr "Mostrar la introducción para usuarios nuevos de Pitivi"
+msgid "Start the intro to Vitrina for new users"
+msgstr "Mostrar la introducción para usuarios nuevos de Vitrina"
 
 #: data/ui/mainmenubutton.ui:197
 msgid "Interactive Intro"
 msgstr "Introducción interactiva"
 
 #: data/ui/mainmenubutton.ui:213
-msgid "About Pitivi"
-msgstr "Acerca de Pitivi"
+msgid "About Vitrina"
+msgstr "Acerca de Vitrina"
 
 #: data/ui/medialibrary.ui:20
 msgid "Remove selected clips from the project"
@@ -528,8 +528,8 @@ msgid "Close"
 msgstr "Cerrar"
 
 #: data/ui/preferences.ui:162
-msgid "Some changes will not take effect until you restart Pitivi"
-msgstr "Algunos cambios no tendrán efecto hasta que reinicie Pitivi"
+msgid "Some changes will not take effect until you restart Vitrina"
+msgstr "Algunos cambios no tendrán efecto hasta que reinicie Vitrina"
 
 #: data/ui/projectsettings.ui:78 data/ui/renderingprogress.ui:41
 #: pitivi/dialogs/browseprojects.py:38 pitivi/dialogs/missingasset.py:46
@@ -954,9 +954,9 @@ msgstr "- %s no encontrado en el sistema"
 #. Translators: %s is a Python module name or another OS component
 #: pitivi/check.py:118
 #, python-format
-msgid "- %s version %s is installed but Pitivi requires at least version %s"
+msgid "- %s version %s is installed but Vitrina requires at least version %s"
 msgstr ""
-"- %s la versión %s está instalada, pero Pitivi necesita al menos la versión "
+"- %s la versión %s está instalada, pero Vitrina necesita al menos la versión "
 "%s"
 
 #. Translators: %s is a Python module name or another OS component
@@ -969,10 +969,10 @@ msgstr "- Complemento de GStreamer %s no encontrado en el sistema"
 #: pitivi/check.py:196
 #, python-format
 msgid ""
-"- %s Gstreamer plug-in version %s is installed but Pitivi requires at least "
+"- %s Gstreamer plug-in version %s is installed but Vitrina requires at least "
 "version %s"
 msgstr ""
-"- El complemento de GStreamer %s, versión %s está instalada, pero Pitivi "
+"- El complemento de GStreamer %s, versión %s está instalada, pero Vitrina "
 "necesita al menos la versión %s"
 
 #. Translators: %s is a Python module name or another OS component
@@ -1437,8 +1437,8 @@ msgid "Save the current project as"
 msgstr "Guardar el proyecto actual como"
 
 #: pitivi/editorperspective.py:400
-msgid "Quick intros to Pitivi"
-msgstr "Introducción rápida a Pitivi"
+msgid "Quick intros to Vitrina"
+msgstr "Introducción rápida a Vitrina"
 
 #: pitivi/editorperspective.py:516
 #, python-format
@@ -1483,11 +1483,11 @@ msgstr ""
 msgid ""
 "No replacement file was provided for \"<i>%s</i>\".\n"
 "\n"
-"Pitivi does not currently support partial projects."
+"Vitrina does not currently support partial projects."
 msgstr ""
 "No se ha proporcionado un reemplazo para «<i>%s</i>».\n"
 "\n"
-"Actualmente, Pitivi no soporta proyectos parciales."
+"Actualmente, Vitrina no soporta proyectos parciales."
 
 #: pitivi/editorperspective.py:684
 msgid "Export To..."
@@ -1600,16 +1600,16 @@ msgstr "Abrir un proyecto"
 
 #: pitivi/greeterperspective.py:365
 #, python-format
-msgid "Pitivi %s is available."
-msgstr "Pitivi %s está disponible."
+msgid "Vitrina %s is available."
+msgstr "Vitrina %s está disponible."
 
 #: pitivi/greeterperspective.py:442
 msgid ""
 "To enable additional features, please install the following packages and "
-"restart Pitivi:"
+"restart Vitrina:"
 msgstr ""
 "Para activar características adicionales instale los siguientes paquetes y "
-"reinicie Pitivi:"
+"reinicie Vitrina:"
 
 #. pylint: disable=attribute-defined-outside-init
 #: pitivi/interactiveintro.py:154
@@ -1617,8 +1617,8 @@ msgid "Start Overview"
 msgstr "Iniciar vista general"
 
 #: pitivi/interactiveintro.py:212
-msgid "Welcome to Pitivi!"
-msgstr "Bienvenido/a a Pitivi"
+msgid "Welcome to Vitrina!"
+msgstr "Bienvenido/a a Vitrina"
 
 #: pitivi/interactiveintro.py:214
 msgid "Drag files here to import them"
@@ -1675,8 +1675,8 @@ msgid "Unable to load project \"%s\""
 msgstr "No se pudo cargar el proyecto «%s»"
 
 #: pitivi/mediafilespreviewer.py:158
-msgid "Pitivi can not preview this file."
-msgstr "Pitivi no puede previsualizar este archivo."
+msgid "Vitrina can not preview this file."
+msgstr "Vitrina no puede previsualizar este archivo."
 
 #: pitivi/mediafilespreviewer.py:159
 msgid "More info"
@@ -1784,10 +1784,10 @@ msgstr ""
 "archivo «%s»"
 
 #: pitivi/medialibrary.py:1219
-msgid "The following file can not be used with Pitivi."
-msgid_plural "The following files can not be used with Pitivi."
-msgstr[0] "El siguiente archivo no se puede usar con Pitivi."
-msgstr[1] "Los siguientes archivos no se pueden usar con Pitivi."
+msgid "The following file can not be used with Vitrina."
+msgid_plural "The following files can not be used with Vitrina."
+msgstr[0] "El siguiente archivo no se puede usar con Vitrina."
+msgstr[1] "Los siguientes archivos no se pueden usar con Vitrina."
 
 #: pitivi/medialibrary.py:1249
 msgid "Tag as:"
@@ -1867,33 +1867,28 @@ msgstr "Algo no ha funcionado correctamente."
 
 #: pitivi/project.py:181
 msgid ""
-"Pitivi detected a serious backend problem and could not recover from it, "
-"even after multiple tries. The only thing that can be done at this point is "
-"to <b>restart Pitivi</b>.\n"
+"Vitrina found a serious problem playing the video and could not recover from "
+"it, even after several tries. <b>Restart Vitrina</b> to go on editing.\n"
 "\n"
-"This is a rare and severe kind of bug. Please see our <a href=\"http://"
-"developer.pitivi.org/Bug_reporting.html\">bug reporting guide</a> and take "
-"the time to report it! We will be very happy to fix this bug and make sure "
-"it does not occur again in future versions.\n"
+"Before closing it, you can save the changes to the project or as a separate "
+"project.\n"
 "\n"
-"Before closing Pitivi, you can save changes to the existing project file or "
-"as a separate project file."
+"To help fixing it, share the log of this session, the file ultima-sesion.log "
+"in the folder estado of Vitrina."
 msgstr ""
-"Pitivi ha detectado un error grave del «backend» y no se pudo recuperar tras "
-"varios intentos. Lo único que se puede hacer en este punto es \n"
-"<b>reiniciar Pitivi</b>.\n"
+"Vitrina encontró un problema grave al reproducir el video y no pudo "
+"recuperarse, aun después de varios intentos. <b>Reiniciá Vitrina</b> para "
+"seguir editando.\n"
 "\n"
-"Esto es un tipo de error muy raro y grave. Consulte la \n"
-"<a href=\"http://developer.pitivi.org/Bug_reporting.html\">guía de informes "
-"de error</a> e informe de él. Nos alegrará mucho arreglarlo y asegurarnos de "
-"que nos reproduce en versiones futuras.\n"
+"Antes de cerrarla, podés guardar los cambios en el proyecto o como un "
+"proyecto aparte.\n"
 "\n"
-"Antes de cerrar Pitivi puede guardar los cambios en el archivo del proyecto "
-"existente o como un archivo de proyecto separado."
+"Para ayudar a corregirlo, compartí el registro de esta sesión: el archivo "
+"ultima-sesion.log de la carpeta estado de Vitrina."
 
 #: pitivi/project.py:196
-msgid "Close Pitivi"
-msgstr "Cerrar Pitivi"
+msgid "Close Vitrina"
+msgstr "Cerrar Vitrina"
 
 #: pitivi/project.py:266
 msgid ""
@@ -1936,8 +1931,8 @@ msgid "project"
 msgstr "proyecto"
 
 #: pitivi/project.py:701
-msgid "Pitivi encoding profile"
-msgstr "Perfil de codificación de Pitivi"
+msgid "Vitrina encoding profile"
+msgstr "Perfil de codificación de Vitrina"
 
 #: pitivi/render.py:115
 msgid "YouTube"
@@ -2463,13 +2458,13 @@ msgstr ""
 #: pitivi/utils/misc.py:290
 msgid ""
 "The system's locale that you are using is not UTF-8 capable. Unicode support "
-"is required for Python3 software like Pitivi. Please correct your system "
-"settings; if you try to use Pitivi with a broken locale, weird bugs will "
+"is required for Python3 software like Vitrina. Please correct your system "
+"settings; if you try to use Vitrina with a broken locale, weird bugs will "
 "happen."
 msgstr ""
 "La condifuración regional del sistema que está usando no soporta UTF-8. Se "
-"requiere soporte de Unicode para el software de Python3, como Pitivi. "
-"Corrija la configuración de su sistema; si intenta usar Pitivi con una "
+"requiere soporte de Unicode para el software de Python3, como Vitrina. "
+"Corrija la configuración de su sistema; si intenta usar Vitrina con una "
 "configuración regional incorrecta aparecerán errores extraños."
 
 #: pitivi/utils/misc.py:300
@@ -5258,3 +5253,19 @@ msgstr "Abrir carpeta de paquetes"
 
 msgid "Open ~/.local/share/pitivi/packages to add or manage packages"
 msgstr "Abrir ~/.local/share/pitivi/packages para agregar o administrar paquetes"
+
+#: pitivi/dialogs/about.py
+msgid "Version %(version)s, based on %(name)s %(based_on)s"
+msgstr "Versión %(version)s, basada en %(name)s %(based_on)s"
+
+#: pitivi/dialogs/about.py
+msgid "Based on %(name)s, the free video editor of its community."
+msgstr "Basada en %(name)s, el editor de video libre de su comunidad."
+
+#: pitivi/dialogs/about.py
+msgid "Vitrina:"
+msgstr "Vitrina:"
+
+#: pitivi/dialogs/about.py
+msgid "Pitivi, on which Vitrina is based:"
+msgstr "Pitivi, en el que se basa Vitrina:"

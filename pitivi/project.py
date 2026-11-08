@@ -37,6 +37,7 @@ from gi.repository import GstPbutils
 from gi.repository import GstVideo
 from gi.repository import Gtk
 
+from pitivi.configure import APP_ID
 from pitivi.clip_properties.overlay import restore_overlays
 from pitivi.medialibrary import AssetThumbnail
 from pitivi.render import Encoders
@@ -187,25 +188,24 @@ class ProjectManager(GObject.Object, Loggable):
         dialog = Gtk.Dialog(title=_("Sorry, something didn’t work right."),
                             transient_for=self.app.gui)
 
-        message = _("Pitivi detected a serious backend problem and could not "
-                    "recover from it, even after multiple tries. The only thing "
-                    "that can be done at this point is to <b>restart Pitivi</b>."
+        # SPL: no link to the bug tracker of Pitivi, the report goes to us
+        # with the log of the session.
+        message = _("Vitrina found a serious problem playing the video and could not "
+                    "recover from it, even after several tries. "
+                    "<b>Restart Vitrina</b> to go on editing."
                     "\n\n"
-                    "This is a rare and severe kind of bug. Please see our "
-                    "<a href=\"http://developer.pitivi.org/Bug_reporting.html\">"
-                    "bug reporting guide</a> and take the time to report it! "
-                    "We will be very happy to fix this bug and make sure it "
-                    "does not occur again in future versions."
+                    "Before closing it, you can save the changes to the project "
+                    "or as a separate project."
                     "\n\n"
-                    "Before closing Pitivi, you can save changes to the "
-                    "existing project file or as a separate project file.")
+                    "To help fixing it, share the log of this session, "
+                    "the file ultima-sesion.log in the folder estado of Vitrina.")
 
         dialog.add_buttons(_("Save as..."), 1,
                            _("Save"), 2,
-                           _("Close Pitivi"), Gtk.ResponseType.CLOSE)
+                           _("Close Vitrina"), Gtk.ResponseType.CLOSE)
 
         dialog.set_default_response(1)  # Default to "Save as"
-        dialog.set_icon_name("pitivi")
+        dialog.set_icon_name(APP_ID)
         dialog.set_modal(True)
         dialog.get_accessible().set_name("pitivi died")
 
@@ -297,7 +297,7 @@ class ProjectManager(GObject.Object, Loggable):
         ignore_backup_btn = dialog.add_button(_("Ignore backup"), Gtk.ResponseType.REJECT)
         ignore_backup_btn.get_style_context().add_class("destructive-action")
         dialog.add_button(_("Restore from backup"), Gtk.ResponseType.YES)
-        dialog.set_icon_name("pitivi")
+        dialog.set_icon_name(APP_ID)
         dialog.set_modal(True)
         dialog.set_default_response(Gtk.ResponseType.YES)
         dialog.get_accessible().set_name("restore from backup dialog")
@@ -710,7 +710,7 @@ class Project(Loggable, GES.Project):
 
         self.container_profile = \
             GstPbutils.EncodingContainerProfile.new("pitivi-profile",
-                                                    _("Pitivi encoding profile"),
+                                                    _("Vitrina encoding profile"),
                                                     Gst.Caps("video/webm"),
                                                     None)
         has_default_settings = not bool(uri) and not bool(scenario)

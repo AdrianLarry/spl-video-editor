@@ -21,9 +21,13 @@ from gi.repository import GES
 from gi.repository import Gst
 from gi.repository import Gtk
 
+from pitivi.configure import APP_ID
 from pitivi.configure import APPNAME
 from pitivi.configure import APPURL
+from pitivi.configure import BASED_ON_NAME
+from pitivi.configure import BASED_ON_URL
 from pitivi.configure import VERSION
+from pitivi.configure import VITRINA_VERSION
 
 
 class AboutDialog(Gtk.AboutDialog):
@@ -41,21 +45,25 @@ class AboutDialog(Gtk.AboutDialog):
         self.set_program_name(APPNAME)
         self.set_website(APPURL)
 
-        if app.is_latest():
-            version_str = _("Version %s") % VERSION
-        else:
-            version_str = _("Version %(cur_ver)s — %(new_ver)s is available") % \
-                {"cur_ver": VERSION,
-                 "new_ver": app.get_latest()}
+        # SPL: no online check of the versions, see Pitivi._check_version.
+        version_str = _("Version %(version)s, based on %(name)s %(based_on)s") % {
+            "version": VITRINA_VERSION, "name": BASED_ON_NAME, "based_on": VERSION}
         self.set_version(version_str)
 
         comments = ["",
                     "GES %s" % ".".join(map(str, GES.version())),
                     "GTK+ %s" % ".".join(map(str, (Gtk.MAJOR_VERSION, Gtk.MINOR_VERSION))),
                     "GStreamer %s" % ".".join(map(str, Gst.version()))]
-        self.set_comments("\n".join(comments))
+        # SPL: the credit to Pitivi, also asked by its license.
+        based_on = _("Based on %(name)s, the free video editor of its community.") % {"name": BASED_ON_NAME}
+        self.set_comments("\n".join([based_on, BASED_ON_URL] + comments))
 
-        authors = [_("Current maintainers:"),
+        authors = [_("Vitrina:"),
+                   "AdrianLarry <familystyle@outlook.es>",
+                   "",
+                   _("Pitivi, on which Vitrina is based:"),
+                   "",
+                   _("Current maintainers:"),
                    "Thibault Saunier <tsaunier@gnome.org>",
                    "Mathieu Duponchelle <mduponchelle1@gmail.com>",
                    "Alexandru Băluț <alexandru.balut@gmail.com>",
@@ -79,7 +87,7 @@ class AboutDialog(Gtk.AboutDialog):
         documenters = ["Jean-François Fortin Tam <nekohayo@gmail.com>", ]
         self.set_documenters(documenters)
         self.set_license_type(Gtk.License.LGPL_2_1)
-        self.set_logo_icon_name("org.pitivi.Pitivi")
+        self.set_logo_icon_name(APP_ID)
         self.connect("response", self.__about_response_cb)
         self.set_transient_for(app.gui)
 

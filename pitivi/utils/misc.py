@@ -33,6 +33,7 @@ from gi.repository import Gst
 from gi.repository import Gtk
 
 import pitivi.utils.loggable as log
+from pitivi.configure import APP_ID
 from pitivi.configure import APPMANUALURL_OFFLINE
 from pitivi.configure import APPMANUALURL_ONLINE
 from pitivi.utils.threads import Thread
@@ -300,15 +301,15 @@ def show_user_manual(page=None):
 
 def unicode_error_dialog():
     message = _("The system's locale that you are using is not UTF-8 capable. "
-                "Unicode support is required for Python3 software like Pitivi. "
-                "Please correct your system settings; if you try to use Pitivi "
+                "Unicode support is required for Python3 software like Vitrina. "
+                "Please correct your system settings; if you try to use Vitrina "
                 "with a broken locale, weird bugs will happen.")
     dialog = Gtk.MessageDialog(transient_for=None,
                                modal=True,
                                message_type=Gtk.MessageType.ERROR,
                                buttons=Gtk.ButtonsType.OK,
                                text=message)
-    dialog.set_icon_name("pitivi")
+    dialog.set_icon_name(APP_ID)
     dialog.set_title(_("Error while decoding a string"))
     dialog.run()
     dialog.destroy()
