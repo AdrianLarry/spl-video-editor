@@ -280,6 +280,7 @@ class ViewerContainer(Gtk.Box, Loggable):
         project.pipeline.connect("position", self._position_cb)
         project.pipeline.connect("duration-changed", self._duration_changed_cb)
         project.pipeline.connect("preparing", self._preparing_cb)
+        project.pipeline.connect("prepared-playback", self._prepared_playback_cb)
         project.pipeline.get_bus().connect("message::element", self._bus_level_message_cb)
         self.project = project
 
@@ -337,6 +338,7 @@ class ViewerContainer(Gtk.Box, Loggable):
         pipeline.disconnect_by_func(self._position_cb)
         pipeline.disconnect_by_func(self._duration_changed_cb)
         pipeline.disconnect_by_func(self._preparing_cb)
+        pipeline.disconnect_by_func(self._prepared_playback_cb)
 
     def _set_ui_active(self, active=True):
         self.debug("active %r", active)
@@ -899,6 +901,13 @@ class ViewerContainer(Gtk.Box, Loggable):
         if self.overlay_stack:
             self.target.switch_widget(self.overlay_stack)
         self.trim_pipeline = None
+
+    def _prepared_playback_cb(self, pipeline, active):
+        """Shows the prepared preview while it plays, see pitivi.previewcache."""
+        if active:
+            self.target.switch_widget(pipeline.prepared_widget())
+        elif self.overlay_stack:
+            self.target.switch_widget(self.overlay_stack)
 
     def _preparing_cb(self, unused_pipeline, preparing):
         if self.overlay_stack:

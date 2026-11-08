@@ -39,6 +39,8 @@ PIPELINE_SIGNALS = {
     "async-done": (GObject.SignalFlags.RUN_LAST, None, ()),
     # SPL: playing waits for the clip edges close ahead to be prepared.
     "preparing": (GObject.SignalFlags.RUN_LAST, None, (GObject.TYPE_BOOLEAN,)),
+    # SPL: playing the prepared preview instead, see pitivi.previewcache.
+    "prepared-playback": (GObject.SignalFlags.RUN_LAST, None, (GObject.TYPE_BOOLEAN,)),
 }
 
 MAX_RECOVERIES = 3
@@ -583,6 +585,10 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         self._ahead_from = None
         # Paused because the frames prepared ahead ran out while playing.
         self.rebuffering = False
+        # The timeline rendered ahead in pieces, played instead when ready.
+        self.prepared = None
+        self.prepared_player = None
+        self.prepared_playing = False
 
         # Keep the device format stable when video audio joins or leaves
         # the music mix. Renegotiating the sink interrupts its audio clock
@@ -673,7 +679,96 @@ class Pipeline(GES.Pipeline, SimplePipeline):
     def set_timeline(self, timeline):
         res = GES.Pipeline.set_timeline(self, timeline)
         self.__watch_ahead()
+        self.__watch_prepared(timeline)
         return res
+
+    # SPL: the prepared preview, see pitivi.previewcache.
+
+    def __watch_prepared(self, timeline):
+        # pylint: disable=import-outside-toplevel
+        from pitivi.previewcache.manager import ENABLED
+        from pitivi.previewcache.manager import PreparedPreview
+        if not ENABLED:
+            return
+        if self.prepared is None:
+            self.prepared = PreparedPreview(self)
+            self.prepared.connect("changed", self.__prepared_changed_cb)
+        self.prepared.set_timeline(timeline)
+
+    def __prepared_changed_cb(self, prepared):
+        if self.prepared_playing and not prepared.up_to_date:
+            # Edited while playing the pieces made before.
+            self.pause()
+
+    def prepared_widget(self):
+        return self.prepared_player.widget if self.prepared_player else None
+
+    def __start_prepared(self) -> bool:
+        """Plays the prepared preview from the position, if ready to the end."""
+        if not self.prepared or self.rendering():
+            return False
+        position = self._last_position
+        found = self.prepared.files_from(position)
+        if not found:
+            return False
+        files, offset = found
+        # pylint: disable=import-outside-toplevel
+        from pitivi.previewcache.player import PreparedPlayer
+        if self.prepared_player is None:
+            self.prepared_player = PreparedPlayer(self.__prepared_eos_cb, self.__prepared_error_cb)
+        self.prepared_player.set_frame_size(*self.prepared.size)
+        if not self.prepared_player.start(files, offset, position):
+            return False
+        self.info("Playing the prepared preview from %s", format_ns(position))
+        self.prepared_playing = True
+        self.emit("prepared-playback", True)
+        self.emit("state-change", Gst.State.PLAYING, Gst.State.PAUSED)
+        self._listen_to_position(True)
+        return True
+
+    def __stop_prepared(self, seek=True):
+        """Stops playing the prepared preview, the live one shows its frame."""
+        if not self.prepared_playing:
+            return
+        position = self.prepared_player.get_position()
+        if position is None:
+            position = self._last_position
+        self.prepared_player.stop()
+        self.prepared_playing = False
+        self._listen_to_position(False)
+        self.emit("prepared-playback", False)
+        if seek:
+            position = min(position, self.get_last_frame_position())
+            SimplePipeline.simple_seek(self, position)
+        self.emit("state-change", Gst.State.PAUSED, Gst.State.PLAYING)
+
+    def __prepared_eos_cb(self):
+        self.__stop_prepared(seek=False)
+        self.simple_seek(self.get_last_frame_position())
+        self.emit("eos")
+
+    def __prepared_error_cb(self):
+        self.__stop_prepared()
+
+    def get_simple_state(self):
+        if self.prepared_playing:
+            return Gst.State.PLAYING
+        return SimplePipeline.get_simple_state(self)
+
+    def get_position(self, fails=True):
+        if self.prepared_playing:
+            position = self.prepared_player.get_position()
+            if position is not None:
+                self._last_position = position
+            return self._last_position
+        return SimplePipeline.get_position(self, fails)
+
+    def release(self):
+        if self.prepared_playing:
+            self.__stop_prepared(seek=False)
+        if self.prepared:
+            self.prepared.release()
+        SimplePipeline.release(self)
 
     def __watch_ahead(self):
         # Watched at the output of the track: past a clip edge, playsink
@@ -751,6 +846,9 @@ class Pipeline(GES.Pipeline, SimplePipeline):
 
     def pause(self):
         self.__stop_waiting_ahead()
+        if self.prepared_playing:
+            self.__stop_prepared()
+            return
         SimplePipeline.pause(self)
 
     def _position_listener_cb(self):
@@ -768,6 +866,8 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         goes on when the frames are ready.
         """
         if self._ahead_wait_id or not self._ahead_end or self._busy_async or self.rendering():
+            return
+        if self.prepared_playing:
             return
         if self.get_simple_state() != Gst.State.PLAYING:
             return
@@ -849,9 +949,14 @@ class Pipeline(GES.Pipeline, SimplePipeline):
             # Pressed again while getting ready: it stays paused.
             self.__stop_waiting_ahead()
             return
+        if self.prepared_playing:
+            self.pause()
+            return
         if not self.playing() and self._last_position >= self.get_last_frame_position():
             # At the end, playing starts again.
             self.simple_seek(0)
+        if not self.playing() and self.__start_prepared():
+            return
         if not self.playing() and self.__must_prepare_ahead():
             self._ahead_wait_id = GLib.timeout_add(AHEAD_POLL_MS, self.__wait_ahead_cb, time.monotonic())
             self.emit("preparing", True)
@@ -870,6 +975,15 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         position = min(position, self.get_last_frame_position())
         self._ahead_from = position
 
+        if self.prepared_playing:
+            # Seeking while playing the prepared preview: it goes on playing
+            # from there, prepared or live.
+            self.__stop_prepared(seek=False)
+            self._last_position = position
+            SimplePipeline.simple_seek(self, position)
+            self.toggle_playback()
+            return
+
         st = Gst.Structure.new_empty("seek")
         if self.get_simple_state() == Gst.State.PLAYING:
             st.set_value("playback_time", float(
@@ -880,6 +994,8 @@ class Pipeline(GES.Pipeline, SimplePipeline):
 
         try:
             SimplePipeline.simple_seek(self, position)
+            # SPL: where playing starts, also before the seek is done.
+            self._last_position = position
         except PipelineError as e:
             self.error("Error while seeking to position: %s, reason: %s",
                        format_ns(position), e)
