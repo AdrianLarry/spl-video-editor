@@ -21,6 +21,7 @@ import time
 from gettext import gettext as _
 from typing import Optional
 
+from gi.repository import Gdk
 from gi.repository import Gio
 from gi.repository import GLib
 from gi.repository import GObject
@@ -28,6 +29,7 @@ from gi.repository import Gst
 from gi.repository import Gtk
 
 from pitivi.configure import APP_ID
+from pitivi.configure import APPNAME
 from pitivi.configure import RELEASES_URL
 from pitivi.configure import VERSION
 from pitivi.effects import EffectsManager
@@ -69,6 +71,11 @@ class Pitivi(Gtk.Application, Loggable):
     }
 
     def __init__(self):
+        # SPL: the windows of Vitrina are matched with its desktop file and
+        # its icon by their class, made of the program name.
+        GLib.set_prgname(APP_ID)
+        Gdk.set_program_class(APP_ID)
+        GLib.set_application_name(APPNAME)
         Gtk.Application.__init__(self,
                                  application_id=APP_ID,
                                  flags=Gio.ApplicationFlags.NON_UNIQUE | Gio.ApplicationFlags.HANDLES_OPEN)

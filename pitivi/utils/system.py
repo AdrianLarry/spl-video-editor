@@ -23,6 +23,7 @@ import sys
 
 from gi.repository import GObject
 
+from pitivi.configure import APP_ID
 from pitivi.check import MISSING_SOFT_DEPS
 from pitivi.configure import APPNAME
 from pitivi.utils.loggable import Loggable
@@ -78,7 +79,7 @@ class FreedesktopOrgSystem(System):
             from gi.repository import Notify
             Notify.init(APPNAME)
 
-    def desktop_message(self, title, message, icon="pitivi"):
+    def desktop_message(self, title, message, icon=APP_ID):
         # call super method for consistent logging
         System.desktop_message(self, title, message, icon)
 

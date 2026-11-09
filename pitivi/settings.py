@@ -21,6 +21,7 @@ from gi.repository import Gdk
 from gi.repository import GLib
 from gi.repository import GObject
 
+from pitivi.configure import user_dir
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import unicode_error_dialog
 
@@ -60,7 +61,7 @@ def get_env_by_type(type_, var):
 
 def xdg_config_home(*subdirs):
     """Gets the directory for storing the user's Pitivi configuration."""
-    default_base = os.path.join(GLib.get_user_config_dir(), "pitivi")
+    default_base = user_dir(GLib.get_user_config_dir())
     base = os.getenv("PITIVI_USER_CONFIG_DIR", default_base)
     path = os.path.join(base, *subdirs)
     os.makedirs(path, exist_ok=True)
@@ -69,7 +70,7 @@ def xdg_config_home(*subdirs):
 
 def xdg_data_home(*subdirs):
     """Gets the directory for storing the user's data: presets, plugins, etc."""
-    default_base = os.path.join(GLib.get_user_data_dir(), "pitivi")
+    default_base = user_dir(GLib.get_user_data_dir())
     base = os.getenv("PITIVI_USER_DATA_DIR", default_base)
     path = os.path.join(base, *subdirs)
     os.makedirs(path, exist_ok=True)
@@ -78,7 +79,7 @@ def xdg_data_home(*subdirs):
 
 def xdg_cache_home(*subdirs):
     """Gets the Pitivi cache directory."""
-    default_base = os.path.join(GLib.get_user_cache_dir(), "pitivi")
+    default_base = user_dir(GLib.get_user_cache_dir())
     base = os.getenv("PITIVI_USER_CACHE_DIR", default_base)
     path = os.path.join(base, *subdirs)
     os.makedirs(path, exist_ok=True)

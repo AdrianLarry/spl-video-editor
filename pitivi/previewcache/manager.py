@@ -45,9 +45,9 @@ ENABLED = os.environ.get("SPL_VISTA_PREPARADA", "1") != "0"
 
 
 def cache_folder() -> str:
-    folder = os.path.join(GLib.get_user_cache_dir(), "pitivi", "spl-vista-preparada")
-    os.makedirs(folder, exist_ok=True)
-    return folder
+    # pylint: disable=import-outside-toplevel
+    from pitivi.settings import xdg_cache_home
+    return xdg_cache_home("spl-vista-preparada")
 
 
 def prune(folder: str, limit: int = MAX_CACHE_BYTES) -> None:

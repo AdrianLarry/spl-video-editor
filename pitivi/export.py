@@ -33,6 +33,7 @@ from gi.repository import Gst
 from gi.repository import Gtk
 from gi.repository import Pango
 
+from pitivi.configure import APP_ID
 from pitivi.render import Quality
 from pitivi.render import RenderDialog
 from pitivi.speedometer import Speedometer
@@ -499,7 +500,7 @@ class ExportDialog(Gtk.Dialog):
         self.stack.set_visible_child_name("done")
         if not self.is_active():
             self.app.system.desktop_message(_("Your video is ready"), os.path.basename(self.path),
-                                            "pitivi")
+                                            APP_ID)
 
     def render_failed(self, error, unused_details):
         self.__stop()

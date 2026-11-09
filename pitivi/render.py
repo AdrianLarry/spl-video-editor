@@ -30,6 +30,7 @@ from gi.repository import Gst
 from gi.repository import GstPbutils
 from gi.repository import Gtk
 
+from pitivi.configure import APP_ID
 from pitivi import configure
 from pitivi.check import MISSING_SOFT_DEPS
 from pitivi.dialogs.projectsettings import ProjectSettingsDialog
@@ -1653,7 +1654,7 @@ class RenderDialog(Loggable):
                 notification = _(
                     '"%s" has finished rendering.') % self.fileentry.get_text()
                 self.notification = self.app.system.desktop_message(
-                    _("Render complete"), notification, "pitivi")
+                    _("Render complete"), notification, APP_ID)
             self._maybe_play_finished_sound()
             self.progress.play_rendered_file_button.show()
             self.progress.close_button.show()

@@ -97,10 +97,29 @@ def get_plugins_dir():
     return os.path.join(_get_root_dir(), 'plugins')
 
 
+# SPL: the folders of the user are named after Vitrina. The ones named
+# after Pitivi, of the versions before, are renamed the first time.
+USER_DIR_NAME = 'vitrina'
+OLD_USER_DIR_NAME = 'pitivi'
+
+
+def user_dir(parent):
+    """Returns the folder of Vitrina in the parent folder, moving the old one."""
+    path = os.path.join(parent, USER_DIR_NAME)
+    old = os.path.join(parent, OLD_USER_DIR_NAME)
+    if not os.path.lexists(path) and os.path.isdir(old) and not os.path.islink(old):
+        try:
+            os.rename(old, path)
+        except OSError:
+            # Better the old one than losing the settings.
+            return old
+    return path
+
+
 def get_user_plugins_dir():
     """Returns our default directory to store non-official plugins."""
     user_data_dir = GLib.get_user_data_dir()
-    user_plugin_dir = os.path.join(user_data_dir, 'pitivi', 'plugins')
+    user_plugin_dir = os.path.join(user_dir(user_data_dir), 'plugins')
     os.makedirs(user_plugin_dir, exist_ok=True)
     return user_plugin_dir
 
@@ -116,7 +135,7 @@ def get_packages_dir():
 def get_user_packages_dir():
     """Returns our directory with user-installed resource packages."""
     user_data_dir = GLib.get_user_data_dir()
-    user_packages_dir = os.path.join(user_data_dir, 'pitivi', 'packages')
+    user_packages_dir = os.path.join(user_dir(user_data_dir), 'packages')
     os.makedirs(user_packages_dir, exist_ok=True)
     return user_packages_dir
 
