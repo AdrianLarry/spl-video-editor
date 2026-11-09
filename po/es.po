@@ -5269,3 +5269,32 @@ msgstr "Vitrina:"
 #: pitivi/dialogs/about.py
 msgid "Pitivi, on which Vitrina is based:"
 msgstr "Pitivi, en el que se basa Vitrina:"
+
+#: pitivi/previewcache/quality.py
+msgid "Quality of the preview"
+msgstr "Calidad de la vista previa"
+
+#: pitivi/previewcache/quality.py
+msgid ""
+"A lower quality is prepared faster, playing with fewer waits on less "
+"powerful computers. The exported video always has the full quality."
+msgstr ""
+"Una calidad más baja se prepara más rápido y se reproduce con menos esperas "
+"en computadoras menos potentes. El video exportado siempre sale en calidad "
+"completa."
+
+#: pitivi/previewcache/quality.py
+msgid "Automatic"
+msgstr "Automática"
+
+#: pitivi/previewcache/quality.py
+msgid "Medium"
+msgstr "Media"
+
+#: pitivi/previewcache/quality.py
+msgid "Low"
+msgstr "Baja"
+
+#: pitivi/previewcache/quality.py
+msgid "Video preview"
+msgstr "Vista previa"

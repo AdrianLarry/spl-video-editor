@@ -27,6 +27,7 @@ from pitivi.configure import APP_ID
 from pitivi.configure import get_pixmap_dir
 from pitivi.dialogs.about import AboutDialog
 from pitivi.dialogs.prefs import PreferencesDialog
+from pitivi.previewcache.quality import register_settings as register_preview_settings
 from pitivi.editorperspective import EditorPerspective
 from pitivi.greeterperspective import GreeterPerspective
 from pitivi.settings import GlobalSettings
@@ -69,6 +70,9 @@ GlobalSettings.add_config_option("useDarkTheme",
                                  key="use-dark-theme",
                                  default=True,
                                  notify=True)
+
+# SPL: the quality of the prepared preview, see pitivi.previewcache.
+register_preview_settings()
 
 PreferencesDialog.add_toggle_preference("useDarkTheme",
                                         section="other",

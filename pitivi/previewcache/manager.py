@@ -32,6 +32,11 @@ from gi.repository import Gst
 from pitivi.previewcache.chunks import chunk_at
 from pitivi.previewcache.chunks import compute_chunks
 from pitivi.previewcache.chunks import missing_from
+from pitivi.previewcache.quality import AUTO
+from pitivi.previewcache.quality import AutoQuality
+from pitivi.previewcache.quality import FACTORS
+from pitivi.previewcache.quality import HIGH
+from pitivi.previewcache.scale import can_scale
 from pitivi.utils.loggable import Loggable
 
 # After an edit, waiting for the next one before rendering.
@@ -40,6 +45,8 @@ QUIET_MS = 1500
 MAX_SIDE = 1280
 # The pieces kept, the oldest used are removed beyond.
 MAX_CACHE_BYTES = 2 * 1024 * 1024 * 1024
+# Pieces ready ahead of the playhead to play the prepared preview.
+MIN_AHEAD = 2
 # SPL_VISTA_PREPARADA=0 turns it off.
 ENABLED = os.environ.get("SPL_VISTA_PREPARADA", "1") != "0"
 
@@ -98,8 +105,34 @@ class PreparedPreview(GObject.Object, Loggable):
         self.watch_id = 0
         self.timer_id = 0
         self.job_keys = []
+        self.job_started = 0
+        self.dirty = False
+        self.quality = None
+        # Whether the last update changed what the pieces show.
+        self.content_changed = False
         self.output = b""
+        self.snapshot = None
+        self.project_size = (0, 0)
+        self.factor = 1.0
+        settings = getattr(getattr(pipeline, "app", None), "settings", None)
+        self.settings = settings if hasattr(settings, "previewQuality") else None
+        self.auto = AutoQuality(self.settings.previewAutoLevel if self.settings else HIGH)
+        if self.settings:
+            self.settings.connect("previewQualityChanged", self.__quality_changed_cb)
         prune(self.folder)
+
+    def __quality_changed_cb(self, unused_settings):
+        self.up_to_date = False
+        self.emit("changed")
+        self.__schedule()
+
+    def level(self, text: str) -> str:
+        """Returns the quality used for the saved project."""
+        chosen = self.settings.previewQuality if self.settings else HIGH
+        level = self.auto.level if chosen == AUTO else chosen
+        if level not in FACTORS or (FACTORS[level] != 1 and not can_scale(text)):
+            return HIGH
+        return level
 
     def set_timeline(self, timeline: Optional[GES.Timeline]):
         if self.timeline:
@@ -129,9 +162,9 @@ class PreparedPreview(GObject.Object, Loggable):
     def __commited_main_cb(self, timeline):
         if timeline is not self.timeline:
             return False
-        if self.up_to_date:
-            self.up_to_date = False
-            self.emit("changed")
+        # Not played until saved again: maybe edited. NLE also commits
+        # without edits, then the pieces stay the same.
+        self.dirty = True
         self.__schedule()
         return False
 
@@ -157,7 +190,7 @@ class PreparedPreview(GObject.Object, Loggable):
             self.warning("Could not prepare the preview: %s", e)
         return False
 
-    def frame_size(self) -> Tuple[int, int]:
+    def project_frame_size(self) -> Tuple[int, int]:
         width, height = 1080, 1920
         for track in self.timeline.get_tracks():
             if track.props.track_type == GES.TrackType.VIDEO:
@@ -168,7 +201,12 @@ class PreparedPreview(GObject.Object, Loggable):
                     res_h, h = structure.get_int("height")
                     if res_w and res_h and w > 0 and h > 0:
                         width, height = w, h
-        fit = min(1, MAX_SIDE / max(width, height))
+        return width, height
+
+    def frame_size(self) -> Tuple[int, int]:
+        """Returns the size of the rendered frames."""
+        width, height = self.project_size
+        fit = min(1, MAX_SIDE / max(width, height), self.factor)
         return max(2, round(width * fit / 2) * 2), max(2, round(height * fit / 2) * 2)
 
     def update(self):
@@ -195,8 +233,16 @@ class PreparedPreview(GObject.Object, Loggable):
             return
         with open(snapshot, encoding="utf-8") as xges:
             text = xges.read()
+        self.snapshot = snapshot
+        self.project_size = self.project_frame_size()
+        self.factor = FACTORS[self.level(text)]
         self.size = self.frame_size()
-        self.chunks = compute_chunks(text, "%dx%d" % self.size)
+        old_keys = [chunk.key for chunk in self.chunks]
+        quality = "%dx%d@%.3f" % (self.size + (self.factor,))
+        self.chunks = compute_chunks(text, quality)
+        # Another quality is not an edit: what plays goes on.
+        changed = old_keys != [chunk.key for chunk in self.chunks] and quality == self.quality
+        self.quality = quality
         self.ready = {}
         for chunk in self.chunks:
             path = self.path(chunk.key)
@@ -204,17 +250,29 @@ class PreparedPreview(GObject.Object, Loggable):
                 self.ready[chunk.key] = path
                 os.utime(path)
         self.up_to_date = True
+        self.dirty = False
+        self.content_changed = changed
         self.emit("changed")
+        self.content_changed = False
+        self.prioritize(self.pipeline.get_position(fails=False) or 0, force=True)
 
-        position = self.pipeline.get_position(fails=False) or 0
+    def prioritize(self, position: int, force: bool = False):
+        """Renders first the pieces missing from the position."""
+        if not self.up_to_date or not self.snapshot:
+            return
         missing = missing_from(self.chunks, self.ready, position)
         keys = [chunk.key for chunk in missing]
-        if self.process and keys == self.job_keys:
+        pending = [key for key in self.job_keys if key not in self.ready]
+        if self.process and (keys == pending or (not force and (not keys or keys[0] in pending[:2]))):
+            # Going on: the same pieces, or the next missing one soon.
             return
+        self.debug("Rendering from %s: %d missing, force %s", position, len(missing), force)
         self.stop_process()
         if not missing:
             return
-        job = {"xges": snapshot, "dir": self.folder, "width": self.size[0], "height": self.size[1],
+        job = {"xges": self.snapshot, "dir": self.folder, "width": self.size[0], "height": self.size[1],
+               "scale": self.factor, "project_width": self.project_size[0],
+               "project_height": self.project_size[1],
                "chunks": [list(chunk) for chunk in missing]}
         job_path = os.path.join(self.folder, "trabajo-%d.json" % os.getpid())
         with open(job_path, "w", encoding="utf-8") as job_file:
@@ -249,14 +307,27 @@ class PreparedPreview(GObject.Object, Loggable):
         while b"\n" in self.output:
             line, self.output = self.output.split(b"\n", 1)
             words = line.decode(errors="replace").split()
-            if len(words) == 2 and words[0] == "READY":
+            if len(words) >= 2 and words[0] == "READY":
                 key = words[1]
-                if self.up_to_date and any(chunk.key == key for chunk in self.chunks):
+                chunk = next((chunk for chunk in self.chunks if chunk.key == key), None)
+                if self.up_to_date and chunk:
                     self.ready[key] = self.path(key)
                     self.emit("changed")
+                    if len(words) == 3:
+                        self.__measured(float(words[2]), (chunk.end - chunk.start) / Gst.SECOND)
             elif words and words[0] == "ERROR":
                 self.warning("The prepared preview failed: %s", line)
         return True
+
+    def __measured(self, seconds: float, duration: float):
+        if not self.settings or self.settings.previewQuality != AUTO:
+            return
+        level = self.auto.add(seconds, duration)
+        if level:
+            self.info("The preview is prepared now in quality %s", level)
+            self.settings.previewAutoLevel = level
+            # What plays goes on, the next pieces in the new quality.
+            self.__schedule()
 
     def __process_ended(self):
         process = self.process
@@ -290,17 +361,30 @@ class PreparedPreview(GObject.Object, Loggable):
             except OSError:
                 pass
 
-    def files_from(self, position: int) -> Optional[Tuple[List[str], int]]:
-        """Returns the files from the position to the end, and where they start.
+    def files_from(self, position: int) -> Optional[Tuple[List[str], int, int]]:
+        """Returns the ready files from the position, where they start and end.
 
-        None unless the timeline did not change since and all are ready.
+        None unless the timeline did not change since and enough is ready:
+        MIN_AHEAD pieces, or the ones to the end.
         """
-        if not self.up_to_date or not self.chunks:
+        if not self.up_to_date or self.dirty or not self.chunks:
             return None
         index = chunk_at(self.chunks, position)
         if index is None:
             return None
-        chunks = self.chunks[index:]
-        if any(chunk.key not in self.ready for chunk in chunks):
+        chunks = []
+        for chunk in self.chunks[index:]:
+            if chunk.key not in self.ready:
+                break
+            chunks.append(chunk)
+        to_end = len(chunks) == len(self.chunks) - index
+        if not chunks or (len(chunks) < MIN_AHEAD and not to_end):
             return None
-        return [self.ready[chunk.key] for chunk in chunks], chunks[0].start
+        return [self.ready[chunk.key] for chunk in chunks], chunks[0].start, chunks[-1].end
+
+    def end(self) -> int:
+        return self.chunks[-1].end if self.chunks else 0
+
+    def rendering(self) -> bool:
+        """Whether pieces are being rendered."""
+        return self.process is not None

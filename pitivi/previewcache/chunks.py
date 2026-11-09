@@ -56,7 +56,13 @@ def _element_text(element: ET.Element, skip=("id",)) -> str:
     copy = ET.Element(element.tag, {key: _clean(value) for key, value in element.attrib.items()
                                     if key not in skip})
     copy.extend(element)
-    return _clean(ET.tostring(copy, encoding="unicode"))
+    text = _clean(ET.tostring(copy, encoding="unicode"))
+    # The value of an animated property is saved as it is at the playhead:
+    # what the piece shows is in its keyframes.
+    for name in {binding.get("property", "").split("::")[-1] for binding in element.iter("binding")}:
+        if name:
+            text = re.sub(r"[\w+:-]*\b%s=\([\w]+\)[^,;'\"]*[,;]?" % re.escape(name), "", text)
+    return text
 
 
 def _asset_text(asset: ET.Element) -> str:

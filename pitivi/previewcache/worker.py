@@ -24,7 +24,7 @@ of consecutive pieces, and the frames and the sound are cut at the edges
 of the pieces and encoded each piece in its own file, keeping the times of
 the timeline: played one after the other they make one stream. Each file
 is written with a temporary name and renamed when complete, then
-"READY <key>" is printed.
+"READY <key> <seconds taken>" is printed.
 
 GES ignores the seeks of a pipeline in render mode, and the muxers refuse
 them, hence the appsinks.
@@ -33,6 +33,7 @@ import json
 import os
 import sys
 import threading
+import time
 
 import gi
 gi.require_version("Gst", "1.0")
@@ -44,6 +45,8 @@ from gi.repository import Gst  # noqa: E402 pylint: disable=wrong-import-positio
 AUDIO_CAPS = "audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2"
 AUDIO_FRAME_BYTES = 4
 AUDIO_RATE = 48000
+# Giving up when nothing is rendered for this long.
+STALL_SECONDS = 15
 
 
 class PieceWriter:
@@ -101,11 +104,29 @@ class Worker:
         self.armed = False
 
     def load(self):
-        project = GES.Project.new(Gst.filename_to_uri(self.job["xges"]))
-        self.timeline = project.extract()
-        project.connect("loaded", lambda *unused: self.loop.quit())
+        path = self.job["xges"]
+        factor = self.job.get("scale", 1)
+        if factor != 1:
+            # pylint: disable=import-outside-toplevel
+            from pitivi.previewcache.scale import scale_xges
+            with open(path, encoding="utf-8") as xges:
+                text = scale_xges(xges.read(), self.job["project_width"], self.job["project_height"], factor)
+            path = path[:-len(".xges")] + "-escala.xges"
+            with open(path, "w", encoding="utf-8") as xges:
+                xges.write(text)
+        project = GES.Project.new(Gst.filename_to_uri(path))
+        loaded = []
+        project.connect("loaded", lambda *unused: (loaded.append(True), self.loop.quit()))
         project.connect("error-loading", lambda *unused: self.loop.quit())
+        # A file gone since: without it, as GES leaves it.
+        project.connect("missing-uri", lambda *unused: None)
+        self.timeline = project.extract()
+        timeout = GLib.timeout_add_seconds(60, self.loop.quit)
         self.loop.run()
+        GLib.source_remove(timeout) if loaded else None
+        if not loaded:
+            print("ERROR the project did not load", flush=True)
+            sys.exit(1)
         # As when the project loads in the editor.
         # pylint: disable=import-outside-toplevel
         from pitivi.clip_properties.overlay import restore_overlays
@@ -220,19 +241,31 @@ class Worker:
         self.video_caps = None
         self.armed = False
         self.reached = {"video": run[0][0], "audio": run[0][0] if self.has_audio else float("inf")}
+        # Bounded waits: after a run the sound may have reached the end of
+        # the timeline, and pausing never completes.
         self.pipeline.set_state(Gst.State.PAUSED)
-        self.pipeline.get_state(Gst.CLOCK_TIME_NONE)
+        self.pipeline.get_state(5 * Gst.SECOND)
         self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH | Gst.SeekFlags.ACCURATE, run[0][0])
-        self.pipeline.get_state(Gst.CLOCK_TIME_NONE)
+        self.pipeline.get_state(10 * Gst.SECOND)
         self.armed = True
         self.pipeline.set_state(Gst.State.PLAYING)
         bus = self.pipeline.get_bus()
         finished = 0
         eos = False
+        progress = (dict(self.reached), time.monotonic())
+        # The time taken by each piece, for the automatic quality.
+        last_ready = time.monotonic()
         while finished < len(run):
             message = bus.timed_pop_filtered(20 * Gst.MSECOND, Gst.MessageType.EOS | Gst.MessageType.ERROR)
             if message and message.type == Gst.MessageType.ERROR:
                 print("ERROR", message.parse_error()[0].message, flush=True)
+                self.armed = False
+                return False
+            # Nothing comes, for example a file of the project is gone.
+            if self.reached != progress[0]:
+                progress = (dict(self.reached), time.monotonic())
+            elif time.monotonic() - progress[1] > STALL_SECONDS:
+                print("ERROR nothing rendered for %d s" % STALL_SECONDS, flush=True)
                 self.armed = False
                 return False
             eos = eos or bool(message)
@@ -241,7 +274,9 @@ class Worker:
                 with self.lock:
                     writer = self.writers.pop(finished, None)
                 if writer and writer.finish():
-                    print("READY", writer.chunk[2], flush=True)
+                    now = time.monotonic()
+                    print("READY %s %.3f" % (writer.chunk[2], now - last_ready), flush=True)
+                    last_ready = now
                 finished += 1
         self.armed = False
         self.pipeline.set_state(Gst.State.PAUSED)

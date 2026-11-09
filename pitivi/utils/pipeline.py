@@ -63,6 +63,8 @@ AHEAD_MAX_WAIT = 4
 # much is prepared or the clip edges close ahead are.
 AHEAD_LOW = 80 * Gst.MSECOND
 AHEAD_RESUME = 600 * Gst.MSECOND
+# Waiting for pieces of the prepared preview at most this long.
+PIECES_MAX_WAIT = 20
 
 
 class PipelineError(Exception):
@@ -589,6 +591,7 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         self.prepared = None
         self.prepared_player = None
         self.prepared_playing = False
+        self._prepared_end = 0
 
         # Keep the device format stable when video audio joins or leaves
         # the music mix. Renegotiating the sink interrupts its audio clock
@@ -696,7 +699,7 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         self.prepared.set_timeline(timeline)
 
     def __prepared_changed_cb(self, prepared):
-        if self.prepared_playing and not prepared.up_to_date:
+        if self.prepared_playing and (not prepared.up_to_date or prepared.content_changed):
             # Edited while playing the pieces made before.
             self.pause()
 
@@ -708,10 +711,11 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         if not self.prepared or self.rendering():
             return False
         position = self._last_position
+        self.prepared.prioritize(position)
         found = self.prepared.files_from(position)
         if not found:
             return False
-        files, offset = found
+        files, offset, self._prepared_end = found
         # pylint: disable=import-outside-toplevel
         from pitivi.previewcache.player import PreparedPlayer
         if self.prepared_player is None:
@@ -743,9 +747,35 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         self.emit("state-change", Gst.State.PAUSED, Gst.State.PLAYING)
 
     def __prepared_eos_cb(self):
+        if self._prepared_end < self.prepared.end():
+            # The pieces ready end before the timeline: waiting for the
+            # next, rendered first, the playhead with the viewer.
+            position = self._prepared_end
+            self.rebuffering = True
+            self.__stop_prepared(seek=False)
+            self._last_position = position
+            SimplePipeline.simple_seek(self, min(position, self.get_last_frame_position()))
+            self.prepared.prioritize(position)
+            self._ahead_wait_id = GLib.timeout_add(AHEAD_POLL_MS * 5, self.__wait_pieces_cb, time.monotonic())
+            self.emit("preparing", True)
+            return
         self.__stop_prepared(seek=False)
         self.simple_seek(self.get_last_frame_position())
         self.emit("eos")
+
+    def __wait_pieces_cb(self, started):
+        """Goes on with the prepared preview when the next pieces are ready."""
+        waited = time.monotonic() - started
+        found = self.prepared.files_from(self._last_position) if self.prepared else None
+        if not found and waited < PIECES_MAX_WAIT and self.prepared and self.prepared.rendering():
+            return True
+        self._ahead_wait_id = 0
+        self.rebuffering = False
+        self.emit("preparing", False)
+        if not self.__start_prepared():
+            # Not rendered, or too long: playing live from there.
+            SimplePipeline.toggle_playback(self)
+        return False
 
     def __prepared_error_cb(self):
         self.__stop_prepared()
@@ -974,6 +1004,8 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         # SPL: the viewer shows the last frame, not the black after it.
         position = min(position, self.get_last_frame_position())
         self._ahead_from = position
+        if self.prepared:
+            self.prepared.prioritize(position)
 
         if self.prepared_playing:
             # Seeking while playing the prepared preview: it goes on playing

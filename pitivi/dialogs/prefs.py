@@ -92,6 +92,9 @@ class PreferencesDialog(Loggable):
         self.factory_settings.set_sensitive(self._can_reset())
 
         self.add_settings_page('timeline')
+        # SPL: the quality of the prepared preview, see pitivi.previewcache.
+        if "preview" in self.prefs:
+            self.add_settings_page('preview')
         self.__add_proxies_section()
         self.__add_shortcuts_section()
         self.__add_plugin_manager_section()

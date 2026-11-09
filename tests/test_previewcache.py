@@ -24,6 +24,11 @@ from pitivi.previewcache.chunks import CHUNK_DURATION
 from pitivi.previewcache.chunks import compute_chunks
 from pitivi.previewcache.chunks import missing_from
 from pitivi.previewcache.manager import prune
+from pitivi.previewcache.quality import AutoQuality
+from pitivi.previewcache.quality import HIGH
+from pitivi.previewcache.quality import MEDIUM
+from pitivi.previewcache.scale import can_scale
+from pitivi.previewcache.scale import scale_xges
 from tests import common
 
 SECOND = Gst.SECOND
@@ -91,3 +96,73 @@ class ChunksTest(common.TestCase):
                 os.utime(path, (index, index))
             prune(folder, limit=250)
             self.assertEqual(sorted(os.listdir(folder)), ["2.mkv", "3.mkv"])
+
+
+class StableKeysTest(common.TestCase):
+    """Tests for the keys of the pieces when nothing is edited."""
+
+    def test_animated_value_ignored(self):
+        def project(sigma):
+            return ("<ges><project><ressources/><timeline><layer priority='0'>"
+                    "<clip id='0' asset-id='file:///foto.jpg' start='0' duration='3000000000'>"
+                    "<effect asset-id='splblur' children-properties='properties, "
+                    "pitivi+utils+blurfilter+BlurFilter::sigma=(double)%s;'>"
+                    "<binding type='direct-absolute' source_type='interpolation' property='sigma' "
+                    "mode='1' track_id='-1' values =' 0:0  1000000000:6 '/></effect>"
+                    "</clip></layer></timeline></project></ges>" % sigma)
+        # The value at the playhead is saved, it changes while playing.
+        self.assertEqual([chunk.key for chunk in compute_chunks(project(0), "s")],
+                         [chunk.key for chunk in compute_chunks(project(2), "s")])
+
+
+class ScaleTest(common.TestCase):
+    """Tests for the smaller preview."""
+
+    def test_scale_xges(self):
+        text = ("restriction-caps=(string)&quot;video/x-raw\\,\\ width\\=\\(int\\)1080\\,\\ height\\=\\(int\\)1920"
+                "\\,\\ framerate\\=\\(fraction\\)30/1&quot; "
+                "GstFramePositioner::posx=(int)100, GstFramePositioner::width=(int)1080, "
+                "GstFramePositioner::fwidth=(float)1080, GstBaseTextOverlay::xpos=(double)0.5, "
+                "<binding type='direct-absolute' source_type='interpolation' property='posx' mode='1' "
+                "track_id='0' values =' 0:0  4000000000:-1080 '/> "
+                "spl::push-base-posx=(int)-200; "
+                "asset-id='videoscale ! capsfilter caps=video/x-raw,width=1080,height=1920 ! splblur'")
+        scaled = scale_xges(text, 1080, 1920, 0.5)
+        self.assertIn("width\\=\\(int\\)540\\,\\ height\\=\\(int\\)960", scaled)
+        self.assertIn("GstFramePositioner::posx=(int)50,", scaled)
+        self.assertIn("GstFramePositioner::width=(int)540,", scaled)
+        self.assertIn("GstFramePositioner::fwidth=(float)540.0,", scaled)
+        # Fractions stay.
+        self.assertIn("GstBaseTextOverlay::xpos=(double)0.5", scaled)
+        self.assertIn("4000000000:-540.0", scaled)
+        self.assertIn("spl::push-base-posx=(int)-100", scaled)
+        self.assertIn("width=540,height=960", scaled)
+
+    def test_can_scale(self):
+        def project(duration):
+            return ("<ges><project><ressources><asset id='file:///a' "
+                    "properties='properties, duration=(guint64)%d;'/></ressources><timeline><layer>"
+                    "<clip asset-id='file:///a'><effect asset-id='splzoom name=spl-zoom static=false'/></clip>"
+                    "</layer></timeline></project></ges>" % duration)
+        # A photo with zoom can, a video with zoom not yet.
+        self.assertTrue(can_scale(project(2 ** 64 - 1)))
+        self.assertFalse(can_scale(project(5 * SECOND)))
+
+
+class AutoQualityTest(common.TestCase):
+    """Tests for the automatic quality."""
+
+    def test_down_and_up(self):
+        auto = AutoQuality(HIGH)
+        for unused in range(3):
+            self.assertIsNone(auto.add(2.2, 2))
+        self.assertEqual(auto.add(2.2, 2), MEDIUM)
+        for unused in range(3):
+            auto.add(0.4, 2)
+        self.assertEqual(auto.add(0.4, 2), HIGH)
+
+    def test_stays(self):
+        auto = AutoQuality(MEDIUM)
+        for unused in range(8):
+            self.assertIsNone(auto.add(1.2, 2))
+        self.assertEqual(auto.level, MEDIUM)
