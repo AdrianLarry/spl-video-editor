@@ -41,6 +41,8 @@ PIPELINE_SIGNALS = {
     "preparing": (GObject.SignalFlags.RUN_LAST, None, (GObject.TYPE_BOOLEAN,)),
     # SPL: playing the prepared preview instead, see pitivi.previewcache.
     "prepared-playback": (GObject.SignalFlags.RUN_LAST, None, (GObject.TYPE_BOOLEAN,)),
+    # The widget of the prepared preview is made, it needs a place in a window.
+    "prepared-widget": (GObject.SignalFlags.RUN_LAST, None, (GObject.TYPE_OBJECT,)),
 }
 
 MAX_RECOVERIES = 3
@@ -720,6 +722,8 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         from pitivi.previewcache.player import PreparedPlayer
         if self.prepared_player is None:
             self.prepared_player = PreparedPlayer(self.__prepared_eos_cb, self.__prepared_error_cb)
+            # Without a window gtksink opens one of its own when starting.
+            self.emit("prepared-widget", self.prepared_player.widget)
         self.prepared_player.set_frame_size(*self.prepared.size)
         if not self.prepared_player.start(files, offset, position):
             return False

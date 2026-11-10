@@ -281,6 +281,10 @@ class ViewerContainer(Gtk.Box, Loggable):
         project.pipeline.connect("duration-changed", self._duration_changed_cb)
         project.pipeline.connect("preparing", self._preparing_cb)
         project.pipeline.connect("prepared-playback", self._prepared_playback_cb)
+        project.pipeline.connect("prepared-widget", self._prepared_widget_cb)
+        widget = project.pipeline.prepared_widget()
+        if widget:
+            self._prepared_widget_cb(project.pipeline, widget)
         project.pipeline.get_bus().connect("message::element", self._bus_level_message_cb)
         self.project = project
 
@@ -339,6 +343,7 @@ class ViewerContainer(Gtk.Box, Loggable):
         pipeline.disconnect_by_func(self._duration_changed_cb)
         pipeline.disconnect_by_func(self._preparing_cb)
         pipeline.disconnect_by_func(self._prepared_playback_cb)
+        pipeline.disconnect_by_func(self._prepared_widget_cb)
 
     def _set_ui_active(self, active=True):
         self.debug("active %r", active)
@@ -541,6 +546,10 @@ class ViewerContainer(Gtk.Box, Loggable):
         # It has to be added to the window, otherwise when we add
         # a video widget to it, it will create a new window!
         self.pack_end(self.hidden_chest, False, False, 0)
+        # The same for the widget of the prepared preview, kept here while
+        # the live preview shows.
+        self.prepared_chest = Gtk.Frame()
+        self.pack_end(self.prepared_chest, False, False, 0)
 
         # Identify widgets for AT-SPI, making our test suite easier to develop
         # These will show up in sniff, accerciser, etc.
@@ -902,12 +911,28 @@ class ViewerContainer(Gtk.Box, Loggable):
             self.target.switch_widget(self.overlay_stack)
         self.trim_pipeline = None
 
+    def _prepared_widget_cb(self, unused_pipeline, widget):
+        """Keeps the widget of the prepared preview in the window, hidden."""
+        if widget.get_parent() is self.target:
+            return
+        parent = widget.get_parent()
+        if parent:
+            parent.remove(widget)
+        if self.prepared_chest.get_child():
+            self.prepared_chest.remove(self.prepared_chest.get_child())
+        self.prepared_chest.add(widget)
+        widget.show()
+
     def _prepared_playback_cb(self, pipeline, active):
         """Shows the prepared preview while it plays, see pitivi.previewcache."""
         if active:
             self.target.switch_widget(pipeline.prepared_widget())
-        elif self.overlay_stack:
-            self.target.switch_widget(self.overlay_stack)
+        else:
+            if self.overlay_stack:
+                self.target.switch_widget(self.overlay_stack)
+            widget = pipeline.prepared_widget()
+            if widget:
+                self._prepared_widget_cb(pipeline, widget)
 
     def _preparing_cb(self, unused_pipeline, preparing):
         if self.overlay_stack:
