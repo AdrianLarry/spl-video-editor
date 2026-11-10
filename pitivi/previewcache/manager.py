@@ -31,6 +31,7 @@ from gi.repository import Gst
 
 from pitivi.previewcache.chunks import chunk_at
 from pitivi.previewcache.chunks import compute_chunks
+from pitivi.previewcache.chunks import lead_needed
 from pitivi.previewcache.chunks import missing_from
 from pitivi.previewcache.quality import AUTO
 from pitivi.previewcache.quality import AutoQuality
@@ -47,6 +48,16 @@ MAX_SIDE = 1280
 MAX_CACHE_BYTES = 2 * 1024 * 1024 * 1024
 # Pieces ready ahead of the playhead to play the prepared preview.
 MIN_AHEAD = 2
+# The time taken to prepare a second of video, until measured, and more
+# to be sure: while playing the computer prepares slower.
+DEFAULT_RATE = 1.0
+RATE_MARGIN = 1.2
+# The pieces measured for the rate, the slowest counts: a transition or a
+# blur takes several times longer than a photo.
+RATE_PIECES = 6
+# When all is prepared in less time, it plays once ready: going on with
+# more pieces stops playing for a moment.
+WAIT_ALL_SECONDS = 10
 # SPL_VISTA_PREPARADA=0 turns it off.
 ENABLED = os.environ.get("SPL_VISTA_PREPARADA", "1") != "0"
 
@@ -108,6 +119,8 @@ class PreparedPreview(GObject.Object, Loggable):
         self.job_started = 0
         self.dirty = False
         self.quality = None
+        # Measured times taken to prepare a second of video.
+        self.rates = []
         # Whether the last update changed what the pieces show.
         self.content_changed = False
         self.output = b""
@@ -314,7 +327,12 @@ class PreparedPreview(GObject.Object, Loggable):
                     self.ready[key] = self.path(key)
                     self.emit("changed")
                     if len(words) == 3:
-                        self.__measured(float(words[2]), (chunk.end - chunk.start) / Gst.SECOND)
+                        seconds = float(words[2])
+                        duration = (chunk.end - chunk.start) / Gst.SECOND
+                        if duration > 0:
+                            self.rates = (self.rates + [seconds / duration])[-RATE_PIECES:]
+                        self.debug("Piece at %s prepared in %.2f s", chunk.start, seconds)
+                        self.__measured(seconds, duration)
             elif words and words[0] == "ERROR":
                 self.warning("The prepared preview failed: %s", line)
         return True
@@ -381,6 +399,26 @@ class PreparedPreview(GObject.Object, Loggable):
         if not chunks or (len(chunks) < MIN_AHEAD and not to_end):
             return None
         return [self.ready[chunk.key] for chunk in chunks], chunks[0].start, chunks[-1].end
+
+    def ready_to_play(self, position: int) -> bool:
+        """Whether playing from the position goes on to the end without waiting.
+
+        When the pieces missing are prepared slower than they play, more
+        must be ready ahead before starting.
+        """
+        found = self.files_from(position)
+        if not found:
+            return False
+        unused_files, start, end = found
+        if end >= self.end() or not self.rendering():
+            return True
+        missing = sum(chunk.end - chunk.start for chunk in self.chunks
+                      if chunk.end > end and chunk.key not in self.ready)
+        rate = max(self.rates or [DEFAULT_RATE]) * RATE_MARGIN
+        if missing * rate <= WAIT_ALL_SECONDS * Gst.SECOND:
+            # Soon all ready.
+            return False
+        return end - max(position, start) >= lead_needed(rate, missing)
 
     def end(self) -> int:
         return self.chunks[-1].end if self.chunks else 0

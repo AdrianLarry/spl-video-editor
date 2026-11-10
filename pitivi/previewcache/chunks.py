@@ -136,3 +136,17 @@ def missing_from(chunks: List[Chunk], ready: Dict[str, str], position: int) -> L
     first = chunk_at(chunks, position) or 0
     ordered = chunks[first:] + chunks[:first]
     return [chunk for chunk in ordered if chunk.key not in ready]
+
+
+def lead_needed(rate: float, missing: int) -> int:
+    """Returns how much ready ahead lets playing go on without waiting.
+
+    Args:
+        rate: The time taken to prepare a second of video.
+        missing: How much is not ready after what is ready, in ns.
+    """
+    if missing <= 0:
+        return 0
+    # The next piece is prepared while the ready ones play, then each
+    # next one takes rate times its duration while it plays once.
+    return int(rate * min(missing, CHUNK_DURATION) + max(0.0, rate - 1) * max(0, missing - CHUNK_DURATION))

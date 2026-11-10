@@ -22,6 +22,7 @@ from gi.repository import Gst
 
 from pitivi.previewcache.chunks import CHUNK_DURATION
 from pitivi.previewcache.chunks import compute_chunks
+from pitivi.previewcache.chunks import lead_needed
 from pitivi.previewcache.chunks import missing_from
 from pitivi.previewcache.manager import prune
 from pitivi.previewcache.quality import AutoQuality
@@ -86,6 +87,13 @@ class ChunksTest(common.TestCase):
         ready = {chunks[1].key: "path"}
         missing = missing_from(chunks, ready, 5 * SECOND)
         self.assertEqual(missing, [chunks[2], chunks[3], chunks[0]])
+
+    def test_lead_needed(self):
+        # Prepared faster than played: the next piece only.
+        self.assertEqual(lead_needed(0.5, 8 * SECOND), SECOND)
+        # Slower: what plays covers the time lost for each piece.
+        self.assertEqual(lead_needed(1.5, 8 * SECOND), 3 * SECOND + 3 * SECOND)
+        self.assertEqual(lead_needed(1.5, 0), 0)
 
     def test_prune(self):
         with tempfile.TemporaryDirectory() as folder:

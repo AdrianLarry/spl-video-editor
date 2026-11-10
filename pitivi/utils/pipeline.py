@@ -767,11 +767,24 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         self.simple_seek(self.get_last_frame_position())
         self.emit("eos")
 
+    def __must_wait_pieces(self) -> bool:
+        """Whether the pieces being prepared are not enough ahead to start."""
+        prepared = self.prepared
+        if not prepared or self.rendering() or not prepared.rendering():
+            return False
+        if not prepared.up_to_date or prepared.dirty:
+            # Being edited, the live preview plays.
+            return False
+        position = self._last_position
+        if self.prepared.chunks and position >= self.prepared.end():
+            return False
+        return not self.prepared.ready_to_play(position)
+
     def __wait_pieces_cb(self, started):
         """Goes on with the prepared preview when the next pieces are ready."""
         waited = time.monotonic() - started
-        found = self.prepared.files_from(self._last_position) if self.prepared else None
-        if not found and waited < PIECES_MAX_WAIT and self.prepared and self.prepared.rendering():
+        ready = self.prepared.ready_to_play(self._last_position) if self.prepared else True
+        if not ready and waited < PIECES_MAX_WAIT and self.prepared and self.prepared.rendering():
             return True
         self._ahead_wait_id = 0
         self.rebuffering = False
@@ -989,6 +1002,12 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         if not self.playing() and self._last_position >= self.get_last_frame_position():
             # At the end, playing starts again.
             self.simple_seek(0)
+        if not self.playing() and self.__must_wait_pieces():
+            # Starting now it would stop later: waiting once, before.
+            self.prepared.prioritize(self._last_position)
+            self._ahead_wait_id = GLib.timeout_add(AHEAD_POLL_MS * 5, self.__wait_pieces_cb, time.monotonic())
+            self.emit("preparing", True)
+            return
         if not self.playing() and self.__start_prepared():
             return
         if not self.playing() and self.__must_prepare_ahead():

@@ -47,8 +47,10 @@ def register_settings():
     GlobalSettings.add_config_section("preview")
     GlobalSettings.add_config_option("previewQuality", section="preview", key="quality",
                                      default=AUTO, notify=True)
+    # Starting at the medium one, which looks the same in the small viewer:
+    # the first time the computer is measured, waiting less.
     GlobalSettings.add_config_option("previewAutoLevel", section="preview", key="auto-level",
-                                     default=HIGH)
+                                     default=MEDIUM)
     PreferencesDialog.add_section("preview", _("Video preview"))
     PreferencesDialog.add_choice_preference(
         "previewQuality", section="preview",
