@@ -168,6 +168,12 @@ HIDDEN_EFFECTS = [
     "splparticles name=spl-particles",
     "videoconvert ! video/x-raw,format=BGRA ! splparticles name=spl-particles ! videoconvert"]
 
+# The blur of the "Soft blur" effect. gaussianblur took several times the
+# duration of a frame, the clip played at half the speed.
+SOFT_BLUR = "videoconvert ! video/x-raw,format=BGRA ! splblur sigma=2 ! videoconvert"
+# Effects of older projects, made again as the new ones when loading.
+REPLACED_EFFECTS = {"gaussianblur sigma=4": SOFT_BLUR}
+
 # The effects offered, as in the mockup: simple, and made with elements
 # which work with any video. Some others of the catalog crash the app.
 # Their bin description identifies them, with the values of the effect.
@@ -179,7 +185,7 @@ SIMPLE_EFFECTS = (
     ("videobalance saturation=0", _("Black and white"), _("Without colors")),
     ("videobalance brightness=0.12", _("More brightness"), _("A brighter image")),
     ("videobalance contrast=1.4", _("More contrast"), _("Darker darks and lighter lights")),
-    ("gaussianblur sigma=4", _("Soft blur"), _("A slightly blurred image")),
+    (SOFT_BLUR, _("Soft blur"), _("A slightly blurred image")),
     ("videoconvert ! video/x-raw,format=BGRA ! splparticles effect=snow ! videoconvert", _("Snow"), _("Falling snowflakes drifting gently")),
     ("videoconvert ! video/x-raw,format=BGRA ! splparticles effect=confetti ! videoconvert", _("Confetti"), _("Festive colorful falling confetti")),
     ("videoconvert ! video/x-raw,format=BGRA ! splparticles effect=sparkles ! videoconvert", _("Sparkles"), _("Magical glittering stars and flares")),

@@ -58,8 +58,11 @@ RATE_PIECES = 6
 # When all is prepared in less time, it plays once ready: going on with
 # more pieces stops playing for a moment.
 WAIT_ALL_SECONDS = 10
-# SPL_VISTA_PREPARADA=0 turns it off.
-ENABLED = os.environ.get("SPL_VISTA_PREPARADA", "1") != "0"
+# Off unless SPL_VISTA_PREPARADA=1. Rendering ahead could not keep up on a
+# common computer and its scaled pieces showed some clips wrong; the live
+# preview plays fluid with the light copies of the videos and the fast
+# effects instead, see pitivi.utils.lightproxy.
+ENABLED = os.environ.get("SPL_VISTA_PREPARADA", "0") == "1"
 
 
 def cache_folder() -> str:

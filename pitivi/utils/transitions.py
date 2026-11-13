@@ -565,8 +565,13 @@ def replace_asset(clip: GES.UriClip, asset: GES.Asset) -> bool:
             res, value = getattr(source, "get_" + kind)(meta)
         if res:
             metas.append((meta, kind, value))
+    # GES limits the duration to the one of the new media, also when a speed
+    # change makes the clip longer than its media.
+    duration = clip.props.duration
     if not clip.set_asset(asset):
         return False
+    if clip.props.duration != duration:
+        clip.set_duration(duration)
     source = clip.find_track_element(None, GES.VideoSource)
     for meta, kind, value in metas if source else []:
         getattr(source, "set_" + kind)(meta, value)

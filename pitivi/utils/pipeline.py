@@ -61,6 +61,8 @@ AHEAD_MAX_BYTES = 256 * 1024 * 1024
 AHEAD_EDGE_MARGIN = 150 * Gst.MSECOND
 AHEAD_POLL_MS = 20
 AHEAD_MAX_WAIT = 4
+# Seconds without preparing more after which playing starts anyway.
+AHEAD_STALLED = 0.3
 # Playing waits as well when the frames prepared ahead run out, until this
 # much is prepared or the clip edges close ahead are.
 AHEAD_LOW = 80 * Gst.MSECOND
@@ -584,6 +586,7 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         # Where the video prepared ahead of the viewer reaches, see create_sink.
         self._ahead_end = None
         self._ahead_wait_id = 0
+        self._ahead_wait_progress = (None, 0)
         self._ahead_track = None
         # Where the last seek goes, the position is known once it is done.
         self._ahead_from = None
@@ -926,6 +929,7 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         self.info("Waiting, the frames prepared ahead run out at %s", Gst.TIME_ARGS(position))
         self.rebuffering = True
         SimplePipeline.pause(self)
+        self._ahead_wait_progress = (self._ahead_end, time.monotonic())
         self._ahead_wait_id = GLib.timeout_add(AHEAD_POLL_MS, self.__wait_ahead_cb, time.monotonic())
         self.emit("preparing", True)
 
@@ -982,7 +986,14 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         return self._ahead_end < min(ahead) + AHEAD_EDGE_MARGIN
 
     def __wait_ahead_cb(self, started):
-        if time.monotonic() - started < AHEAD_MAX_WAIT and \
+        now = time.monotonic()
+        if self._ahead_end != self._ahead_wait_progress[0]:
+            self._ahead_wait_progress = (self._ahead_end, now)
+        # Paused, NLE does not go past the edge of a clip: when nothing more
+        # gets prepared, waiting longer does not help.
+        stalled = not self.rebuffering and not self._busy_async and \
+            now - self._ahead_wait_progress[1] > AHEAD_STALLED
+        if now - started < AHEAD_MAX_WAIT and not stalled and \
                 (self._busy_async or self.__must_prepare_ahead() or self.__ahead_short()):
             return True
         self._ahead_wait_id = 0
@@ -1011,6 +1022,7 @@ class Pipeline(GES.Pipeline, SimplePipeline):
         if not self.playing() and self.__start_prepared():
             return
         if not self.playing() and self.__must_prepare_ahead():
+            self._ahead_wait_progress = (self._ahead_end, time.monotonic())
             self._ahead_wait_id = GLib.timeout_add(AHEAD_POLL_MS, self.__wait_ahead_cb, time.monotonic())
             self.emit("preparing", True)
             return

@@ -31,6 +31,7 @@ from pitivi.check import GstDependency
 from pitivi.configure import get_gstpresets_dir
 from pitivi.dialogs.prefs import PreferencesDialog
 from pitivi.settings import GlobalSettings
+from pitivi.utils import lightproxy
 from pitivi.utils.loggable import Loggable
 from pitivi.utils.misc import ASSET_DURATION_META
 from pitivi.utils.misc import asset_get_duration
@@ -438,6 +439,10 @@ class ProxyManager(GObject.Object, Loggable):
         else:
             return not self.is_hq_proxy(asset)
 
+    def __start_pending_transcoder(self, transcoder):
+        self.__start_transcoder(transcoder)
+        return False
+
     def __start_transcoder(self, transcoder):
         self.debug("Starting %s", transcoder.props.src_uri)
         if self._start_proxying_time == 0:
@@ -497,6 +502,8 @@ class ProxyManager(GObject.Object, Loggable):
                 if not isinstance(clip, GES.UriClip):
                     continue
                 if self.get_target_uri(clip.props.uri) == target_uri:
+                    if self.__fit_time_effects_clip(clip, duration):
+                        continue
                     if clip.props.in_point + clip.props.duration > duration:
                         new_duration = duration - clip.props.in_point
                         if new_duration > 0:
@@ -519,6 +526,32 @@ class ProxyManager(GObject.Object, Loggable):
         else:
             self.emit("proxy-ready", asset, proxy)
             self.__emit_progress(proxy, 100)
+
+    def __fit_time_effects_clip(self, clip, duration):
+        """Fits a clip with a speed change to the media duration.
+
+        Its duration in the timeline is not the one of its media: Pitivi
+        cut a clip slowed to half to half its duration.
+
+        Returns:
+            bool: Whether the clip has a speed change.
+        """
+        sources = [child for child in clip.get_children(False) if isinstance(child, GES.Source)]
+        # The speed effects, see clipproperties.TimeProperties.
+        has_time_effects = any(effect.props.bin_description.split(" ")[0] in ("pitch", "splspeed")
+                               for effect in clip.get_top_effects())
+        if not has_time_effects or not sources:
+            return False
+        end = clip.props.start + clip.props.duration
+        for source in sources:
+            internal_end = clip.get_internal_time_from_timeline_time(source, end)
+            if internal_end > duration:
+                new_end = clip.get_timeline_time_from_internal_time(source, duration)
+                if clip.props.start < new_end < end:
+                    self.warning("%s ends at %s, where the proxy ends", clip, Gst.TIME_ARGS(new_end))
+                    clip.set_duration(new_end - clip.props.start)
+                    end = new_end
+        return True
 
     def __transcoder_error_cb(self, _, error, unused_details, asset, transcoder):
         self.emit("error-preparing-asset", asset, None, error)
@@ -563,7 +596,10 @@ class ProxyManager(GObject.Object, Loggable):
                     break
 
         try:
-            self.__start_transcoder(self.__pending_transcoders.pop())
+            # SPL: started inside the "done" of another, its pipeline never
+            # went on.
+            pending = self.__pending_transcoders.pop()
+            GLib.idle_add(self.__start_pending_transcoder, pending)
         except IndexError:
             if not self.__running_transcoders:
                 self._transcoded_durations = {}
@@ -680,8 +716,10 @@ class ProxyManager(GObject.Object, Loggable):
                 project.scaled_proxy_width = w
                 project.scaled_proxy_height = h
             width, height = self._scale_asset_resolution(asset, w, h)
-        enc_profile = self.__get_encoding_profile(self.__encoding_target_file,
-                                                  asset, width, height)
+        enc_profile = lightproxy.encoding_profile(width, height) if scaled else None
+        if not enc_profile:
+            enc_profile = self.__get_encoding_profile(self.__encoding_target_file,
+                                                      asset, width, height)
 
         if HAS_GST_1_19:
             transcoder = GstTranscoder.Transcoder.new_full(
@@ -700,18 +738,24 @@ class ProxyManager(GObject.Object, Loggable):
             transcoder.props.position_update_interval = 1000
 
         info = asset.get_info()
-        if info.get_video_streams():
+        # SPL: the thumbnails and the waveform made while copying blocked
+        # some of the light copies; the timeline makes them anyway.
+        light_copy = scaled and lightproxy.enabled()
+        if info.get_video_streams() and not light_copy:
             thumbnailbin = Gst.ElementFactory.make("teedthumbnailbin")
             thumbnailbin.props.uri = asset.get_id()
             transcoder.props.pipeline.props.video_filter = thumbnailbin
 
-        if info.get_audio_streams():
+        if info.get_audio_streams() and not light_copy:
             waveformbin = Gst.ElementFactory.make("waveformbin")
             waveformbin.props.uri = asset.get_id()
             waveformbin.props.duration = asset.get_duration()
             transcoder.props.pipeline.props.audio_filter = waveformbin
 
-        transcoder.set_cpu_usage(self.app.settings.max_cpu_usage)
+        cpu_usage = self.app.settings.max_cpu_usage
+        if lightproxy.enabled():
+            cpu_usage = max(cpu_usage, lightproxy.CPU_USAGE)
+        transcoder.set_cpu_usage(cpu_usage)
         signals_emitter.connect("position-updated",
                                 self.__proxying_position_changed_cb,
                                 asset, transcoder)
@@ -848,7 +892,8 @@ class ProxyManager(GObject.Object, Loggable):
         video_streams = asset.get_info().get_video_streams()
         if video_streams:
             # Handle Automatic scaling
-            if self.app.settings.auto_scaling_enabled and not force_proxying \
+            # SPL: every video gets a light copy, see lightproxy.
+            if (self.app.settings.auto_scaling_enabled or lightproxy.enabled()) and not force_proxying \
                     and not shadow and not self.asset_matches_target_res(asset):
                 scaled = True
 

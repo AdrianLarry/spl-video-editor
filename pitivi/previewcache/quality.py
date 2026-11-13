@@ -51,6 +51,10 @@ def register_settings():
     # the first time the computer is measured, waiting less.
     GlobalSettings.add_config_option("previewAutoLevel", section="preview", key="auto-level",
                                      default=MEDIUM)
+    # pylint: disable=import-outside-toplevel
+    from pitivi.previewcache.manager import ENABLED
+    if not ENABLED:
+        return
     PreferencesDialog.add_section("preview", _("Video preview"))
     PreferencesDialog.add_choice_preference(
         "previewQuality", section="preview",

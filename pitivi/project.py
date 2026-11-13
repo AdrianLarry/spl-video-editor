@@ -47,6 +47,8 @@ from pitivi.timeline.previewers import ThumbnailCache
 from pitivi.undo.project import AssetAddedIntention
 from pitivi.undo.project import AssetProxiedIntention
 from pitivi.utils.blurfill import restore_blur_fills
+from pitivi.utils import lightproxy
+from pitivi.utils.effectmigration import replace_effects
 from pitivi.utils.layeractive import watch_timeline
 from pitivi.utils.motion import restore_motion
 from pitivi.utils.formats import get_closest_format
@@ -812,6 +814,8 @@ class Project(Loggable, GES.Project):
 
     @property
     def scaled_proxy_height(self):
+        if lightproxy.enabled():
+            return self.get_meta("scaled_proxy_height") or lightproxy.BOX
         return self.get_meta("scaled_proxy_height") or self.app.settings.default_scaled_proxy_height
 
     @scaled_proxy_height.setter
@@ -823,6 +827,8 @@ class Project(Loggable, GES.Project):
 
     @property
     def scaled_proxy_width(self):
+        if lightproxy.enabled():
+            return self.get_meta("scaled_proxy_width") or lightproxy.BOX
         return self.get_meta("scaled_proxy_width") or self.app.settings.default_scaled_proxy_width
 
     @scaled_proxy_width.setter
@@ -1389,7 +1395,13 @@ class Project(Loggable, GES.Project):
         if proxy:
             self.finalize_proxy(proxy)
 
+        # SPL: GES limits the clips to the duration of the new media, also
+        # the ones longer than their media because of a speed change.
+        durations = [(clip, clip.props.duration) for clip in self.__clips_of(asset)]
         asset.set_proxy(proxy)
+        for clip, duration in durations:
+            if clip.props.duration != duration:
+                clip.set_duration(duration)
         try:
             self.loading_assets.remove(asset)
         except KeyError:
@@ -1400,6 +1412,12 @@ class Project(Loggable, GES.Project):
             self.loading_assets.add(proxy)
 
         self.__update_asset_loading_progress()
+
+    def __clips_of(self, asset):
+        if not self.ges_timeline:
+            return []
+        return [clip for layer in self.ges_timeline.get_layers() for clip in layer.get_clips()
+                if isinstance(clip, GES.UriClip) and clip.get_asset() in (asset, asset.get_proxy())]
 
     def finalize_proxy(self, proxy):
         proxy.ready = False
@@ -1557,10 +1575,27 @@ class Project(Loggable, GES.Project):
         self.__keep_track_video_size()
 
         self._load_encoder_settings(profiles)
+        # pylint: disable=import-outside-toplevel
+        from pitivi.effects import REPLACED_EFFECTS
+        if replace_effects(self.ges_timeline, REPLACED_EFFECTS):
+            self.ges_timeline.commit()
         restore_blur_fills(self.ges_timeline)
         restore_motion(self.ges_timeline)
         restore_overlays(self.ges_timeline)
         watch_timeline(self.ges_timeline)
+        self.__make_light_copies()
+
+    def __make_light_copies(self):
+        """Makes the light copies missing of the videos, see lightproxy."""
+        if not lightproxy.enabled() or not self.uri:
+            return
+        proxy_manager = self.app.proxy_manager
+        for asset in self.list_assets(GES.UriClip):
+            if asset.is_image() or proxy_manager.is_proxy_asset(asset) or asset.get_proxy():
+                continue
+            info = asset.get_info()
+            if info and info.get_video_streams():
+                proxy_manager.add_job(asset, scaled=True)
 
     def __keep_track_video_size(self):
         """Makes the render profile use the size of the frame of the video track.

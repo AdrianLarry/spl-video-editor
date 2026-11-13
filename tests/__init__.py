@@ -33,6 +33,9 @@ def setup():
     os.environ['XDG_DATA_HOME'] = mkdtemp()
     os.environ['XDG_CONFIG_HOME'] = mkdtemp()
     os.environ['XDG_CACHE_HOME'] = mkdtemp()
+    # The tests of Pitivi expect its proxies, made only when asked. The light
+    # copies of SPL have their own tests, see test_utils_lightproxy.
+    os.environ.setdefault("SPL_COPIAS_LIVIANAS", "0")
 
     # Make available to configure.py the top level dir.
     pitivi_dir = get_pitivi_dir()
