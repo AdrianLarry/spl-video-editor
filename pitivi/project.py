@@ -187,8 +187,9 @@ class ProjectManager(GObject.Object, Loggable):
         """Shows an dialog telling the user that everything went kaboom."""
         # GTK does not allow an empty string as the dialog title, so we use the
         # same translatable one as render.py's pipeline error message dialog:
+        parent = self.app.gui if isinstance(getattr(self.app, "gui", None), Gtk.Window) else None
         dialog = Gtk.Dialog(title=_("Sorry, something didn’t work right."),
-                            transient_for=self.app.gui)
+                            transient_for=parent)
 
         # SPL: no link to the bug tracker of Pitivi, the report goes to us
         # with the log of the session.
@@ -295,7 +296,8 @@ class ProjectManager(GObject.Object, Loggable):
         Args:
             time_diff (int): The difference, in seconds, between file mtimes.
         """
-        dialog = Gtk.Dialog(title="", transient_for=self.app.gui)
+        parent = self.app.gui if isinstance(getattr(self.app, "gui", None), Gtk.Window) else None
+        dialog = Gtk.Dialog(title="", transient_for=parent)
         ignore_backup_btn = dialog.add_button(_("Ignore backup"), Gtk.ResponseType.REJECT)
         ignore_backup_btn.get_style_context().add_class("destructive-action")
         dialog.add_button(_("Restore from backup"), Gtk.ResponseType.YES)
@@ -1575,6 +1577,7 @@ class Project(Loggable, GES.Project):
         self.__keep_track_video_size()
 
         self._load_encoder_settings(profiles)
+        self.__normalize_image_inpoints()
         # pylint: disable=import-outside-toplevel
         from pitivi.effects import REPLACED_EFFECTS
         if replace_effects(self.ges_timeline, REPLACED_EFFECTS):
@@ -1597,6 +1600,36 @@ class Project(Loggable, GES.Project):
             if info and info.get_video_streams():
                 proxy_manager.add_job(asset, scaled=True)
 
+    def __normalize_image_inpoints(self):
+        """Ensures still image clips always have inpoint=0 to avoid seek failures."""
+        if not self.ges_timeline:
+            return
+        from pitivi.utils.fades import get_keyframes
+        from pitivi.utils.fades import set_keyframes
+
+        for layer in self.ges_timeline.get_layers():
+            for clip in layer.get_clips():
+                asset = clip.get_asset()
+                if asset and getattr(asset, "is_image", lambda: False)():
+                    old_inpoint = clip.props.in_point
+                    if old_inpoint != 0:
+                        saved_keyframes = {}
+                        for child in clip.get_children(True):
+                            if not hasattr(child, "get_control_binding"):
+                                continue
+                            for prop in ("alpha", "GstAlpha::alpha", "volume"):
+                                binding = child.get_control_binding(prop)
+                                if binding and binding.props.control_source:
+                                    cs = binding.props.control_source
+                                    kfs = get_keyframes(cs)
+                                    if kfs:
+                                        saved_keyframes[(child, prop, cs)] = [
+                                            (max(0, ts - old_inpoint), val) for ts, val in kfs
+                                        ]
+                        clip.set_inpoint(0)
+                        for (child, prop, cs), shifted in saved_keyframes.items():
+                            set_keyframes(cs, shifted)
+
     def __keep_track_video_size(self):
         """Makes the render profile use the size of the frame of the video track.
 
@@ -1607,7 +1640,7 @@ class Project(Loggable, GES.Project):
         for track in self.ges_timeline.get_tracks():
             if not isinstance(track, GES.VideoTrack):
                 continue
-            caps = track.get_restriction_caps()
+            caps = track.props.restriction_caps
             if not caps or caps.is_empty():
                 return
             struct = caps.get_structure(0)

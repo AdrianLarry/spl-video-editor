@@ -2760,6 +2760,28 @@ class TimelineContainer(Gtk.Grid, Zoomable, Loggable):
                         # set up as when made.
                         if new_clip:
                             right_parts.append(new_clip)
+                            asset = new_clip.get_asset()
+                            if asset and getattr(asset, "is_image", lambda: False)():
+                                old_inpoint = new_clip.props.in_point
+                                if old_inpoint != 0:
+                                    from pitivi.utils.fades import get_keyframes
+                                    from pitivi.utils.fades import set_keyframes
+                                    saved_keyframes = {}
+                                    for child in new_clip.get_children(True):
+                                        if not hasattr(child, "get_control_binding"):
+                                            continue
+                                        for prop in ("alpha", "GstAlpha::alpha", "volume"):
+                                            binding = child.get_control_binding(prop)
+                                            if binding and binding.props.control_source:
+                                                cs = binding.props.control_source
+                                                kfs = get_keyframes(cs)
+                                                if kfs:
+                                                    saved_keyframes[(child, prop, cs)] = [
+                                                        (max(0, ts - old_inpoint), val) for ts, val in kfs
+                                                    ]
+                                    new_clip.set_inpoint(0)
+                                    for (child, prop, cs), shifted in saved_keyframes.items():
+                                        set_keyframes(cs, shifted)
                             update_blur_fill(new_clip)
                             sync_pushes(layer)
                     finally:

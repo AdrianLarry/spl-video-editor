@@ -104,7 +104,7 @@ class Pitivi(Gtk.Application, Loggable):
         self.shortcuts = ShortcutsManager(self)
 
     def write_action(self, action, **kwargs):
-        if self._scenario_file is None:
+        if self._scenario_file is None or not action:
             return
 
         if self._first_action:

@@ -272,9 +272,19 @@ def blur_fill_description(image_size: Tuple[int, int], frame_size: Tuple[int, in
 
 
 def _frame_size(source: GES.VideoSource) -> Tuple[int, int]:
-    caps = source.get_track().get_restriction_caps()
-    structure = caps.get_structure(0)
-    return structure.get_int("width")[1], structure.get_int("height")[1]
+    track = source.get_track() if source else None
+    caps = track.props.restriction_caps if track else None
+    if caps and not caps.is_empty():
+        structure = caps.get_structure(0)
+        res_w, width = structure.get_int("width")
+        res_h, height = structure.get_int("height")
+        if res_w and res_h and width > 0 and height > 0:
+            return width, height
+    tl = source.get_timeline() if source else None
+    asset = tl.get_asset() if tl else None
+    if asset and getattr(asset, "videowidth", 0) and getattr(asset, "videoheight", 0):
+        return asset.videowidth, asset.videoheight
+    return 1920, 1080
 
 
 def get_alpha_control_source(source: GES.VideoSource):

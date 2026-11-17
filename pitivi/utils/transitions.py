@@ -302,11 +302,14 @@ def get_image_fades(clip: GES.Clip) -> Optional[Fades]:
 
 
 def set_image_fades(clip: GES.Clip, fade_in: Optional[int] = None,
-                    fade_out: Optional[int] = None) -> bool:
+                    fade_out: Optional[int] = None,
+                    force: bool = False) -> bool:
     """Changes the image fades of the clip, unless edited freely."""
     fades = get_image_fades(clip)
     if not fades:
-        return False
+        if not force:
+            return False
+        fades = Fades(1.0, 0, 0)
     fades = Fades(fades.level if fades.level else 1.0,
                   fades.fade_in if fade_in is None else fade_in,
                   fades.fade_out if fade_out is None else fade_out)
@@ -820,8 +823,8 @@ def remove_transition(contact: Contact) -> Contact:
         if contact.kind == PUSH:
             sync_pushes(contact.clip_b.get_layer())
     elif contact.kind == FADE_TO_BLACK:
-        set_image_fades(contact.clip_a, fade_out=0)
-        set_image_fades(contact.clip_b, fade_in=0)
+        set_image_fades(contact.clip_a, fade_out=0, force=True)
+        set_image_fades(contact.clip_b, fade_in=0, force=True)
     elif contact.kind == FADE_TO_WHITE:
         set_white_fades(contact.clip_a, fade_out=0)
         set_white_fades(contact.clip_b, fade_in=0)
@@ -852,8 +855,8 @@ def set_transition(contact: Contact, kind: str, duration: int,
             set_blur_fades(contact.clip_a, fade_out=duration)
             set_blur_fades(contact.clip_b, fade_in=duration)
     elif kind == FADE_TO_BLACK:
-        set_image_fades(contact.clip_a, fade_out=duration // 2)
-        set_image_fades(contact.clip_b, fade_in=duration - duration // 2)
+        set_image_fades(contact.clip_a, fade_out=duration // 2, force=True)
+        set_image_fades(contact.clip_b, fade_in=duration - duration // 2, force=True)
     elif kind == FADE_TO_WHITE:
         set_white_fades(contact.clip_a, fade_out=duration // 2)
         set_white_fades(contact.clip_b, fade_in=duration - duration // 2)
@@ -877,8 +880,8 @@ def remove_transitions_of(clips) -> None:
 def remove_fades(clip_a: GES.Clip, clip_b: GES.Clip, kind: Optional[str]) -> None:
     """Removes the fades of a fade to black, white or blur between the clips."""
     if kind == FADE_TO_BLACK:
-        set_image_fades(clip_a, fade_out=0)
-        set_image_fades(clip_b, fade_in=0)
+        set_image_fades(clip_a, fade_out=0, force=True)
+        set_image_fades(clip_b, fade_in=0, force=True)
     elif kind == FADE_TO_WHITE:
         set_white_fades(clip_a, fade_out=0)
         set_white_fades(clip_b, fade_in=0)
